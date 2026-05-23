@@ -9,9 +9,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly UsageAggregator _aggregator;
     private readonly NotifyIcon _notifyIcon;
+    private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _refreshMenuItem;
     private readonly StatusForm _statusForm;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private readonly CancellationTokenSource _shutdown = new();
+    private UsageSnapshot? _lastSuccessfulSnapshot;
     private bool _disposed;
 
     public TrayApplicationContext()
@@ -26,17 +29,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _refreshMenuItem = new ToolStripMenuItem("今すぐ更新", null, async (_, _) => await RefreshAsync().ConfigureAwait(true));
 
         var exitMenuItem = new ToolStripMenuItem("終了", null, (_, _) => ExitThread());
-        var menu = new ContextMenuStrip();
-        menu.Items.Add(_refreshMenuItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(exitMenuItem);
+        _contextMenu = new ContextMenuStrip();
+        _contextMenu.Items.Add(_refreshMenuItem);
+        _contextMenu.Items.Add(new ToolStripSeparator());
+        _contextMenu.Items.Add(exitMenuItem);
 
         _notifyIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application,
             Text = "TokenCheckerWin",
             Visible = true,
-            ContextMenuStrip = menu
+            ContextMenuStrip = _contextMenu
         };
         _notifyIcon.MouseUp += NotifyIconOnMouseUp;
 
@@ -60,7 +63,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private async Task RefreshAsync()
     {
-        if (!await _refreshLock.WaitAsync(0).ConfigureAwait(true))
+        if (_disposed || _shutdown.IsCancellationRequested)
+        {
+            return;
+        }
+
+        if (!await _refreshLock.WaitAsync(0, _shutdown.Token).ConfigureAwait(true))
         {
             return;
         }
@@ -74,7 +82,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
             UsageSnapshot snapshot;
             try
             {
-                snapshot = await _aggregator.CaptureAsync().ConfigureAwait(true);
+                snapshot = await _aggregator.CaptureAsync(_shutdown.Token).ConfigureAwait(true);
+                _lastSuccessfulSnapshot = snapshot;
+            }
+            catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+            {
+                return;
             }
             catch
             {
@@ -87,12 +100,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
                     });
             }
 
-            _statusForm.UpdateSnapshot(snapshot);
-            _notifyIcon.Text = TrimTooltip(BuildTooltip(snapshot));
+            if (_disposed || _shutdown.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _statusForm.UpdateSnapshot(snapshot, _lastSuccessfulSnapshot);
+            _notifyIcon.Text = TrimTooltip(BuildTooltip(_lastSuccessfulSnapshot ?? snapshot));
         }
         finally
         {
-            _refreshMenuItem.Enabled = true;
+            if (!_disposed)
+            {
+                _refreshMenuItem.Enabled = true;
+            }
+
             _refreshLock.Release();
         }
     }
@@ -162,9 +184,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         _disposed = true;
+        _shutdown.Cancel();
+        Application.Idle -= OnApplicationIdle;
+        _notifyIcon.MouseUp -= NotifyIconOnMouseUp;
         _notifyIcon.Visible = false;
+        _notifyIcon.ContextMenuStrip = null;
         _notifyIcon.Dispose();
+        _contextMenu.Dispose();
         _statusForm.Dispose();
+        _shutdown.Dispose();
         _refreshLock.Dispose();
         base.ExitThreadCore();
     }

@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using TokenChecker.Core;
 
@@ -61,10 +62,13 @@ internal sealed class StatusForm : Form
         _updatedAt.Text = "最終更新: 更新中";
     }
 
-    public void UpdateSnapshot(UsageSnapshot snapshot)
+    public void UpdateSnapshot(UsageSnapshot snapshot, UsageSnapshot? lastSuccessfulSnapshot)
     {
         var claude = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Claude");
         var codex = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Codex");
+        var fallbackCodex = codex?.Status == ProviderStatus.Available
+            ? codex
+            : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Codex" && service.Status == ProviderStatus.Available);
 
         _claudeStatus.Text = claude?.Status.ToString() ?? "Unknown";
         _claudeMessage.Text = SafeMessage(claude?.Message);
@@ -72,8 +76,8 @@ internal sealed class StatusForm : Form
         _codexStatus.Text = codex?.Status.ToString() ?? "Unknown";
         _codexMessage.Text = SafeMessage(codex?.Message);
 
-        var shortWindow = codex is null ? null : FindWindow(codex, 300);
-        var weeklyWindow = codex is null ? null : FindWindow(codex, 10080);
+        var shortWindow = fallbackCodex is null ? null : FindWindow(fallbackCodex, 300);
+        var weeklyWindow = fallbackCodex is null ? null : FindWindow(fallbackCodex, 10080);
 
         _codexShortUsage.Text = $"300分: {FormatPercent(shortWindow)}";
         _codexWeeklyUsage.Text = $"10080分: {FormatPercent(weeklyWindow)}";
@@ -169,5 +173,18 @@ internal sealed class StatusForm : Form
             : window.ResetAtUtc.Value.ToLocalTime().ToString("MM/dd HH:mm");
 
     private static string SafeMessage(string? message)
-        => string.IsNullOrWhiteSpace(message) ? "" : message;
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return "";
+        }
+
+        var masked = Regex.Replace(message, @"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "<email>", RegexOptions.IgnoreCase);
+        masked = Regex.Replace(masked, @"[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*", "<path>");
+        masked = Regex.Replace(masked, @"/(?:[^/\s]+/)+[^/\s]*", "<path>");
+        masked = Regex.Replace(masked, @"(?i)(token|secret|key|authorization|bearer)\s*[:=]\s*\S+", "$1=<redacted>");
+        masked = Regex.Replace(masked, @"\b[A-Za-z0-9_-]{32,}\b", "<redacted>");
+
+        return masked.Length <= 120 ? masked : masked[..120];
+    }
 }

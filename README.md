@@ -78,3 +78,22 @@ Current constraints:
 - The WinForms notification UI is not implemented yet.
 - The POC does not use Codex `chatgptAuthTokens`.
 - Output intentionally avoids tokens, authentication data, email addresses, and full local paths.
+
+## Manual Tray App Checks
+
+Run the tray app:
+
+```powershell
+dotnet run --project src/TokenChecker.App
+```
+
+Manual checks:
+
+- The app starts without showing a main window.
+- A notification area icon appears.
+- Left-clicking the icon shows one small status window; repeated left-clicks focus the same window.
+- Closing the status window hides it without exiting the app.
+- Right-clicking the icon opens a menu with `今すぐ更新` and `終了`.
+- Repeated `今すぐ更新` clicks do not start overlapping updates.
+- Exiting during an update removes the tray icon and does not leave an app process behind.
+- If a refresh fails after a successful refresh, the last successful Codex window values remain visible while the current status/message shows the failure.
