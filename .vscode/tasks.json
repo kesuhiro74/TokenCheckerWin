@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dotnet build",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/TokenCheckerWin.sln"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": "build"
+    },
+    {
+      "label": "run poc",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "${workspaceFolder}/src/TokenChecker.Poc"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

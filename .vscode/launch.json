@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "TokenChecker.Poc",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "dotnet build",
+      "program": "${workspaceFolder}/src/TokenChecker.Poc/bin/Debug/net8.0/TokenChecker.Poc.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "stopAtEntry": false
+    }
+  ]
+}
