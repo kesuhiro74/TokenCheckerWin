@@ -38,6 +38,7 @@ The POC prints a JSON `UsageSnapshot` for Claude and Codex. Current provider beh
 - They do not read or print tokens, authentication data, email addresses, or local paths.
 - Missing CLIs are reported as `NotInstalled`.
 - Codex login-required responses are reported as `NotLoggedIn`.
+- Codex TUI startup does not guarantee usage collection is available. The app-server `account/read` result must be a ChatGPT account (`account.type == "chatgpt"`); API-key or unknown account modes cannot provide rate-limit usage for this POC.
 - Codex app-server startup failures, timeouts, and JSON/protocol failures are reported as `Error` without failing the whole POC.
 - Claude usage collection is still a safe stub.
 

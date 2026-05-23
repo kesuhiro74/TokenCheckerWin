@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace TokenChecker.Core.Providers;
 
@@ -58,26 +59,64 @@ public sealed class CodexUsageProvider : IUsageProvider
                 new { refreshToken = false },
                 timeout.Token).ConfigureAwait(false);
 
-            if (RequiresLogin(account))
+            var accountState = ReadAccountState(account);
+
+            if (accountState.AccountIsNull && accountState.RequiresOpenAiAuth)
             {
                 return new ServiceUsage(
                     ServiceName,
                     ProviderStatus.NotLoggedIn,
-                    "Codex login is required.",
+                    $"Codex login is required. {accountState.ToDebugMessage()}",
                     Array.Empty<RateLimitWindow>());
             }
 
-            var rateLimits = await client.SendRequestAsync(
-                "account/rateLimits/read",
-                null,
-                timeout.Token).ConfigureAwait(false);
+            if (accountState.AccountIsNull)
+            {
+                return new ServiceUsage(
+                    ServiceName,
+                    ProviderStatus.Error,
+                    $"Codex account state does not allow rate limit collection. {accountState.ToDebugMessage()}",
+                    Array.Empty<RateLimitWindow>());
+            }
+
+            if (!string.Equals(accountState.AccountType, "chatgpt", StringComparison.Ordinal))
+            {
+                var message = string.Equals(accountState.AccountType, "apiKey", StringComparison.Ordinal)
+                    ? "ChatGPT login is required for rate limits."
+                    : "Codex account type does not support rate limit collection.";
+
+                return new ServiceUsage(
+                    ServiceName,
+                    ProviderStatus.Error,
+                    $"{message} {accountState.ToDebugMessage()}",
+                    Array.Empty<RateLimitWindow>());
+            }
+
+            JsonNode rateLimits;
+            try
+            {
+                rateLimits = await client.SendRequestAsync(
+                    "account/rateLimits/read",
+                    null,
+                    timeout.Token).ConfigureAwait(false);
+            }
+            catch (CodexAppServerException ex)
+            {
+                return new ServiceUsage(
+                    ServiceName,
+                    ProviderStatus.Error,
+                    $"Codex rate limits could not be read. {accountState.ToDebugMessage()} error={ex.SafeSummary}",
+                    Array.Empty<RateLimitWindow>());
+            }
 
             var windows = ParseRateLimitWindows(rateLimits).ToArray();
 
             return new ServiceUsage(
                 ServiceName,
                 windows.Length > 0 ? ProviderStatus.Available : ProviderStatus.Error,
-                windows.Length > 0 ? "Codex usage data was read." : "Codex rate limits were not present in the app-server response.",
+                windows.Length > 0
+                    ? $"Codex usage data was read. {accountState.ToDebugMessage()}"
+                    : $"Codex rate limits were not present in the app-server response. {accountState.ToDebugMessage()}",
                 windows);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -102,12 +141,15 @@ public sealed class CodexUsageProvider : IUsageProvider
         }
     }
 
-    private static bool RequiresLogin(JsonNode response)
+    private static AccountState ReadAccountState(JsonNode response)
     {
         var account = response["account"];
         var requiresOpenAiAuth = response["requiresOpenaiAuth"]?.GetValue<bool>() ?? false;
+        var accountIsNull = IsJsonNull(account);
+        var accountType = accountIsNull ? null : GetString(account?["type"]);
+        var planTypePresent = !accountIsNull && !IsJsonNull(account?["planType"]);
 
-        return IsJsonNull(account) || requiresOpenAiAuth;
+        return new AccountState(accountIsNull, accountType, requiresOpenAiAuth, planTypePresent);
     }
 
     private static IEnumerable<RateLimitWindow> ParseRateLimitWindows(JsonNode response)
@@ -241,6 +283,30 @@ public sealed class CodexUsageProvider : IUsageProvider
     private static bool IsJsonNull(JsonNode? node)
         => node is null || node.GetValueKind() == JsonValueKind.Null;
 
+    private sealed record AccountState(
+        bool AccountIsNull,
+        string? AccountType,
+        bool RequiresOpenAiAuth,
+        bool PlanTypePresent)
+    {
+        public string ToDebugMessage()
+            => $"accountNull={AccountIsNull.ToString(CultureInfo.InvariantCulture).ToLowerInvariant()}; "
+                + $"accountType={AccountType ?? "null"}; "
+                + $"requiresOpenaiAuth={RequiresOpenAiAuth.ToString(CultureInfo.InvariantCulture).ToLowerInvariant()}; "
+                + $"planTypePresent={PlanTypePresent.ToString(CultureInfo.InvariantCulture).ToLowerInvariant()};";
+    }
+
+    private sealed class CodexAppServerException : Exception
+    {
+        public CodexAppServerException(string safeSummary)
+            : base("Codex app-server returned an error.")
+        {
+            SafeSummary = safeSummary;
+        }
+
+        public string SafeSummary { get; }
+    }
+
     private sealed class CodexAppServerClient : IAsyncDisposable
     {
         private static readonly TimeSpan GracefulExitTimeout = TimeSpan.FromSeconds(2);
@@ -305,7 +371,7 @@ public sealed class CodexUsageProvider : IUsageProvider
 
                 if (response["error"] is not null)
                 {
-                    throw new InvalidOperationException("Codex app-server returned an error.");
+                    throw new CodexAppServerException(SummarizeJsonRpcError(response["error"]!));
                 }
 
                 return response["result"]
@@ -395,6 +461,25 @@ public sealed class CodexUsageProvider : IUsageProvider
             {
                 // Best-effort cleanup only.
             }
+        }
+
+        private static string SummarizeJsonRpcError(JsonNode error)
+        {
+            var code = error["code"]?.ToJsonString() ?? "unknown";
+            var message = SafeErrorText(error["message"]?.GetValue<string>() ?? "Codex app-server returned an error.");
+
+            return $"code={code}; message={message}";
+        }
+
+        private static string SafeErrorText(string value)
+        {
+            var masked = Regex.Replace(value, @"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "<email>", RegexOptions.IgnoreCase);
+            masked = Regex.Replace(masked, @"[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*", "<path>");
+            masked = Regex.Replace(masked, @"/(?:[^/\s]+/)+[^/\s]*", "<path>");
+            masked = Regex.Replace(masked, @"(?i)(token|secret|key|authorization|bearer)\s*[:=]\s*\S+", "$1=<redacted>");
+            masked = Regex.Replace(masked, @"\b[A-Za-z0-9_-]{32,}\b", "<redacted>");
+
+            return masked.Length <= 160 ? masked : masked[..160];
         }
 
         private static ProcessStartInfo CreateStartInfo(string codexCommand)
