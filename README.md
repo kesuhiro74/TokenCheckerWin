@@ -96,6 +96,8 @@ Manual checks:
 - Right-clicking the icon opens a menu with `今すぐ更新` and `終了`.
 - The status window uses compact Claude and Codex cards.
 - Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
+- Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.
+- Donut rings use muted color for missing values, warning color at 80% or higher, and danger color at 95% or higher.
 - Reset timing is shown as remaining time such as `45m`, `3h`, or `2d`.
 - Claude `NotInstalled`, `NotLoggedIn`, `Error`, and `Available` states remain readable in the compact card.
 - Repeated `今すぐ更新` clicks do not start overlapping updates.

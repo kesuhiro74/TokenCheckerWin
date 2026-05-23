@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using TokenChecker.Core;
@@ -15,6 +16,7 @@ internal sealed class StatusForm : Form
     private static readonly Color Good = Color.FromArgb(111, 207, 151);
     private static readonly Color Warning = Color.FromArgb(242, 201, 118);
     private static readonly Color Bad = Color.FromArgb(235, 113, 113);
+    private static readonly Color RingEmpty = Color.FromArgb(73, 78, 90);
 
     private readonly Label _claudeBadge = CreateBadgeLabel();
     private readonly Label _claudeMessage = CreateMutedLabel();
@@ -176,9 +178,36 @@ internal sealed class StatusForm : Form
     }
 
     private static string FormatPercent(RateLimitWindow? window)
-        => window?.UsedPercent is null
-            ? "n/a"
-            : $"{window.UsedPercent.Value:0.#}%";
+        => TryClampPercent(window?.UsedPercent, out var percent)
+            ? $"{percent:0.#}%"
+            : "n/a";
+
+    private static bool TryClampPercent(double? value, out double percent)
+    {
+        if (value is null || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
+        {
+            percent = 0;
+            return false;
+        }
+
+        percent = Math.Clamp(value.Value, 0, 100);
+        return true;
+    }
+
+    private static Color UsageColor(double? value)
+    {
+        if (!TryClampPercent(value, out var percent))
+        {
+            return MutedText;
+        }
+
+        return percent switch
+        {
+            >= 95 => Bad,
+            >= 80 => Warning,
+            _ => Good
+        };
+    }
 
     private static string FormatReset(RateLimitWindow? window)
     {
@@ -269,41 +298,36 @@ internal sealed class StatusForm : Form
     private sealed class UsageWindowPanel : Panel
     {
         private readonly Label _name = CreateMutedLabel();
-        private readonly Label _percent = new()
-        {
-            AutoSize = true,
-            Font = new Font("Segoe UI", 18F, FontStyle.Bold),
-            ForeColor = PrimaryText,
-            BackColor = Color.Transparent
-        };
+        private readonly UsageRingControl _ring = new();
         private readonly Label _reset = CreateMutedLabel();
 
         public UsageWindowPanel()
         {
             Size = new Size(150, 68);
             BackColor = Color.FromArgb(37, 40, 47);
+            _ring.BackColor = BackColor;
             _name.Location = new Point(8, 6);
-            _name.Size = new Size(130, 18);
-            _percent.Location = new Point(8, 22);
-            _reset.Location = new Point(92, 42);
-            _reset.Size = new Size(50, 18);
+            _name.Size = new Size(68, 18);
+            _ring.Location = new Point(82, 6);
+            _reset.Location = new Point(8, 36);
+            _reset.Size = new Size(68, 18);
 
             Controls.Add(_name);
-            Controls.Add(_percent);
+            Controls.Add(_ring);
             Controls.Add(_reset);
         }
 
         public void SetEmpty(string name)
         {
             _name.Text = name;
-            _percent.Text = "n/a";
+            _ring.SetValue(null);
             _reset.Text = "";
         }
 
         public void SetWindow(RateLimitWindow? window, string fallbackName)
         {
             _name.Text = FormatWindowName(window, fallbackName);
-            _percent.Text = FormatPercent(window);
+            _ring.SetValue(window?.UsedPercent);
             _reset.Text = FormatReset(window);
         }
 
@@ -312,6 +336,97 @@ internal sealed class StatusForm : Form
             base.OnPaint(e);
             using var pen = new Pen(CardBorder);
             e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        }
+    }
+
+    private sealed class UsageRingControl : Control
+    {
+        private double? _usedPercent;
+
+        public UsageRingControl()
+        {
+            Size = new Size(58, 58);
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer
+                | ControlStyles.ResizeRedraw
+                | ControlStyles.UserPaint,
+                true);
+        }
+
+        public void SetValue(double? usedPercent)
+        {
+            _usedPercent = usedPercent;
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            UsageRingRenderer.Draw(
+                e.Graphics,
+                ClientRectangle,
+                _usedPercent,
+                ForeColor: PrimaryText,
+                EmptyColor: RingEmpty,
+                AccentColor: UsageColor(_usedPercent),
+                BackColor);
+        }
+    }
+
+    private static class UsageRingRenderer
+    {
+        public static void Draw(
+            Graphics graphics,
+            Rectangle bounds,
+            double? usedPercent,
+            Color ForeColor,
+            Color EmptyColor,
+            Color AccentColor,
+            Color BackColor)
+        {
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.Clear(BackColor);
+
+            var size = Math.Min(bounds.Width, bounds.Height);
+            var stroke = Math.Max(4f, size * 0.11f);
+            var inset = stroke / 2f + 2f;
+            var rect = new RectangleF(
+                bounds.Left + inset,
+                bounds.Top + inset,
+                size - inset * 2f,
+                size - inset * 2f);
+
+            using var backgroundPen = new Pen(EmptyColor, stroke)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round
+            };
+            graphics.DrawArc(backgroundPen, rect, 0, 360);
+
+            if (TryClampPercent(usedPercent, out var percent))
+            {
+                using var accentPen = new Pen(AccentColor, stroke)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round
+                };
+                graphics.DrawArc(accentPen, rect, -90, (float)(percent / 100d * 360d));
+            }
+
+            var text = TryClampPercent(usedPercent, out var labelPercent)
+                ? $"{Math.Round(labelPercent):0}%"
+                : "n/a";
+
+            using var font = new Font("Segoe UI", text == "n/a" ? 8F : 9F, FontStyle.Bold);
+            using var brush = new SolidBrush(TryClampPercent(usedPercent, out _) ? ForeColor : EmptyColor);
+            using var format = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center
+            };
+
+            graphics.DrawString(text, font, brush, bounds, format);
         }
     }
 }
