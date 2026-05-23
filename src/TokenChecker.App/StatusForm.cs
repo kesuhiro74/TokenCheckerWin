@@ -7,14 +7,22 @@ namespace TokenChecker.App;
 
 internal sealed class StatusForm : Form
 {
-    private readonly Label _claudeStatus = CreateValueLabel();
+    private static readonly Color Surface = Color.FromArgb(32, 34, 39);
+    private static readonly Color Card = Color.FromArgb(43, 46, 53);
+    private static readonly Color CardBorder = Color.FromArgb(62, 66, 76);
+    private static readonly Color PrimaryText = Color.FromArgb(238, 240, 244);
+    private static readonly Color MutedText = Color.FromArgb(166, 172, 184);
+    private static readonly Color Good = Color.FromArgb(111, 207, 151);
+    private static readonly Color Warning = Color.FromArgb(242, 201, 118);
+    private static readonly Color Bad = Color.FromArgb(235, 113, 113);
+
+    private readonly Label _claudeBadge = CreateBadgeLabel();
     private readonly Label _claudeMessage = CreateMutedLabel();
-    private readonly Label _codexStatus = CreateValueLabel();
+    private readonly Label _codexBadge = CreateBadgeLabel();
     private readonly Label _codexMessage = CreateMutedLabel();
-    private readonly Label _codexShortUsage = CreateValueLabel();
-    private readonly Label _codexWeeklyUsage = CreateValueLabel();
-    private readonly Label _codexShortReset = CreateMutedLabel();
-    private readonly Label _codexWeeklyReset = CreateMutedLabel();
+    private readonly UsageWindowPanel _primaryWindow = new();
+    private readonly UsageWindowPanel _secondaryWindow = new();
+    private readonly Label _resetSummary = CreateMutedLabel();
     private readonly Label _updatedAt = CreateMutedLabel();
 
     public StatusForm()
@@ -25,23 +33,23 @@ internal sealed class StatusForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         TopMost = true;
-        Size = new Size(360, 310);
-        BackColor = Color.FromArgb(248, 249, 251);
+        Size = new Size(372, 332);
+        BackColor = Surface;
         Font = new Font("Segoe UI", 9F);
 
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(12),
-            RowCount = 4,
-            ColumnCount = 1
+            RowCount = 3,
+            ColumnCount = 1,
+            BackColor = Surface
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 136));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        root.Controls.Add(CreateCard("Claude", _claudeStatus, _claudeMessage), 0, 0);
+        root.Controls.Add(CreateClaudeCard(), 0, 0);
         root.Controls.Add(CreateCodexCard(), 0, 1);
         root.Controls.Add(_updatedAt, 0, 2);
 
@@ -51,14 +59,13 @@ internal sealed class StatusForm : Form
 
     public void SetLoading()
     {
-        _claudeStatus.Text = "更新中";
+        SetBadge(_claudeBadge, "更新中", Warning);
         _claudeMessage.Text = "";
-        _codexStatus.Text = "更新中";
+        SetBadge(_codexBadge, "更新中", Warning);
         _codexMessage.Text = "";
-        _codexShortUsage.Text = "300分: n/a";
-        _codexWeeklyUsage.Text = "10080分: n/a";
-        _codexShortReset.Text = "Reset: n/a";
-        _codexWeeklyReset.Text = "Reset: n/a";
+        _primaryWindow.SetEmpty("5h");
+        _secondaryWindow.SetEmpty("Weekly");
+        _resetSummary.Text = "Reset: n/a";
         _updatedAt.Text = "最終更新: 更新中";
     }
 
@@ -70,97 +77,103 @@ internal sealed class StatusForm : Form
             ? codex
             : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Codex" && service.Status == ProviderStatus.Available);
 
-        _claudeStatus.Text = claude?.Status.ToString() ?? "Unknown";
-        _claudeMessage.Text = SafeMessage(claude?.Message);
-
-        _codexStatus.Text = codex?.Status.ToString() ?? "Unknown";
-        _codexMessage.Text = SafeMessage(codex?.Message);
-
-        var shortWindow = fallbackCodex is null ? null : FindWindow(fallbackCodex, 300);
-        var weeklyWindow = fallbackCodex is null ? null : FindWindow(fallbackCodex, 10080);
-
-        _codexShortUsage.Text = $"300分: {FormatPercent(shortWindow)}";
-        _codexWeeklyUsage.Text = $"10080分: {FormatPercent(weeklyWindow)}";
-        _codexShortReset.Text = $"Reset: {FormatReset(shortWindow)}";
-        _codexWeeklyReset.Text = $"Reset: {FormatReset(weeklyWindow)}";
-        _updatedAt.Text = $"最終更新: {snapshot.CapturedAtUtc.ToLocalTime():yyyy/MM/dd HH:mm:ss}";
+        SetService(_claudeBadge, _claudeMessage, claude);
+        SetService(_codexBadge, _codexMessage, codex);
+        UpdateCodexWindows(fallbackCodex);
+        _updatedAt.Text = $"最終更新: {snapshot.CapturedAtUtc.ToLocalTime():HH:mm:ss}";
     }
 
-    private static Panel CreateCard(string title, Label status, Label message)
+    private Control CreateClaudeCard()
     {
-        var card = CreateCardPanel();
-        var titleLabel = CreateTitleLabel(title);
-        titleLabel.Location = new Point(10, 8);
-        status.Location = new Point(10, 30);
-        message.Location = new Point(116, 32);
-        message.Size = new Size(196, 36);
+        var card = new CardPanel();
+        var title = CreateTitleLabel("Claude");
+        title.Location = new Point(12, 10);
+        _claudeBadge.Location = new Point(12, 34);
+        _claudeMessage.Location = new Point(112, 35);
+        _claudeMessage.Size = new Size(214, 32);
 
-        card.Controls.Add(titleLabel);
-        card.Controls.Add(status);
-        card.Controls.Add(message);
+        card.Controls.Add(title);
+        card.Controls.Add(_claudeBadge);
+        card.Controls.Add(_claudeMessage);
         return card;
     }
 
-    private Panel CreateCodexCard()
+    private Control CreateCodexCard()
     {
-        var card = CreateCardPanel();
-        var titleLabel = CreateTitleLabel("Codex");
-        titleLabel.Location = new Point(10, 8);
-        _codexStatus.Location = new Point(10, 30);
-        _codexMessage.Location = new Point(116, 32);
-        _codexMessage.Size = new Size(196, 36);
-        _codexShortUsage.Location = new Point(10, 72);
-        _codexWeeklyUsage.Location = new Point(166, 72);
-        _codexShortReset.Location = new Point(10, 100);
-        _codexShortReset.Size = new Size(150, 24);
-        _codexWeeklyReset.Location = new Point(166, 100);
-        _codexWeeklyReset.Size = new Size(150, 24);
+        var card = new CardPanel();
+        var title = CreateTitleLabel("Codex");
+        title.Location = new Point(12, 10);
+        _codexBadge.Location = new Point(12, 34);
+        _codexMessage.Location = new Point(112, 35);
+        _codexMessage.Size = new Size(214, 32);
 
-        card.Controls.Add(titleLabel);
-        card.Controls.Add(_codexStatus);
+        _primaryWindow.Location = new Point(12, 76);
+        _secondaryWindow.Location = new Point(174, 76);
+        _resetSummary.Location = new Point(12, 154);
+        _resetSummary.Size = new Size(316, 24);
+
+        card.Controls.Add(title);
+        card.Controls.Add(_codexBadge);
         card.Controls.Add(_codexMessage);
-        card.Controls.Add(_codexShortUsage);
-        card.Controls.Add(_codexWeeklyUsage);
-        card.Controls.Add(_codexShortReset);
-        card.Controls.Add(_codexWeeklyReset);
+        card.Controls.Add(_primaryWindow);
+        card.Controls.Add(_secondaryWindow);
+        card.Controls.Add(_resetSummary);
         return card;
     }
 
-    private static Panel CreateCardPanel()
-        => new()
+    private void UpdateCodexWindows(ServiceUsage? codex)
+    {
+        var windows = codex?.Windows
+            .Where(window => window.WindowDurationMins is not null)
+            .OrderBy(window => window.WindowDurationMins)
+            .ToArray() ?? Array.Empty<RateLimitWindow>();
+
+        var first = windows.ElementAtOrDefault(0);
+        var second = windows.ElementAtOrDefault(1);
+
+        _primaryWindow.SetWindow(first, "5h");
+        _secondaryWindow.SetWindow(second, "Weekly");
+        _resetSummary.Text = $"Reset: {FormatReset(first)} / {FormatReset(second)}";
+    }
+
+    private static void SetService(Label badge, Label message, ServiceUsage? service)
+    {
+        var status = service?.Status ?? ProviderStatus.Unknown;
+        SetBadge(badge, status.ToString(), StatusColor(status));
+        message.Text = SafeMessage(service?.Message);
+    }
+
+    private static void SetBadge(Label label, string text, Color color)
+    {
+        label.Text = text;
+        label.ForeColor = color;
+    }
+
+    private static Color StatusColor(ProviderStatus status)
+        => status switch
         {
-            Dock = DockStyle.Fill,
-            Margin = new Padding(0, 0, 0, 10),
-            BackColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle
+            ProviderStatus.Available => Good,
+            ProviderStatus.NotInstalled or ProviderStatus.NotLoggedIn => Warning,
+            ProviderStatus.Error => Bad,
+            _ => MutedText
         };
 
-    private static Label CreateTitleLabel(string text)
-        => new()
+    private static string FormatWindowName(RateLimitWindow? window, string fallback)
+    {
+        var minutes = window?.WindowDurationMins;
+        if (minutes is null)
         {
-            Text = text,
-            AutoSize = true,
-            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(35, 38, 45)
-        };
+            return fallback;
+        }
 
-    private static Label CreateValueLabel()
-        => new()
+        return minutes.Value switch
         {
-            AutoSize = true,
-            Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(30, 35, 45)
+            300 => "5h",
+            10080 => "Weekly",
+            >= 60 when minutes.Value % 60 == 0 => $"{minutes.Value / 60}h",
+            _ => $"{minutes.Value}m"
         };
-
-    private static Label CreateMutedLabel()
-        => new()
-        {
-            AutoEllipsis = true,
-            ForeColor = Color.FromArgb(90, 96, 106)
-        };
-
-    private static RateLimitWindow? FindWindow(ServiceUsage service, long durationMins)
-        => service.Windows.FirstOrDefault(window => window.WindowDurationMins == durationMins);
+    }
 
     private static string FormatPercent(RateLimitWindow? window)
         => window?.UsedPercent is null
@@ -168,9 +181,56 @@ internal sealed class StatusForm : Form
             : $"{window.UsedPercent.Value:0.#}%";
 
     private static string FormatReset(RateLimitWindow? window)
-        => window?.ResetAtUtc is null
-            ? "n/a"
-            : window.ResetAtUtc.Value.ToLocalTime().ToString("MM/dd HH:mm");
+    {
+        if (window?.ResetAtUtc is null)
+        {
+            return "n/a";
+        }
+
+        var remaining = window.ResetAtUtc.Value - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return "soon";
+        }
+
+        if (remaining.TotalDays >= 1)
+        {
+            return $"{Math.Ceiling(remaining.TotalDays)}d";
+        }
+
+        if (remaining.TotalHours >= 1)
+        {
+            return $"{Math.Ceiling(remaining.TotalHours)}h";
+        }
+
+        return $"{Math.Max(1, Math.Ceiling(remaining.TotalMinutes))}m";
+    }
+
+    private static Label CreateTitleLabel(string text)
+        => new()
+        {
+            Text = text,
+            AutoSize = true,
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+            ForeColor = PrimaryText,
+            BackColor = Color.Transparent
+        };
+
+    private static Label CreateBadgeLabel()
+        => new()
+        {
+            AutoSize = true,
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+            BackColor = Color.Transparent
+        };
+
+    private static Label CreateMutedLabel()
+        => new()
+        {
+            AutoEllipsis = true,
+            ForeColor = MutedText,
+            BackColor = Color.Transparent
+        };
 
     private static string SafeMessage(string? message)
     {
@@ -186,5 +246,72 @@ internal sealed class StatusForm : Form
         masked = Regex.Replace(masked, @"\b[A-Za-z0-9_-]{32,}\b", "<redacted>");
 
         return masked.Length <= 120 ? masked : masked[..120];
+    }
+
+    private sealed class CardPanel : Panel
+    {
+        public CardPanel()
+        {
+            Dock = DockStyle.Fill;
+            Margin = new Padding(0, 0, 0, 10);
+            Padding = new Padding(12);
+            BackColor = Card;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            using var pen = new Pen(CardBorder);
+            e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        }
+    }
+
+    private sealed class UsageWindowPanel : Panel
+    {
+        private readonly Label _name = CreateMutedLabel();
+        private readonly Label _percent = new()
+        {
+            AutoSize = true,
+            Font = new Font("Segoe UI", 18F, FontStyle.Bold),
+            ForeColor = PrimaryText,
+            BackColor = Color.Transparent
+        };
+        private readonly Label _reset = CreateMutedLabel();
+
+        public UsageWindowPanel()
+        {
+            Size = new Size(150, 68);
+            BackColor = Color.FromArgb(37, 40, 47);
+            _name.Location = new Point(8, 6);
+            _name.Size = new Size(130, 18);
+            _percent.Location = new Point(8, 22);
+            _reset.Location = new Point(92, 42);
+            _reset.Size = new Size(50, 18);
+
+            Controls.Add(_name);
+            Controls.Add(_percent);
+            Controls.Add(_reset);
+        }
+
+        public void SetEmpty(string name)
+        {
+            _name.Text = name;
+            _percent.Text = "n/a";
+            _reset.Text = "";
+        }
+
+        public void SetWindow(RateLimitWindow? window, string fallbackName)
+        {
+            _name.Text = FormatWindowName(window, fallbackName);
+            _percent.Text = FormatPercent(window);
+            _reset.Text = FormatReset(window);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            using var pen = new Pen(CardBorder);
+            e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        }
     }
 }

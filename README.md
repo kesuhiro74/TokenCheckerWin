@@ -94,6 +94,10 @@ Manual checks:
 - Left-clicking the icon shows one small status window; repeated left-clicks focus the same window.
 - Closing the status window hides it without exiting the app.
 - Right-clicking the icon opens a menu with `今すぐ更新` and `終了`.
+- The status window uses compact Claude and Codex cards.
+- Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
+- Reset timing is shown as remaining time such as `45m`, `3h`, or `2d`.
+- Claude `NotInstalled`, `NotLoggedIn`, `Error`, and `Available` states remain readable in the compact card.
 - Repeated `今すぐ更新` clicks do not start overlapping updates.
 - Exiting during an update removes the tray icon and does not leave an app process behind.
 - If a refresh fails after a successful refresh, the last successful Codex window values remain visible while the current status/message shows the failure.
