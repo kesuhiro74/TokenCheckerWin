@@ -2,7 +2,7 @@
 
 Windows notification area app for checking Claude Code and OpenAI Codex usage and rate-limit state.
 
-This repository currently contains the first console proof of concept. It does not implement the WinForms notification UI yet.
+This repository currently contains a console proof of concept and a minimal WinForms notification area app.
 
 ## Requirements
 
@@ -15,7 +15,7 @@ This repository currently contains the first console proof of concept. It does n
 
 - `src/TokenChecker.Core`: shared usage models, provider interfaces, aggregator, and usage providers
 - `src/TokenChecker.Poc`: console POC that writes a `UsageSnapshot` JSON document to stdout
-- `src/TokenChecker.App`: minimal future WinForms + `NotifyIcon` app shell
+- `src/TokenChecker.App`: minimal WinForms + `NotifyIcon` tray app
 
 ## Build
 
@@ -75,7 +75,6 @@ Expected result in a Codex logged-in environment:
 
 Current constraints:
 
-- The WinForms notification UI is not implemented yet.
 - The POC does not use Codex `chatgptAuthTokens`.
 - Output intentionally avoids tokens, authentication data, email addresses, and full local paths.
 
@@ -94,6 +93,13 @@ Manual checks:
 - Left-clicking the icon shows one small status window; repeated left-clicks focus the same window.
 - Closing the status window hides it without exiting the app.
 - Right-clicking the icon opens a menu with `今すぐ更新` and `終了`.
+- Right-clicking the icon opens `設定`.
+- The settings window can change refresh interval between `30秒`, `1分`, `5分`, and `10分`.
+- The settings window can toggle Windows login startup.
+- Settings are saved under the current user's AppData folder and survive app restarts.
+- If the settings file is damaged, the app starts with default settings.
+- The status window position is restored after it has been moved and closed.
+- Claude and Codex visibility can be toggled in settings.
 - The status window uses compact Claude and Codex cards.
 - Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
 - Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.

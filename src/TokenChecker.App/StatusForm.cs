@@ -26,6 +26,9 @@ internal sealed class StatusForm : Form
     private readonly UsageWindowPanel _secondaryWindow = new();
     private readonly Label _resetSummary = CreateMutedLabel();
     private readonly Label _updatedAt = CreateMutedLabel();
+    private readonly TableLayoutPanel _root;
+    private readonly Control _claudeCard;
+    private readonly Control _codexCard;
 
     public StatusForm()
     {
@@ -39,7 +42,7 @@ internal sealed class StatusForm : Form
         BackColor = Surface;
         Font = new Font("Segoe UI", 9F);
 
-        var root = new TableLayoutPanel
+        _root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(12),
@@ -47,16 +50,37 @@ internal sealed class StatusForm : Form
             ColumnCount = 1,
             BackColor = Surface
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
+        _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        root.Controls.Add(CreateClaudeCard(), 0, 0);
-        root.Controls.Add(CreateCodexCard(), 0, 1);
-        root.Controls.Add(_updatedAt, 0, 2);
+        _claudeCard = CreateClaudeCard();
+        _codexCard = CreateCodexCard();
+        _root.Controls.Add(_claudeCard, 0, 0);
+        _root.Controls.Add(_codexCard, 0, 1);
+        _root.Controls.Add(_updatedAt, 0, 2);
 
-        Controls.Add(root);
+        Controls.Add(_root);
         SetLoading();
+    }
+
+    public void ApplySettings(AppSettings settings)
+    {
+        var showClaude = settings.IsServiceVisible("Claude");
+        var showCodex = settings.IsServiceVisible("Codex");
+
+        _claudeCard.Visible = showClaude;
+        _codexCard.Visible = showCodex;
+        _root.RowStyles[0].Height = showClaude ? 84 : 0;
+        _root.RowStyles[1].Height = showCodex ? 190 : 0;
+
+        Height = (showClaude, showCodex) switch
+        {
+            (true, true) => 332,
+            (true, false) => 142,
+            (false, true) => 238,
+            _ => 332
+        };
     }
 
     public void SetLoading()
