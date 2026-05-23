@@ -3,7 +3,11 @@ namespace TokenChecker.Core.Providers;
 internal static class CommandLineProbe
 {
     public static bool ExistsOnPath(string commandName)
+        => TryFindOnPath(commandName, out _);
+
+    public static bool TryFindOnPath(string commandName, out string commandPath)
     {
+        commandPath = string.Empty;
         var path = Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -21,6 +25,7 @@ internal static class CommandLineProbe
                 var candidate = Path.Combine(directory, commandName + extension);
                 if (File.Exists(candidate))
                 {
+                    commandPath = candidate;
                     return true;
                 }
             }
@@ -34,12 +39,12 @@ internal static class CommandLineProbe
         var pathExt = Environment.GetEnvironmentVariable("PATHEXT");
         if (string.IsNullOrWhiteSpace(pathExt))
         {
-            return new[] { ".exe", ".cmd", ".bat" };
+            return new[] { ".exe", ".cmd", ".bat", string.Empty };
         }
 
         return pathExt
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Prepend(string.Empty)
+            .Append(string.Empty)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }

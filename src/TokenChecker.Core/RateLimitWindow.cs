@@ -5,4 +5,6 @@ public sealed record RateLimitWindow(
     DateTimeOffset? ResetAtUtc,
     long? Used,
     long? Limit,
-    long? Remaining);
+    long? Remaining,
+    double? UsedPercent = null,
+    long? WindowDurationMins = null);

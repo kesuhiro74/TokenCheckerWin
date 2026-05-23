@@ -13,7 +13,7 @@ This repository currently contains the first console proof of concept. It does n
 
 ## Projects
 
-- `src/TokenChecker.Core`: shared usage models, provider interfaces, aggregator, and safe provider stubs
+- `src/TokenChecker.Core`: shared usage models, provider interfaces, aggregator, and usage providers
 - `src/TokenChecker.Poc`: console POC that writes a `UsageSnapshot` JSON document to stdout
 - `src/TokenChecker.App`: minimal future WinForms + `NotifyIcon` app shell
 
@@ -29,13 +29,17 @@ dotnet build
 dotnet run --project src/TokenChecker.Poc
 ```
 
-The POC prints a JSON `UsageSnapshot` for Claude and Codex. Current provider implementations are safe stubs:
+The POC prints a JSON `UsageSnapshot` for Claude and Codex. Current provider behavior:
 
 - They check whether `claude` or `codex` appears to be available on `PATH`.
-- They do not execute those CLIs.
+- The Codex provider starts `codex app-server --listen stdio://`, sends JSONL requests over stdin/stdout, and stops the app-server process after the read attempt.
+- The Codex provider calls `initialize`, `account/read`, and `account/rateLimits/read`.
+- Codex `rateLimitsByLimitId` entries are parsed generically. `usedPercent`, `windowDurationMins`, and `resetsAt` are exposed in `RateLimitWindow` when available.
 - They do not read or print tokens, authentication data, email addresses, or local paths.
 - Missing CLIs are reported as `NotInstalled`.
-- Installed CLIs are reported as `NotLoggedIn` until real usage collection is implemented.
+- Codex login-required responses are reported as `NotLoggedIn`.
+- Codex app-server startup failures, timeouts, and JSON/protocol failures are reported as `Error` without failing the whole POC.
+- Claude usage collection is still a safe stub.
 
 ## VS Code
 
@@ -49,17 +53,27 @@ Open this folder in VS Code, then use:
 
 ## Current Verification
 
-Verification was attempted in this environment on 2026-05-23, but it could not complete because the machine has .NET runtimes only and no .NET SDK installed.
-
-Observed failure:
-
-```text
-No .NET SDKs were found.
-```
-
-Install the .NET 8 SDK, then run:
+Verification was run in this environment on 2026-05-23:
 
 ```powershell
 dotnet build
 dotnet run --project src/TokenChecker.Poc
 ```
+
+Observed result:
+
+- `dotnet build` succeeded.
+- `dotnet run --project src/TokenChecker.Poc` succeeded.
+- Claude was reported as `NotInstalled`.
+- Codex CLI was detected, but this environment was not logged in, so Codex was reported as `NotLoggedIn`.
+
+Expected result in a Codex logged-in environment:
+
+- Codex is reported as `Available`.
+- `UsageSnapshot.Services[].Windows` contains at least one Codex `RateLimitWindow`.
+
+Current constraints:
+
+- The WinForms notification UI is not implemented yet.
+- The POC does not use Codex `chatgptAuthTokens`.
+- Output intentionally avoids tokens, authentication data, email addresses, and full local paths.
