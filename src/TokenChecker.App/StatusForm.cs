@@ -100,12 +100,15 @@ internal sealed class StatusForm : Form
     {
         var claude = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Claude");
         var codex = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Codex");
+        var fallbackClaude = claude?.Status == ProviderStatus.Available
+            ? claude
+            : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Claude" && service.Status == ProviderStatus.Available);
         var fallbackCodex = codex?.Status == ProviderStatus.Available
             ? codex
             : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Codex" && service.Status == ProviderStatus.Available);
 
         SetService(_claudeBadge, _claudeMessage, claude);
-        SetClaudeUsage(claude);
+        SetClaudeUsage(fallbackClaude);
         SetService(_codexBadge, _codexMessage, codex);
         UpdateCodexWindows(fallbackCodex);
         _updatedAt.Text = $"最終更新: {snapshot.CapturedAtUtc.ToLocalTime():HH:mm:ss}";

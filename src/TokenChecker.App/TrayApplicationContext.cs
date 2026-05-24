@@ -17,8 +17,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new();
+    private readonly Dictionary<string, ServiceUsage> _lastSuccessfulServices = new(StringComparer.OrdinalIgnoreCase);
     private AppSettings _settings;
-    private UsageSnapshot? _lastSuccessfulSnapshot;
     private bool _disposed;
 
     public TrayApplicationContext()
@@ -97,7 +97,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             try
             {
                 snapshot = await _aggregator.CaptureAsync(_shutdown.Token).ConfigureAwait(true);
-                _lastSuccessfulSnapshot = snapshot;
+                UpdateLastSuccessfulServices(snapshot);
             }
             catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
             {
@@ -119,8 +119,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 return;
             }
 
-            _statusForm.UpdateSnapshot(snapshot, _lastSuccessfulSnapshot);
-            _notifyIcon.Text = TrimTooltip(BuildTooltip(_lastSuccessfulSnapshot ?? snapshot));
+            var fallbackSnapshot = BuildFallbackSnapshot(snapshot.CapturedAtUtc);
+            _statusForm.UpdateSnapshot(snapshot, fallbackSnapshot);
+            _notifyIcon.Text = TrimTooltip(BuildTooltip(fallbackSnapshot ?? snapshot));
         }
         finally
         {
@@ -131,6 +132,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
             _refreshLock.Release();
         }
+    }
+
+    private void UpdateLastSuccessfulServices(UsageSnapshot snapshot)
+    {
+        foreach (var service in snapshot.Services)
+        {
+            if (service.Status == ProviderStatus.Available && service.Windows.Count > 0)
+            {
+                _lastSuccessfulServices[service.ServiceName] = service;
+            }
+        }
+    }
+
+    private UsageSnapshot? BuildFallbackSnapshot(DateTimeOffset capturedAtUtc)
+    {
+        if (_lastSuccessfulServices.Count == 0)
+        {
+            return null;
+        }
+
+        return new UsageSnapshot(capturedAtUtc, _lastSuccessfulServices.Values.ToArray());
     }
 
     private void NotifyIconOnMouseUp(object? sender, MouseEventArgs args)

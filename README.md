@@ -117,4 +117,5 @@ Manual checks:
 - Claude `NotInstalled`, `NotLoggedIn`, `Error`, and `Available` states remain readable in the compact card.
 - Repeated `今すぐ更新` clicks do not start overlapping updates.
 - Exiting during an update removes the tray icon and does not leave an app process behind.
-- If a refresh fails after a successful refresh, the last successful Codex window values remain visible while the current status/message shows the failure.
+- If a refresh fails after a successful refresh, the last successful service values are retained per service, so a temporary Claude or Codex failure does not erase the other service's last known windows.
+- Claude CLI diagnostics terminate the `claude --version` child process if the version check times out.

@@ -14,6 +14,7 @@ public sealed class ClaudeUsageProvider : IUsageProvider
     private const string OAuthBetaHeader = "oauth-2025-04-20";
 
     private static readonly TimeSpan VersionTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan ProcessKillTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan UsageTimeout = TimeSpan.FromSeconds(10);
     private static readonly HttpClient HttpClient = new()
     {
@@ -69,18 +70,18 @@ public sealed class ClaudeUsageProvider : IUsageProvider
 
     private static async Task<bool> HasVersionAsync(string claudeCommand, CancellationToken cancellationToken)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(VersionTimeout);
+
+        using var process = Process.Start(CreateVersionStartInfo(claudeCommand));
+
+        if (process is null)
+        {
+            return false;
+        }
+
         try
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(VersionTimeout);
-
-            using var process = Process.Start(CreateVersionStartInfo(claudeCommand));
-
-            if (process is null)
-            {
-                return false;
-            }
-
             process.ErrorDataReceived += static (_, _) => { };
             process.OutputDataReceived += static (_, _) => { };
             process.BeginErrorReadLine();
@@ -91,11 +92,42 @@ public sealed class ClaudeUsageProvider : IUsageProvider
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            await StopProcessAsync(process).ConfigureAwait(false);
             throw;
+        }
+        catch (OperationCanceledException)
+        {
+            await StopProcessAsync(process).ConfigureAwait(false);
+            return false;
         }
         catch
         {
             return false;
+        }
+    }
+
+    private static async Task StopProcessAsync(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            return;
+        }
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(ProcessKillTimeout);
+            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Best-effort cleanup only.
         }
     }
 
