@@ -6,5 +6,7 @@ public enum ProviderStatus
     Available = 1,
     NotInstalled = 2,
     NotLoggedIn = 3,
-    Error = 4
+    Error = 4,
+    Unauthorized = 5,
+    RateLimited = 6
 }

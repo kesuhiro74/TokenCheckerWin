@@ -41,7 +41,10 @@ The POC prints a JSON `UsageSnapshot` for Claude and Codex. Current provider beh
 - Codex TUI startup does not guarantee usage collection is available. The app-server `account/read` result must be a ChatGPT account (`account.type == "chatgpt"`); API-key or unknown account modes cannot provide rate-limit usage for this POC.
 - Codex app-server startup failures, timeouts, and JSON/protocol failures are reported as `Error` without failing the whole POC.
 - Claude CLI and `.credentials.json` presence are detected safely, but Claude usage API collection is not implemented yet.
-- When Claude CLI and credentials are present, Claude is reported as `Error` with `Claude usage API is not implemented yet.` instead of `NotLoggedIn`.
+- Claude usage collection uses an undocumented OAuth endpoint that may change without notice.
+- Claude OAuth credentials are read only to extract the access token needed for that endpoint; credential JSON, tokens, email addresses, and full local paths are never printed.
+- Claude `five_hour` usage is mapped to a 300-minute `RateLimitWindow`; `seven_day` usage is mapped to a 10080-minute `RateLimitWindow` when present.
+- Claude usage endpoint `401`/`403` is reported as `Unauthorized`, `429` as `RateLimited`, and 5xx/timeouts/invalid JSON as `Error`.
 
 ## VS Code
 

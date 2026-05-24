@@ -20,6 +20,7 @@ internal sealed class StatusForm : Form
 
     private readonly Label _claudeBadge = CreateBadgeLabel();
     private readonly Label _claudeMessage = CreateMutedLabel();
+    private readonly Label _claudeUsage = CreateMutedLabel();
     private readonly Label _codexBadge = CreateBadgeLabel();
     private readonly Label _codexMessage = CreateMutedLabel();
     private readonly UsageWindowPanel _primaryWindow = new();
@@ -104,6 +105,7 @@ internal sealed class StatusForm : Form
             : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Codex" && service.Status == ProviderStatus.Available);
 
         SetService(_claudeBadge, _claudeMessage, claude);
+        SetClaudeUsage(claude);
         SetService(_codexBadge, _codexMessage, codex);
         UpdateCodexWindows(fallbackCodex);
         _updatedAt.Text = $"最終更新: {snapshot.CapturedAtUtc.ToLocalTime():HH:mm:ss}";
@@ -116,11 +118,14 @@ internal sealed class StatusForm : Form
         title.Location = new Point(12, 10);
         _claudeBadge.Location = new Point(12, 34);
         _claudeMessage.Location = new Point(112, 35);
-        _claudeMessage.Size = new Size(214, 32);
+        _claudeMessage.Size = new Size(214, 20);
+        _claudeUsage.Location = new Point(112, 54);
+        _claudeUsage.Size = new Size(214, 18);
 
         card.Controls.Add(title);
         card.Controls.Add(_claudeBadge);
         card.Controls.Add(_claudeMessage);
+        card.Controls.Add(_claudeUsage);
         return card;
     }
 
@@ -169,6 +174,23 @@ internal sealed class StatusForm : Form
         message.Text = SafeMessage(service?.Message);
     }
 
+    private void SetClaudeUsage(ServiceUsage? claude)
+    {
+        if (claude?.Status != ProviderStatus.Available || claude.Windows.Count == 0)
+        {
+            _claudeUsage.Text = "";
+            return;
+        }
+
+        var windows = claude.Windows
+            .Where(window => window.UsedPercent is not null)
+            .OrderBy(window => window.WindowDurationMins)
+            .Take(2)
+            .Select(window => $"{FormatWindowName(window, "Usage")} {FormatPercent(window)}");
+
+        _claudeUsage.Text = string.Join(" / ", windows);
+    }
+
     private static void SetBadge(Label label, string text, Color color)
     {
         label.Text = text;
@@ -179,7 +201,7 @@ internal sealed class StatusForm : Form
         => status switch
         {
             ProviderStatus.Available => Good,
-            ProviderStatus.NotInstalled or ProviderStatus.NotLoggedIn => Warning,
+            ProviderStatus.NotInstalled or ProviderStatus.NotLoggedIn or ProviderStatus.Unauthorized or ProviderStatus.RateLimited => Warning,
             ProviderStatus.Error => Bad,
             _ => MutedText
         };
