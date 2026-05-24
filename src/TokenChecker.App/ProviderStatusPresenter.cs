@@ -12,7 +12,10 @@ internal static class ProviderStatusPresenter
             ProviderStatus.NotInstalled => "未インストール",
             ProviderStatus.NotLoggedIn => "未ログイン",
             ProviderStatus.Unauthorized => "認証エラー",
-            ProviderStatus.RateLimited => "レート制限中",
+            // "レート制限中" was easily misread as "the user's LLM quota is
+            // throttled", which is not what this state actually means — it
+            // only fires when the usage endpoint itself returns HTTP 429.
+            ProviderStatus.RateLimited => "取得を一時制限中",
             ProviderStatus.Error => "取得失敗",
             _ => "状態不明"
         };
@@ -33,9 +36,11 @@ internal static class ProviderStatusPresenter
         {
             ProviderStatus.Available => $"{serviceName} の使用率を取得できています",
             ProviderStatus.NotInstalled => $"{serviceName} CLI が見つかりません",
-            ProviderStatus.NotLoggedIn => $"{serviceName} にログインが必要です",
+            ProviderStatus.NotLoggedIn => $"{serviceName}にログインしてください",
             ProviderStatus.Unauthorized => $"{serviceName} の認証に失敗しました。再ログインしてください",
-            ProviderStatus.RateLimited => $"{serviceName} のレート制限に達しています",
+            ProviderStatus.RateLimited => hasFallbackWindows
+                ? $"{serviceName} の取得が一時的に制限されています。前回成功値を表示しています"
+                : $"{serviceName} の取得が一時的に制限されています",
             ProviderStatus.Error => hasFallbackWindows
                 ? "一時的に取得できません。前回成功値を表示しています"
                 : "一時的に取得できません",

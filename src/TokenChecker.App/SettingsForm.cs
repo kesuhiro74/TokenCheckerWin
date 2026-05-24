@@ -342,7 +342,7 @@ internal sealed class SettingsForm : Form
             ProviderStatus.NotLoggedIn => "未ログイン",
             ProviderStatus.NotInstalled => "CLI未検出",
             ProviderStatus.Unauthorized => "認証エラー",
-            ProviderStatus.RateLimited => "レート制限中",
+            ProviderStatus.RateLimited => "取得を一時制限中",
             ProviderStatus.Error => "取得失敗",
             _ => "状態不明"
         };

@@ -300,6 +300,7 @@ internal sealed class StatusForm : Form
         private readonly string _displayName;
         private readonly Label _title;
         private readonly Label _badge;
+        private readonly Label _statusMessage;
         private readonly Label _shortWindowLabel;
         private readonly Label _shortPercent;
         private readonly UsageBarControl _shortBar;
@@ -333,6 +334,21 @@ internal sealed class StatusForm : Form
                 ForeColor = MutedText,
                 Location = new Point(264, 14),
                 Text = "状態不明"
+            };
+
+            // Sits right under the title and gives the user an action hint when
+            // status is non-Available (e.g. "Claude Code にログインしてください").
+            _statusMessage = new Label
+            {
+                AutoSize = false,
+                Size = new Size(340, 16),
+                Location = new Point(14, 32),
+                ForeColor = MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Font = new Font("Segoe UI", 8.5F),
+                Visible = false
             };
 
             _shortWindowLabel = new Label
@@ -435,6 +451,7 @@ internal sealed class StatusForm : Form
 
             Controls.Add(_title);
             Controls.Add(_badge);
+            Controls.Add(_statusMessage);
             Controls.Add(_shortWindowLabel);
             Controls.Add(_shortPercent);
             Controls.Add(_shortBar);
@@ -449,6 +466,8 @@ internal sealed class StatusForm : Form
         {
             _badge.Text = "更新中";
             _badge.ForeColor = Warning;
+            _statusMessage.Visible = false;
+            _statusMessage.Text = string.Empty;
             _shortPercent.Text = "—";
             _shortPercent.ForeColor = MutedText;
             _shortBar.SetValue(null);
@@ -466,6 +485,22 @@ internal sealed class StatusForm : Form
 
             var shortWindow = FindFiveHourWindow(fallback);
             var weekly = FindWeeklyWindow(fallback);
+
+            // Surface the friendly action hint right under the title whenever
+            // status is non-Available so the user knows what to do. Available
+            // hides the line entirely so the layout stays compact.
+            var hasFallbackWindows = fallback is { Windows.Count: > 0 };
+            if (status == ProviderStatus.Available)
+            {
+                _statusMessage.Visible = false;
+                _statusMessage.Text = string.Empty;
+            }
+            else
+            {
+                _statusMessage.Text = ProviderStatusPresenter.FriendlyMessage(_displayName, status, hasFallbackWindows);
+                _statusMessage.ForeColor = StatusColor(status);
+                _statusMessage.Visible = true;
+            }
 
             _shortPercent.Text = FormatPercent(shortWindow);
             _shortPercent.ForeColor = UsageAccentColor(shortWindow?.UsedPercent);

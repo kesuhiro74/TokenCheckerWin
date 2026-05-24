@@ -190,7 +190,13 @@ public sealed class ClaudeUsageProvider : IUsageProvider
             var accessToken = await TryReadAccessTokenAsync(configDirectory, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(accessToken))
             {
-                return ClaudeUsageReadResult.Failed(ProviderStatus.Error, "accessTokenPresent=false");
+                // .credentials.json exists but contains no usable access token.
+                // This typically means the user ran /logout (which can leave an
+                // empty file behind), or the JSON structure does not match what
+                // we expect. Treat it as "not logged in" so the UI can prompt
+                // the user to log in instead of mislabeling it as a transient
+                // error or rate-limit event.
+                return ClaudeUsageReadResult.Failed(ProviderStatus.NotLoggedIn, "accessTokenPresent=false");
             }
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
