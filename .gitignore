@@ -7,3 +7,5 @@ obj/
 *.rsuser
 TestResults/
 artifacts/
+
+publish/
