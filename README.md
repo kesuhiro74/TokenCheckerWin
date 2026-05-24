@@ -114,7 +114,7 @@ Manual checks:
 - When a CLI cannot be found on PATH, the login button reports `Claude Code CLI が見つかりません` / `Codex CLI が見つかりません` and does not attempt to spawn anything.
 - The settings window can change refresh interval between `30秒`, `1分`, `5分`, and `10分`.
 - The settings window can toggle Windows login startup.
-- The settings window and tray menu can toggle compact mode.
+- The settings window and tray menu can switch between three display modes: `通常モード` (Normal), `コンパクトモード` (Compact), and `ミニマムモード` (Minimum). The selection is persisted in `settings.json` as `DisplayMode`; the legacy `CompactMode` boolean is still written for back-compat with older builds.
 - Settings are saved under the current user's AppData folder and survive app restarts.
 - If the settings file is damaged, the app starts with default settings.
 - The status window position is restored after it has been moved and closed.
@@ -124,11 +124,14 @@ Manual checks:
 - Toggling Windows login startup adds or removes the `TokenCheckerWin` value under the current user's Run key.
 - Published app builds should register the published executable path for startup; development `dotnet` runs fall back to a `dotnet "<app dll>"` command.
 - `settings.json` contains only refresh interval, startup preference, visible services, and the status window position.
-- The status window uses compact Claude and Codex cards.
-- The status window labels Claude as `Claude Code` and shows small code-drawn service icons for Claude Code and Codex.
+- The status window uses a light theme with rounded white cards on a soft gray surface; service icons next to the `Claude Code` / `Codex` headings have been removed so the layout is text-first.
+- The status window labels Claude as `Claude Code` everywhere — section title, settings checkbox, tray tooltip, and login menu items.
+- Normal mode shows each service as a card with a `5時間` percentage and horizontal progress bar as the headline, a reset-remaining line (`あと2時間18分（11:50リセット）`), and a smaller `週次` percentage below. A `詳細を表示` link expands the masked diagnostics text box without leaving the card.
+- Compact mode keeps the two-up donut layout (`5時間` only) with badge and reset line under the title.
+- Minimum mode is a small horizontal pill (~224 × 84) that only renders the Claude Code and Codex `5h` donut + percentage side by side. Weekly, badges, reset times, and diagnostic links are intentionally hidden in this mode; it is the smallest at-a-glance view. Left-click and right-click menu still work the same way.
 - Claude and Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
 - Claude and Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.
-- Compact mode shows only the Claude Code and Codex `5h` usage rings and reset timing in a smaller window.
+- Compact mode shows only the Claude Code and Codex `5h` usage rings and reset timing in a smaller window. Minimum mode further drops everything except the two `5h` donuts and their percentages.
 - Donut rings use muted color for missing values, warning color at 80% or higher, and danger color at 95% or higher.
 - Reset timing is shown in local time, such as `あと2時間18分（11:50リセット）` for `5h` and `あと3日4時間（5/27 18:00リセット）` for `Weekly`.
 - Status badges are shown in Japanese (`正常取得`, `未インストール`, `未ログイン`, `認証エラー`, `レート制限中`, `取得失敗`, `状態不明`) — raw `ProviderStatus` enum names are not displayed.

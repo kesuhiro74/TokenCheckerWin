@@ -7,8 +7,8 @@ namespace TokenChecker.App;
 internal sealed class SettingsForm : Form
 {
     private readonly ComboBox _refreshInterval = new();
+    private readonly ComboBox _displayMode = new();
     private readonly CheckBox _autoStart = new();
-    private readonly CheckBox _compactMode = new();
     private readonly CheckBox _showClaude = new();
     private readonly CheckBox _showCodex = new();
 
@@ -31,7 +31,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(404, 412);
+        Size = new Size(404, 432);
         Font = new Font("Segoe UI", 9F);
 
         var title = new Label
@@ -57,41 +57,51 @@ internal sealed class SettingsForm : Form
             _refreshInterval.Items.Add(new RefreshIntervalOption(option));
         }
 
+        var displayModeLabel = new Label
+        {
+            Text = "表示モード",
+            AutoSize = true,
+            Location = new Point(16, 88)
+        };
+
+        _displayMode.DropDownStyle = ComboBoxStyle.DropDownList;
+        _displayMode.Location = new Point(112, 84);
+        _displayMode.Size = new Size(170, 24);
+        _displayMode.Items.Add(new DisplayModeOption(DisplayMode.Normal));
+        _displayMode.Items.Add(new DisplayModeOption(DisplayMode.Compact));
+        _displayMode.Items.Add(new DisplayModeOption(DisplayMode.Minimum));
+
         _autoStart.Text = "Windowsログイン時に自動起動";
         _autoStart.AutoSize = true;
-        _autoStart.Location = new Point(16, 84);
-
-        _compactMode.Text = "コンパクトモード";
-        _compactMode.AutoSize = true;
-        _compactMode.Location = new Point(16, 110);
+        _autoStart.Location = new Point(16, 122);
 
         var servicesLabel = new Label
         {
             Text = "表示対象",
             AutoSize = true,
-            Location = new Point(16, 142)
+            Location = new Point(16, 156)
         };
 
         _showClaude.Text = "Claude Code";
         _showClaude.AutoSize = true;
-        _showClaude.Location = new Point(112, 140);
+        _showClaude.Location = new Point(112, 154);
         _showCodex.Text = "Codex";
         _showCodex.AutoSize = true;
-        _showCodex.Location = new Point(240, 140);
+        _showCodex.Location = new Point(240, 154);
 
         var authLabel = new Label
         {
             Text = "ログイン状態",
             AutoSize = true,
             Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-            Location = new Point(16, 178)
+            Location = new Point(16, 192)
         };
 
         var claudeName = new Label
         {
             Text = "Claude Code",
             AutoSize = true,
-            Location = new Point(16, 212),
+            Location = new Point(16, 226),
             Font = new Font("Segoe UI", 9F, FontStyle.Bold)
         };
 
@@ -99,7 +109,7 @@ internal sealed class SettingsForm : Form
         {
             AutoSize = false,
             Size = new Size(96, 22),
-            Location = new Point(106, 210),
+            Location = new Point(106, 224),
             TextAlign = ContentAlignment.MiddleLeft,
             Text = "確認中"
         };
@@ -107,7 +117,7 @@ internal sealed class SettingsForm : Form
         _claudeLoginBtn = new Button
         {
             Text = "ログイン",
-            Location = new Point(208, 206),
+            Location = new Point(208, 220),
             Size = new Size(72, 28)
         };
         _claudeLoginBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchClaudeLogin);
@@ -115,7 +125,7 @@ internal sealed class SettingsForm : Form
         _claudeLogoutBtn = new Button
         {
             Text = "ログアウト",
-            Location = new Point(286, 206),
+            Location = new Point(286, 220),
             Size = new Size(84, 28)
         };
         _claudeLogoutBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchClaudeLogout);
@@ -124,7 +134,7 @@ internal sealed class SettingsForm : Form
         {
             Text = "Codex",
             AutoSize = true,
-            Location = new Point(16, 250),
+            Location = new Point(16, 264),
             Font = new Font("Segoe UI", 9F, FontStyle.Bold)
         };
 
@@ -132,7 +142,7 @@ internal sealed class SettingsForm : Form
         {
             AutoSize = false,
             Size = new Size(96, 22),
-            Location = new Point(106, 248),
+            Location = new Point(106, 262),
             TextAlign = ContentAlignment.MiddleLeft,
             Text = "確認中"
         };
@@ -140,7 +150,7 @@ internal sealed class SettingsForm : Form
         _codexLoginBtn = new Button
         {
             Text = "ログイン",
-            Location = new Point(208, 244),
+            Location = new Point(208, 258),
             Size = new Size(72, 28)
         };
         _codexLoginBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchCodexLogin);
@@ -148,7 +158,7 @@ internal sealed class SettingsForm : Form
         _codexLogoutBtn = new Button
         {
             Text = "ログアウト",
-            Location = new Point(286, 244),
+            Location = new Point(286, 258),
             Size = new Size(84, 28)
         };
         _codexLogoutBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchCodexLogout);
@@ -156,7 +166,7 @@ internal sealed class SettingsForm : Form
         _refreshAuthBtn = new Button
         {
             Text = "認証状態を再確認",
-            Location = new Point(208, 282),
+            Location = new Point(208, 296),
             Size = new Size(162, 28)
         };
         _refreshAuthBtn.Click += async (_, _) => await RefreshAuthAsync().ConfigureAwait(true);
@@ -165,7 +175,7 @@ internal sealed class SettingsForm : Form
         {
             Text = "OK",
             DialogResult = DialogResult.OK,
-            Location = new Point(212, 334),
+            Location = new Point(212, 350),
             Size = new Size(76, 28)
         };
 
@@ -173,15 +183,16 @@ internal sealed class SettingsForm : Form
         {
             Text = "キャンセル",
             DialogResult = DialogResult.Cancel,
-            Location = new Point(294, 334),
+            Location = new Point(294, 350),
             Size = new Size(76, 28)
         };
 
         Controls.Add(title);
         Controls.Add(intervalLabel);
         Controls.Add(_refreshInterval);
+        Controls.Add(displayModeLabel);
+        Controls.Add(_displayMode);
         Controls.Add(_autoStart);
-        Controls.Add(_compactMode);
         Controls.Add(servicesLabel);
         Controls.Add(_showClaude);
         Controls.Add(_showCodex);
@@ -208,6 +219,7 @@ internal sealed class SettingsForm : Form
     public AppSettings ToSettings(AppSettings current)
     {
         var selectedInterval = (_refreshInterval.SelectedItem as RefreshIntervalOption)?.Seconds ?? current.RefreshIntervalSeconds;
+        var selectedMode = (_displayMode.SelectedItem as DisplayModeOption)?.Mode ?? current.DisplayMode;
         var visible = new List<string>();
         if (_showClaude.Checked)
         {
@@ -222,7 +234,7 @@ internal sealed class SettingsForm : Form
         var settings = current.Clone();
         settings.RefreshIntervalSeconds = selectedInterval;
         settings.AutoStartEnabled = _autoStart.Checked;
-        settings.CompactMode = _compactMode.Checked;
+        settings.DisplayMode = selectedMode;
         settings.VisibleServices = visible.ToArray();
         settings.Normalize();
         return settings;
@@ -241,8 +253,19 @@ internal sealed class SettingsForm : Form
         }
 
         _refreshInterval.SelectedIndex = selectedIndex;
+
+        var displayIndex = 0;
+        for (var i = 0; i < _displayMode.Items.Count; i++)
+        {
+            if ((_displayMode.Items[i] as DisplayModeOption)?.Mode == settings.DisplayMode)
+            {
+                displayIndex = i;
+                break;
+            }
+        }
+
+        _displayMode.SelectedIndex = displayIndex;
         _autoStart.Checked = settings.AutoStartEnabled;
-        _compactMode.Checked = settings.CompactMode;
         _showClaude.Checked = settings.IsServiceVisible("Claude");
         _showCodex.Checked = settings.IsServiceVisible("Codex");
     }
@@ -344,6 +367,18 @@ internal sealed class SettingsForm : Form
                 300 => "5分",
                 600 => "10分",
                 _ => $"{Seconds}秒"
+            };
+    }
+
+    private sealed record DisplayModeOption(DisplayMode Mode)
+    {
+        public override string ToString()
+            => Mode switch
+            {
+                DisplayMode.Normal => "通常モード",
+                DisplayMode.Compact => "コンパクトモード",
+                DisplayMode.Minimum => "ミニマムモード",
+                _ => Mode.ToString()
             };
     }
 }

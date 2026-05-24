@@ -13,7 +13,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _refreshMenuItem;
-    private readonly ToolStripMenuItem _compactModeMenuItem;
+    private readonly ToolStripMenuItem _displayModeMenuItem;
+    private readonly ToolStripMenuItem _modeNormalItem;
+    private readonly ToolStripMenuItem _modeCompactItem;
+    private readonly ToolStripMenuItem _modeMinimumItem;
     private readonly ToolStripMenuItem _settingsMenuItem;
     private readonly StatusForm _statusForm;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
@@ -51,11 +54,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _statusForm = new StatusForm();
         _statusForm.ApplySettings(_settings);
         _refreshMenuItem = new ToolStripMenuItem("今すぐ更新", null, async (_, _) => await RefreshAsync().ConfigureAwait(true));
-        _compactModeMenuItem = new ToolStripMenuItem("コンパクトモード", null, (_, _) => ToggleCompactMode())
-        {
-            CheckOnClick = true,
-            Checked = _settings.CompactMode
-        };
+
+        _modeNormalItem = new ToolStripMenuItem("通常モード", null, (_, _) => SetDisplayMode(DisplayMode.Normal));
+        _modeCompactItem = new ToolStripMenuItem("コンパクトモード", null, (_, _) => SetDisplayMode(DisplayMode.Compact));
+        _modeMinimumItem = new ToolStripMenuItem("ミニマムモード", null, (_, _) => SetDisplayMode(DisplayMode.Minimum));
+        _displayModeMenuItem = new ToolStripMenuItem("表示モード");
+        _displayModeMenuItem.DropDownItems.Add(_modeNormalItem);
+        _displayModeMenuItem.DropDownItems.Add(_modeCompactItem);
+        _displayModeMenuItem.DropDownItems.Add(_modeMinimumItem);
+        SyncDisplayModeMenuChecks();
+
         _settingsMenuItem = new ToolStripMenuItem("設定", null, (_, _) => ShowSettings());
 
         var claudeLoginItem = new ToolStripMenuItem("Claude Code にログイン", null,
@@ -72,7 +80,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var exitMenuItem = new ToolStripMenuItem("終了", null, (_, _) => ExitThread());
         _contextMenu = new ContextMenuStrip();
         _contextMenu.Items.Add(_refreshMenuItem);
-        _contextMenu.Items.Add(_compactModeMenuItem);
+        _contextMenu.Items.Add(_displayModeMenuItem);
         _contextMenu.Items.Add(_settingsMenuItem);
         _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add(claudeLoginItem);
@@ -317,24 +325,39 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _settings = form.ToSettings(_settings);
         _statusForm.ApplySettings(_settings);
-        _compactModeMenuItem.Checked = _settings.CompactMode;
+        SyncDisplayModeMenuChecks();
         _settingsStore.Save(_settings);
         AutoStartManager.Apply(_settings.AutoStartEnabled);
         ApplyRefreshInterval();
         _ = RefreshAsync();
     }
 
-    private void ToggleCompactMode()
+    private void SetDisplayMode(DisplayMode mode)
     {
         if (_disposed)
         {
             return;
         }
 
-        _settings.CompactMode = _compactModeMenuItem.Checked;
+        if (_settings.DisplayMode == mode)
+        {
+            SyncDisplayModeMenuChecks();
+            return;
+        }
+
+        _settings.DisplayMode = mode;
+        _settings.Normalize();
         _statusForm.ApplySettings(_settings);
+        SyncDisplayModeMenuChecks();
         _settingsStore.Save(_settings);
         _ = RefreshAsync();
+    }
+
+    private void SyncDisplayModeMenuChecks()
+    {
+        _modeNormalItem.Checked = _settings.DisplayMode == DisplayMode.Normal;
+        _modeCompactItem.Checked = _settings.DisplayMode == DisplayMode.Compact;
+        _modeMinimumItem.Checked = _settings.DisplayMode == DisplayMode.Minimum;
     }
 
     private void ApplyRefreshInterval()
