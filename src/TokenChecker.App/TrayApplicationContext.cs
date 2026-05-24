@@ -9,22 +9,40 @@ internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly UsageAggregator _aggregator;
     private readonly SettingsStore _settingsStore;
+    private readonly LastUsageStore _lastUsageStore;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _refreshMenuItem;
+    private readonly ToolStripMenuItem _displayModeMenuItem;
+    private readonly ToolStripMenuItem _modeNormalItem;
+    private readonly ToolStripMenuItem _modeCompactItem;
+    private readonly ToolStripMenuItem _modeMinimumItem;
     private readonly ToolStripMenuItem _settingsMenuItem;
     private readonly StatusForm _statusForm;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new();
     private readonly Dictionary<string, ServiceUsage> _lastSuccessfulServices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly AuthCommandService _authService = new();
     private AppSettings _settings;
     private bool _disposed;
+    private Icon? _currentTrayIcon;
+    private UsageSnapshot? _lastSnapshot;
+
+    public AuthCommandService AuthService => _authService;
+
+    public ProviderStatus GetServiceStatus(string serviceName)
+        => _lastSnapshot?.Services.FirstOrDefault(s => string.Equals(s.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase))?.Status
+            ?? ProviderStatus.Unknown;
+
+    public Task RefreshUsageAsync() => RefreshAsync();
 
     public TrayApplicationContext()
     {
         _settingsStore = new SettingsStore();
         _settings = _settingsStore.Load();
+        _lastUsageStore = new LastUsageStore();
+        SeedLastSuccessfulFromStore();
         AutoStartManager.Apply(_settings.AutoStartEnabled);
 
         _aggregator = new UsageAggregator(new IUsageProvider[]
@@ -36,22 +54,50 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _statusForm = new StatusForm();
         _statusForm.ApplySettings(_settings);
         _refreshMenuItem = new ToolStripMenuItem("今すぐ更新", null, async (_, _) => await RefreshAsync().ConfigureAwait(true));
+
+        _modeNormalItem = new ToolStripMenuItem("通常モード", null, (_, _) => SetDisplayMode(DisplayMode.Normal));
+        _modeCompactItem = new ToolStripMenuItem("コンパクトモード", null, (_, _) => SetDisplayMode(DisplayMode.Compact));
+        _modeMinimumItem = new ToolStripMenuItem("ミニマムモード", null, (_, _) => SetDisplayMode(DisplayMode.Minimum));
+        _displayModeMenuItem = new ToolStripMenuItem("表示モード");
+        _displayModeMenuItem.DropDownItems.Add(_modeNormalItem);
+        _displayModeMenuItem.DropDownItems.Add(_modeCompactItem);
+        _displayModeMenuItem.DropDownItems.Add(_modeMinimumItem);
+        SyncDisplayModeMenuChecks();
+
         _settingsMenuItem = new ToolStripMenuItem("設定", null, (_, _) => ShowSettings());
+
+        var claudeLoginItem = new ToolStripMenuItem("Claude Code にログイン", null,
+            (_, _) => RunAuthCommand(_authService.LaunchClaudeLogin));
+        var claudeLogoutItem = new ToolStripMenuItem("Claude Code からログアウト", null,
+            (_, _) => RunAuthCommand(_authService.LaunchClaudeLogout));
+        var codexLoginItem = new ToolStripMenuItem("Codex にログイン", null,
+            (_, _) => RunAuthCommand(_authService.LaunchCodexLogin));
+        var codexLogoutItem = new ToolStripMenuItem("Codex からログアウト", null,
+            (_, _) => RunAuthCommand(_authService.LaunchCodexLogout));
+        var refreshAuthItem = new ToolStripMenuItem("認証状態を再確認", null,
+            async (_, _) => await RefreshAsync().ConfigureAwait(true));
 
         var exitMenuItem = new ToolStripMenuItem("終了", null, (_, _) => ExitThread());
         _contextMenu = new ContextMenuStrip();
         _contextMenu.Items.Add(_refreshMenuItem);
+        _contextMenu.Items.Add(_displayModeMenuItem);
         _contextMenu.Items.Add(_settingsMenuItem);
+        _contextMenu.Items.Add(new ToolStripSeparator());
+        _contextMenu.Items.Add(claudeLoginItem);
+        _contextMenu.Items.Add(claudeLogoutItem);
+        _contextMenu.Items.Add(codexLoginItem);
+        _contextMenu.Items.Add(codexLogoutItem);
+        _contextMenu.Items.Add(refreshAuthItem);
         _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add(exitMenuItem);
 
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
             Text = "TokenCheckerWin",
             Visible = true,
             ContextMenuStrip = _contextMenu
         };
+        ApplyTrayIcon(null, null, TrayIconRenderer.OverallState.Loading);
         _notifyIcon.MouseUp += NotifyIconOnMouseUp;
 
         _statusForm.FormClosing += (_, args) =>
@@ -92,6 +138,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _refreshMenuItem.Enabled = false;
             _statusForm.SetLoading();
             _notifyIcon.Text = "TokenCheckerWin 更新中";
+            ApplyTrayIcon(null, null, TrayIconRenderer.OverallState.Loading);
 
             UsageSnapshot snapshot;
             try
@@ -119,9 +166,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 return;
             }
 
+            _lastSnapshot = snapshot;
             var fallbackSnapshot = BuildFallbackSnapshot(snapshot.CapturedAtUtc);
             _statusForm.UpdateSnapshot(snapshot, fallbackSnapshot);
-            _notifyIcon.Text = TrimTooltip(BuildTooltip(fallbackSnapshot ?? snapshot));
+            var iconSnapshot = fallbackSnapshot ?? snapshot;
+            var state = TrayIconRenderer.DetermineState(iconSnapshot, out var claudePercent, out var codexPercent);
+            ApplyTrayIcon(claudePercent, codexPercent, state);
+            _notifyIcon.Text = TrimTooltip(BuildTooltip(iconSnapshot));
         }
         finally
         {
@@ -136,7 +187,42 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void UpdateLastSuccessfulServices(UsageSnapshot snapshot)
     {
+        var changed = false;
         foreach (var service in snapshot.Services)
+        {
+            if (service.Status == ProviderStatus.Available && service.Windows.Count > 0)
+            {
+                _lastSuccessfulServices[service.ServiceName] = service;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            PersistLastSuccessfulServices(snapshot.CapturedAtUtc);
+        }
+    }
+
+    private void PersistLastSuccessfulServices(DateTimeOffset capturedAtUtc)
+    {
+        if (_lastSuccessfulServices.Count == 0)
+        {
+            return;
+        }
+
+        var snapshot = new UsageSnapshot(capturedAtUtc, _lastSuccessfulServices.Values.ToArray());
+        _lastUsageStore.Save(snapshot);
+    }
+
+    private void SeedLastSuccessfulFromStore()
+    {
+        var loaded = _lastUsageStore.Load();
+        if (loaded is null)
+        {
+            return;
+        }
+
+        foreach (var service in loaded.Services)
         {
             if (service.Status == ProviderStatus.Available && service.Windows.Count > 0)
             {
@@ -158,6 +244,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void NotifyIconOnMouseUp(object? sender, MouseEventArgs args)
     {
         if (args.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        ShowStatusForm();
+    }
+
+    public void ShowStatusForm()
+    {
+        if (_disposed)
         {
             return;
         }
@@ -212,6 +308,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return false;
     }
 
+    public void ShowSettingsForm() => ShowSettings();
+
     private void ShowSettings()
     {
         if (_disposed)
@@ -219,7 +317,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        using var form = new SettingsForm(_settings);
+        using var form = new SettingsForm(_settings, this);
         if (form.ShowDialog(_statusForm.Visible ? _statusForm : null) != DialogResult.OK)
         {
             return;
@@ -227,10 +325,39 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _settings = form.ToSettings(_settings);
         _statusForm.ApplySettings(_settings);
+        SyncDisplayModeMenuChecks();
         _settingsStore.Save(_settings);
         AutoStartManager.Apply(_settings.AutoStartEnabled);
         ApplyRefreshInterval();
         _ = RefreshAsync();
+    }
+
+    private void SetDisplayMode(DisplayMode mode)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (_settings.DisplayMode == mode)
+        {
+            SyncDisplayModeMenuChecks();
+            return;
+        }
+
+        _settings.DisplayMode = mode;
+        _settings.Normalize();
+        _statusForm.ApplySettings(_settings);
+        SyncDisplayModeMenuChecks();
+        _settingsStore.Save(_settings);
+        _ = RefreshAsync();
+    }
+
+    private void SyncDisplayModeMenuChecks()
+    {
+        _modeNormalItem.Checked = _settings.DisplayMode == DisplayMode.Normal;
+        _modeCompactItem.Checked = _settings.DisplayMode == DisplayMode.Compact;
+        _modeMinimumItem.Checked = _settings.DisplayMode == DisplayMode.Minimum;
     }
 
     private void ApplyRefreshInterval()
@@ -256,21 +383,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static string BuildTooltip(UsageSnapshot snapshot)
     {
+        var claude = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Claude");
         var codex = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Codex");
-        if (codex is null)
+        return $"TokenCheckerWin\nClaude Code: {FormatTooltipService(claude)}\nCodex: {FormatTooltipService(codex)}";
+    }
+
+    private static string FormatTooltipService(ServiceUsage? service)
+    {
+        if (service is null)
         {
-            return "Codex unavailable";
+            return "未取得";
         }
 
-        if (codex.Status != ProviderStatus.Available)
+        if (service.Status != ProviderStatus.Available)
         {
-            return $"Codex {codex.Status}";
+            return ProviderStatusPresenter.BadgeText(service.Status);
         }
 
-        var shortWindow = FindWindow(codex, 300);
-        var weeklyWindow = FindWindow(codex, 10080);
-
-        return $"Codex {FormatPercent(shortWindow)} / Weekly {FormatPercent(weeklyWindow)}";
+        var shortWindow = FindWindow(service, 300);
+        var weeklyWindow = FindWindow(service, 10080);
+        return $"5h {FormatPercent(shortWindow)} / Weekly {FormatPercent(weeklyWindow)}";
     }
 
     private static RateLimitWindow? FindWindow(ServiceUsage service, long durationMins)
@@ -282,7 +414,42 @@ internal sealed class TrayApplicationContext : ApplicationContext
             : $"{Math.Round(window.UsedPercent.Value)}%";
 
     private static string TrimTooltip(string value)
-        => value.Length <= 63 ? value : value[..63];
+        => value.Length <= 127 ? value : value[..127];
+
+    private void RunAuthCommand(Func<AuthLaunchResult> command)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        AuthLaunchResult result;
+        try
+        {
+            result = command();
+        }
+        catch
+        {
+            result = new AuthLaunchResult(false, "コマンドの実行に失敗しました。");
+        }
+
+        var owner = _statusForm.Visible ? _statusForm : null;
+        var icon = result.Ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
+        MessageBox.Show(owner, result.Message, "TokenCheckerWin", MessageBoxButtons.OK, icon);
+    }
+
+    private void ApplyTrayIcon(double? claudePercent, double? codexPercent, TrayIconRenderer.OverallState state)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var newIcon = TrayIconRenderer.CreateIcon(claudePercent, codexPercent, state);
+        _notifyIcon.Icon = newIcon;
+        _currentTrayIcon?.Dispose();
+        _currentTrayIcon = newIcon;
+    }
 
     protected override void ExitThreadCore()
     {
@@ -299,7 +466,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.MouseUp -= NotifyIconOnMouseUp;
         _notifyIcon.Visible = false;
         _notifyIcon.ContextMenuStrip = null;
+        _notifyIcon.Icon = null;
         _notifyIcon.Dispose();
+        _currentTrayIcon?.Dispose();
+        _currentTrayIcon = null;
         _contextMenu.Dispose();
         _statusForm.Dispose();
         _refreshTimer.Dispose();
