@@ -51,16 +51,13 @@ internal sealed class AppSettings
             DisplayMode = DisplayMode.Normal;
         }
 
-        // Backward compat: a legacy settings.json that only wrote
-        // CompactMode=true (without DisplayMode) deserializes into
-        // CompactMode=true + DisplayMode=Normal. Upgrade it to Compact.
-        if (DisplayMode == DisplayMode.Normal && CompactMode)
-        {
-            DisplayMode = DisplayMode.Compact;
-        }
-
-        // Keep the legacy bool in sync so an older build reading this file
-        // back still picks up compact mode at least.
+        // CompactMode is a derived back-compat write only — DisplayMode is the
+        // source of truth. The legacy "CompactMode=true → DisplayMode=Compact"
+        // migration runs once in SettingsStore.Load (where we can tell whether
+        // the JSON file actually contained a DisplayMode field). We must NOT
+        // re-apply that migration here, otherwise switching from Compact back
+        // to Normal in the settings dialog would immediately get reverted to
+        // Compact because the clone still has CompactMode=true.
         CompactMode = DisplayMode == DisplayMode.Compact;
     }
 

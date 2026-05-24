@@ -640,8 +640,8 @@ internal sealed class StatusForm : Form
         {
             BackColor = Surface;
 
-            _claude = new MinimumServiceCell();
-            _codex = new MinimumServiceCell();
+            _claude = new MinimumServiceCell("C");
+            _codex = new MinimumServiceCell("X");
             _divider = new Panel
             {
                 Size = new Size(1, 22),
@@ -727,14 +727,15 @@ internal sealed class StatusForm : Form
         private readonly Label _percent;
         private double? _value;
 
-        public MinimumServiceCell()
+        public MinimumServiceCell(string glyph)
         {
             BackColor = Card;
 
             _ring = new UsageRingControl
             {
                 Size = new Size(34, 34),
-                BackColor = Card
+                BackColor = Card,
+                CenterText = glyph
             };
 
             _percent = new Label
@@ -861,6 +862,8 @@ internal sealed class StatusForm : Form
     {
         private double? _usedPercent;
 
+        public string? CenterText { get; set; }
+
         public UsageRingControl()
         {
             SetStyle(
@@ -887,7 +890,8 @@ internal sealed class StatusForm : Form
                 foreColor: PrimaryText,
                 emptyColor: TrackEmpty,
                 accentColor: UsageAccentColor(_usedPercent),
-                backColor: BackColor == Color.Transparent ? Card : BackColor);
+                backColor: BackColor == Color.Transparent ? Card : BackColor,
+                centerLabel: CenterText);
         }
     }
 }

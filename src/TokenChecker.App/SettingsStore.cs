@@ -30,12 +30,37 @@ internal sealed class SettingsStore
 
             var json = File.ReadAllText(_settingsPath);
             var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+
+            // One-shot legacy migration: if the on-disk JSON has the old
+            // CompactMode field but no DisplayMode field, treat CompactMode
+            // as the source of truth and upgrade. Field-presence is checked
+            // here (instead of in Normalize) so that switching modes at
+            // runtime never re-triggers this migration.
+            if (!HasDisplayModeField(json) && settings.CompactMode)
+            {
+                settings.DisplayMode = DisplayMode.Compact;
+            }
+
             settings.Normalize();
             return settings;
         }
         catch
         {
             return new AppSettings();
+        }
+    }
+
+    private static bool HasDisplayModeField(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("DisplayMode", out _);
+        }
+        catch
+        {
+            return false;
         }
     }
 

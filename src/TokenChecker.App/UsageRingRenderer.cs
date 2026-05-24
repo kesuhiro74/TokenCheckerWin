@@ -24,7 +24,8 @@ internal static class UsageRingRenderer
         Color foreColor,
         Color emptyColor,
         Color accentColor,
-        Color backColor)
+        Color backColor,
+        string? centerLabel = null)
     {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.Clear(backColor);
@@ -55,12 +56,29 @@ internal static class UsageRingRenderer
             graphics.DrawArc(accentPen, rect, -90, (float)(percent / 100d * 360d));
         }
 
-        var text = TryClampPercent(usedPercent, out var labelPercent)
-            ? $"{Math.Round(labelPercent):0}%"
-            : "n/a";
+        // When a centerLabel is supplied (e.g. a short identifier like "C" or
+        // "X"), draw it instead of the numeric percentage so the caller can
+        // identify the service at a glance.
+        string text;
+        float fontSize;
+        if (!string.IsNullOrEmpty(centerLabel))
+        {
+            text = centerLabel;
+            // Slightly larger for a 1-2 char glyph so it stays legible.
+            fontSize = Math.Max(8f, size * 0.34f);
+        }
+        else
+        {
+            text = TryClampPercent(usedPercent, out var labelPercent)
+                ? $"{Math.Round(labelPercent):0}%"
+                : "n/a";
+            fontSize = text == "n/a" ? 8F : 9F;
+        }
 
-        using var font = new Font("Segoe UI", text == "n/a" ? 8F : 9F, FontStyle.Bold);
-        using var brush = new SolidBrush(TryClampPercent(usedPercent, out _) ? foreColor : emptyColor);
+        using var font = new Font("Segoe UI", fontSize, FontStyle.Bold);
+        var hasValue = TryClampPercent(usedPercent, out _);
+        var textColor = hasValue || !string.IsNullOrEmpty(centerLabel) ? foreColor : emptyColor;
+        using var brush = new SolidBrush(textColor);
         using var format = new StringFormat
         {
             Alignment = StringAlignment.Center,
