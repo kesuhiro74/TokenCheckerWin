@@ -36,9 +36,19 @@ public sealed class ClaudeUsageProvider : IUsageProvider
                 Array.Empty<RateLimitWindow>());
         }
 
+        var windows = await TryReadUsageWindowsAsync(config.Directory, cancellationToken).ConfigureAwait(false);
+        if (windows is { Count: > 0 })
+        {
+            return new ServiceUsage(
+                ServiceName,
+                ProviderStatus.Available,
+                message,
+                windows);
+        }
+
         return new ServiceUsage(
             ServiceName,
-            ProviderStatus.NotLoggedIn,
+            ProviderStatus.Error,
             $"Claude usage API is not implemented yet. {message}",
             Array.Empty<RateLimitWindow>());
     }
@@ -121,6 +131,18 @@ public sealed class ClaudeUsageProvider : IUsageProvider
         {
             return false;
         }
+    }
+
+    private static Task<IReadOnlyList<RateLimitWindow>> TryReadUsageWindowsAsync(
+        string configDirectory,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Future Claude usage API implementation hook. Do not read
+        // .credentials.json here until the usage endpoint contract is defined.
+        _ = configDirectory;
+        return Task.FromResult<IReadOnlyList<RateLimitWindow>>(Array.Empty<RateLimitWindow>());
     }
 
     private static string BuildMessage(bool claudeFound, bool versionPresent, bool credentialsPresent, string configDirSource)
