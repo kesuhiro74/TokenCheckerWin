@@ -10,6 +10,8 @@ internal sealed class AppSettings
 
     public bool AutoStartEnabled { get; set; }
 
+    public bool CompactMode { get; set; }
+
     public string[] VisibleServices { get; set; } = ["Claude", "Codex"];
 
     public FormLocation? StatusFormLocation { get; set; }
@@ -38,6 +40,7 @@ internal sealed class AppSettings
         {
             RefreshIntervalSeconds = RefreshIntervalSeconds,
             AutoStartEnabled = AutoStartEnabled,
+            CompactMode = CompactMode,
             VisibleServices = VisibleServices.ToArray(),
             StatusFormLocation = StatusFormLocation
         };

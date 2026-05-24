@@ -108,6 +108,7 @@ Manual checks:
 - Right-clicking the icon opens `設定`.
 - The settings window can change refresh interval between `30秒`, `1分`, `5分`, and `10分`.
 - The settings window can toggle Windows login startup.
+- The settings window and tray menu can toggle compact mode.
 - Settings are saved under the current user's AppData folder and survive app restarts.
 - If the settings file is damaged, the app starts with default settings.
 - The status window position is restored after it has been moved and closed.
@@ -118,10 +119,12 @@ Manual checks:
 - Published app builds should register the published executable path for startup; development `dotnet` runs fall back to a `dotnet "<app dll>"` command.
 - `settings.json` contains only refresh interval, startup preference, visible services, and the status window position.
 - The status window uses compact Claude and Codex cards.
+- The status window labels Claude as `Claude Code` and shows small code-drawn service icons for Claude Code and Codex.
 - Claude and Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
 - Claude and Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.
+- Compact mode shows only the Claude Code and Codex `5h` usage rings and reset timing in a smaller window.
 - Donut rings use muted color for missing values, warning color at 80% or higher, and danger color at 95% or higher.
-- Reset timing is shown as remaining time such as `45m`, `3h`, or `2d`.
+- Reset timing is shown in local time, such as `あと2時間18分（11:50リセット）` for `5h` and `あと3日4時間（5/27 18:00リセット）` for `Weekly`.
 - Status badges are shown in Japanese (`正常取得`, `未インストール`, `未ログイン`, `認証エラー`, `レート制限中`, `取得失敗`, `状態不明`) — raw `ProviderStatus` enum names are not displayed.
 - The body line under each badge shows a short user-facing message (for example `Claude の使用率を取得できています`) instead of the raw `claudeFound=...; usageApi=...` diagnostic string.
 - Each card has a `詳細を表示` / `詳細を隠す` link that toggles a masked diagnostics text box for troubleshooting; tokens, email addresses, full filesystem paths, and credential-style strings are masked before they are shown.

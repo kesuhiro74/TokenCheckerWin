@@ -7,6 +7,7 @@ internal sealed class SettingsForm : Form
 {
     private readonly ComboBox _refreshInterval = new();
     private readonly CheckBox _autoStart = new();
+    private readonly CheckBox _compactMode = new();
     private readonly CheckBox _showClaude = new();
     private readonly CheckBox _showCodex = new();
 
@@ -18,7 +19,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(330, 250);
+        Size = new Size(330, 280);
         Font = new Font("Segoe UI", 9F);
 
         var title = new Label
@@ -48,25 +49,29 @@ internal sealed class SettingsForm : Form
         _autoStart.AutoSize = true;
         _autoStart.Location = new Point(16, 88);
 
+        _compactMode.Text = "コンパクトモード";
+        _compactMode.AutoSize = true;
+        _compactMode.Location = new Point(16, 118);
+
         var servicesLabel = new Label
         {
             Text = "表示対象",
             AutoSize = true,
-            Location = new Point(16, 124)
+            Location = new Point(16, 154)
         };
 
-        _showClaude.Text = "Claude";
+        _showClaude.Text = "Claude Code";
         _showClaude.AutoSize = true;
-        _showClaude.Location = new Point(112, 122);
+        _showClaude.Location = new Point(112, 152);
         _showCodex.Text = "Codex";
         _showCodex.AutoSize = true;
-        _showCodex.Location = new Point(190, 122);
+        _showCodex.Location = new Point(220, 152);
 
         var okButton = new Button
         {
             Text = "OK",
             DialogResult = DialogResult.OK,
-            Location = new Point(126, 170),
+            Location = new Point(126, 202),
             Size = new Size(76, 28)
         };
 
@@ -74,7 +79,7 @@ internal sealed class SettingsForm : Form
         {
             Text = "キャンセル",
             DialogResult = DialogResult.Cancel,
-            Location = new Point(208, 170),
+            Location = new Point(208, 202),
             Size = new Size(76, 28)
         };
 
@@ -82,6 +87,7 @@ internal sealed class SettingsForm : Form
         Controls.Add(intervalLabel);
         Controls.Add(_refreshInterval);
         Controls.Add(_autoStart);
+        Controls.Add(_compactMode);
         Controls.Add(servicesLabel);
         Controls.Add(_showClaude);
         Controls.Add(_showCodex);
@@ -111,6 +117,7 @@ internal sealed class SettingsForm : Form
         var settings = current.Clone();
         settings.RefreshIntervalSeconds = selectedInterval;
         settings.AutoStartEnabled = _autoStart.Checked;
+        settings.CompactMode = _compactMode.Checked;
         settings.VisibleServices = visible.ToArray();
         settings.Normalize();
         return settings;
@@ -130,6 +137,7 @@ internal sealed class SettingsForm : Form
 
         _refreshInterval.SelectedIndex = selectedIndex;
         _autoStart.Checked = settings.AutoStartEnabled;
+        _compactMode.Checked = settings.CompactMode;
         _showClaude.Checked = settings.IsServiceVisible("Claude");
         _showCodex.Checked = settings.IsServiceVisible("Codex");
     }

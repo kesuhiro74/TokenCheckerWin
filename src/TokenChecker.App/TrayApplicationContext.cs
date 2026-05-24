@@ -13,6 +13,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _refreshMenuItem;
+    private readonly ToolStripMenuItem _compactModeMenuItem;
     private readonly ToolStripMenuItem _settingsMenuItem;
     private readonly StatusForm _statusForm;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
@@ -40,11 +41,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _statusForm = new StatusForm();
         _statusForm.ApplySettings(_settings);
         _refreshMenuItem = new ToolStripMenuItem("今すぐ更新", null, async (_, _) => await RefreshAsync().ConfigureAwait(true));
+        _compactModeMenuItem = new ToolStripMenuItem("コンパクトモード", null, (_, _) => ToggleCompactMode())
+        {
+            CheckOnClick = true,
+            Checked = _settings.CompactMode
+        };
         _settingsMenuItem = new ToolStripMenuItem("設定", null, (_, _) => ShowSettings());
 
         var exitMenuItem = new ToolStripMenuItem("終了", null, (_, _) => ExitThread());
         _contextMenu = new ContextMenuStrip();
         _contextMenu.Items.Add(_refreshMenuItem);
+        _contextMenu.Items.Add(_compactModeMenuItem);
         _contextMenu.Items.Add(_settingsMenuItem);
         _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add(exitMenuItem);
@@ -280,9 +287,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _settings = form.ToSettings(_settings);
         _statusForm.ApplySettings(_settings);
+        _compactModeMenuItem.Checked = _settings.CompactMode;
         _settingsStore.Save(_settings);
         AutoStartManager.Apply(_settings.AutoStartEnabled);
         ApplyRefreshInterval();
+        _ = RefreshAsync();
+    }
+
+    private void ToggleCompactMode()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _settings.CompactMode = _compactModeMenuItem.Checked;
+        _statusForm.ApplySettings(_settings);
+        _settingsStore.Save(_settings);
         _ = RefreshAsync();
     }
 
@@ -311,7 +332,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         var claude = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Claude");
         var codex = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Codex");
-        return $"TokenCheckerWin\nClaude: {FormatTooltipService(claude)}\nCodex: {FormatTooltipService(codex)}";
+        return $"TokenCheckerWin\nClaude Code: {FormatTooltipService(claude)}\nCodex: {FormatTooltipService(codex)}";
     }
 
     private static string FormatTooltipService(ServiceUsage? service)

@@ -7,6 +7,8 @@ obj/
 *.rsuser
 TestResults/
 artifacts/
+.claude/
+.codex/
 
 publish/
 
