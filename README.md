@@ -89,6 +89,15 @@ Run the tray app:
 dotnet run --project src/TokenChecker.App
 ```
 
+To open the status window automatically right after the app starts (useful for development, screenshots, and post-publish smoke checks without having to click the tray icon), pass `--show-status`:
+
+```powershell
+dotnet run --project src/TokenChecker.App -- --show-status
+.\publish\win-x64\TokenChecker.App.exe --show-status
+```
+
+Without `--show-status` the app starts as a tray-only process as usual.
+
 Manual checks:
 
 - The app starts without showing a main window.

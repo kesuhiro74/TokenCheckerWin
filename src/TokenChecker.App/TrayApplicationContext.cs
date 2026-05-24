@@ -167,6 +167,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        ShowStatusForm();
+    }
+
+    public void ShowStatusForm()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
         if (_statusForm.Visible)
         {
             _statusForm.Activate();

@@ -16,15 +16,20 @@ internal sealed class StatusForm : Form
     private static readonly Color Bad = Color.FromArgb(235, 113, 113);
     private static readonly Color RingEmpty = Color.FromArgb(73, 78, 90);
     private static readonly Color DetailToggle = Color.FromArgb(140, 170, 220);
+    private static readonly Color DetailBackground = Color.FromArgb(28, 30, 35);
 
-    private const int CardHeight = 200;
+    private const int FormPadding = 12;
+    private const int FormWidth = 372;
+    private const int CardHeight = 196;
     private const int CardSpacing = 10;
     private const int DetailExtraHeight = 96;
+    private const int FooterHeight = 22;
 
     private readonly ServiceCard _claudeCard;
     private readonly ServiceCard _codexCard;
-    private readonly Label _updatedAt = CreateMutedLabel();
-    private readonly TableLayoutPanel _root;
+    private readonly Label _updatedAt;
+    private bool _showClaude = true;
+    private bool _showCodex = true;
 
     public StatusForm()
     {
@@ -36,39 +41,39 @@ internal sealed class StatusForm : Form
         TopMost = true;
         BackColor = Surface;
         Font = new Font("Segoe UI", 9F);
+        StartPosition = FormStartPosition.Manual;
 
-        _claudeCard = new ServiceCard("Claude");
-        _codexCard = new ServiceCard("Codex");
-        _claudeCard.DetailToggled += (_, _) => RecalculateLayout();
-        _codexCard.DetailToggled += (_, _) => RecalculateLayout();
-
-        _root = new TableLayoutPanel
+        _claudeCard = new ServiceCard("Claude")
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(12),
-            RowCount = 3,
-            ColumnCount = 1,
-            BackColor = Surface
+            Location = new Point(FormPadding, FormPadding),
+            Size = new Size(FormWidth - FormPadding * 2, CardHeight)
         };
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, CardHeight));
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, CardHeight));
-        _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _codexCard = new ServiceCard("Codex")
+        {
+            Size = new Size(FormWidth - FormPadding * 2, CardHeight)
+        };
+        _updatedAt = CreateMutedLabel();
+        _updatedAt.AutoSize = false;
+        _updatedAt.Size = new Size(FormWidth - FormPadding * 2, FooterHeight);
+        _updatedAt.TextAlign = ContentAlignment.MiddleLeft;
 
-        _root.Controls.Add(_claudeCard, 0, 0);
-        _root.Controls.Add(_codexCard, 0, 1);
-        _root.Controls.Add(_updatedAt, 0, 2);
+        _claudeCard.HeightChanged += (_, _) => RecalculateLayout();
+        _codexCard.HeightChanged += (_, _) => RecalculateLayout();
 
-        Controls.Add(_root);
-        Size = new Size(372, ComputeHeight(true, true));
+        Controls.Add(_claudeCard);
+        Controls.Add(_codexCard);
+        Controls.Add(_updatedAt);
+
+        RecalculateLayout();
         SetLoading();
     }
 
     public void ApplySettings(AppSettings settings)
     {
-        var showClaude = settings.IsServiceVisible("Claude");
-        var showCodex = settings.IsServiceVisible("Codex");
-        _claudeCard.Visible = showClaude;
-        _codexCard.Visible = showCodex;
+        _showClaude = settings.IsServiceVisible("Claude");
+        _showCodex = settings.IsServiceVisible("Codex");
+        _claudeCard.Visible = _showClaude;
+        _codexCard.Visible = _showCodex;
         RecalculateLayout();
     }
 
@@ -97,32 +102,37 @@ internal sealed class StatusForm : Form
 
     private void RecalculateLayout()
     {
-        var showClaude = _claudeCard.Visible;
-        var showCodex = _codexCard.Visible;
-        _root.RowStyles[0].Height = showClaude ? _claudeCard.PreferredHeight : 0;
-        _root.RowStyles[1].Height = showCodex ? _codexCard.PreferredHeight : 0;
-        Height = ComputeHeight(showClaude, showCodex);
-    }
+        SuspendLayout();
+        try
+        {
+            var y = FormPadding;
+            if (_showClaude)
+            {
+                _claudeCard.Location = new Point(FormPadding, y);
+                y += _claudeCard.Height + CardSpacing;
+            }
 
-    private int ComputeHeight(bool showClaude, bool showCodex)
-    {
-        const int Chrome = 84;
-        var height = Chrome;
-        if (showClaude)
-        {
-            height += _claudeCard.PreferredHeight + CardSpacing;
+            if (_showCodex)
+            {
+                _codexCard.Location = new Point(FormPadding, y);
+                y += _codexCard.Height + CardSpacing;
+            }
+
+            _updatedAt.Location = new Point(FormPadding, y);
+            var contentHeight = y + FooterHeight + FormPadding;
+            ClientSize = new Size(FormWidth, contentHeight);
         }
-        if (showCodex)
+        finally
         {
-            height += _codexCard.PreferredHeight + CardSpacing;
+            ResumeLayout(true);
         }
-        return height;
     }
 
     private static Label CreateMutedLabel()
         => new()
         {
             AutoEllipsis = true,
+            AutoSize = true,
             ForeColor = MutedText,
             BackColor = Color.Transparent
         };
@@ -196,7 +206,7 @@ internal sealed class StatusForm : Form
 
     private sealed class ServiceCard : Panel
     {
-        public event EventHandler? DetailToggled;
+        public event EventHandler? HeightChanged;
 
         private readonly string _serviceName;
         private readonly Label _title;
@@ -207,22 +217,18 @@ internal sealed class StatusForm : Form
         private readonly Label _resetSummary;
         private readonly LinkLabel _detailToggle;
         private readonly TextBox _detailBox;
-        private string _diagnostics = string.Empty;
         private bool _detailExpanded;
 
         public ServiceCard(string serviceName)
         {
             _serviceName = serviceName;
-            Dock = DockStyle.Fill;
-            Margin = new Padding(0, 0, 0, CardSpacing);
-            Padding = new Padding(12);
             BackColor = Card;
 
             _title = new Label
             {
                 Text = serviceName,
                 AutoSize = true,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
                 ForeColor = PrimaryText,
                 BackColor = Color.Transparent,
                 Location = new Point(12, 10)
@@ -233,19 +239,34 @@ internal sealed class StatusForm : Form
                 AutoSize = true,
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                 BackColor = Color.Transparent,
-                Location = new Point(12, 34)
+                ForeColor = MutedText,
+                Location = new Point(12, 36),
+                Text = "状態不明"
             };
 
-            _message = CreateMutedLabel();
-            _message.Location = new Point(112, 35);
-            _message.Size = new Size(214, 32);
+            _message = new Label
+            {
+                AutoSize = false,
+                Size = new Size(220, 32),
+                Location = new Point(108, 36),
+                ForeColor = MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
 
             _primary = new UsageWindowPanel { Location = new Point(12, 76) };
-            _secondary = new UsageWindowPanel { Location = new Point(174, 76) };
+            _secondary = new UsageWindowPanel { Location = new Point(178, 76) };
 
-            _resetSummary = CreateMutedLabel();
-            _resetSummary.Location = new Point(12, 154);
-            _resetSummary.Size = new Size(240, 18);
+            _resetSummary = new Label
+            {
+                AutoSize = false,
+                Size = new Size(220, 18),
+                Location = new Point(12, 152),
+                ForeColor = MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
 
             _detailToggle = new LinkLabel
             {
@@ -256,8 +277,9 @@ internal sealed class StatusForm : Form
                 ActiveLinkColor = PrimaryText,
                 VisitedLinkColor = DetailToggle,
                 LinkBehavior = LinkBehavior.HoverUnderline,
-                Location = new Point(258, 154),
-                Font = new Font("Segoe UI", 8.5F)
+                Location = new Point(260, 152),
+                Font = new Font("Segoe UI", 8.5F),
+                Visible = false
             };
             _detailToggle.LinkClicked += (_, _) => ToggleDetail();
 
@@ -267,10 +289,10 @@ internal sealed class StatusForm : Form
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
                 BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Color.FromArgb(28, 30, 35),
+                BackColor = DetailBackground,
                 ForeColor = MutedText,
                 Location = new Point(12, 178),
-                Size = new Size(316, 80),
+                Size = new Size(324, DetailExtraHeight - 16),
                 Visible = false,
                 TabStop = false,
                 WordWrap = true,
@@ -286,8 +308,6 @@ internal sealed class StatusForm : Form
             Controls.Add(_detailToggle);
             Controls.Add(_detailBox);
         }
-
-        public int PreferredHeight => _detailExpanded ? CardHeight + DetailExtraHeight : CardHeight;
 
         public void SetLoading()
         {
@@ -330,16 +350,14 @@ internal sealed class StatusForm : Form
 
         private void UpdateDiagnostics(string diagnostics)
         {
-            _diagnostics = diagnostics;
             var available = !string.IsNullOrWhiteSpace(diagnostics);
             _detailToggle.Visible = available;
+
             if (!available)
             {
                 if (_detailExpanded)
                 {
-                    _detailExpanded = false;
-                    _detailBox.Visible = false;
-                    DetailToggled?.Invoke(this, EventArgs.Empty);
+                    SetExpanded(false);
                 }
                 _detailBox.Text = string.Empty;
                 _detailToggle.Text = "詳細を表示";
@@ -350,12 +368,19 @@ internal sealed class StatusForm : Form
             _detailToggle.Text = _detailExpanded ? "詳細を隠す" : "詳細を表示";
         }
 
-        private void ToggleDetail()
+        private void ToggleDetail() => SetExpanded(!_detailExpanded);
+
+        private void SetExpanded(bool expanded)
         {
-            _detailExpanded = !_detailExpanded;
-            _detailBox.Visible = _detailExpanded;
-            _detailToggle.Text = _detailExpanded ? "詳細を隠す" : "詳細を表示";
-            DetailToggled?.Invoke(this, EventArgs.Empty);
+            _detailExpanded = expanded;
+            _detailBox.Visible = expanded;
+            _detailToggle.Text = expanded ? "詳細を隠す" : "詳細を表示";
+            var newHeight = expanded ? CardHeight + DetailExtraHeight : CardHeight;
+            if (Height != newHeight)
+            {
+                Height = newHeight;
+                HeightChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -368,20 +393,42 @@ internal sealed class StatusForm : Form
 
     private sealed class UsageWindowPanel : Panel
     {
-        private readonly Label _name = CreateMutedLabel();
-        private readonly UsageRingControl _ring = new();
-        private readonly Label _reset = CreateMutedLabel();
+        private readonly Label _name;
+        private readonly UsageRingControl _ring;
+        private readonly Label _reset;
 
         public UsageWindowPanel()
         {
             Size = new Size(150, 68);
             BackColor = Color.FromArgb(37, 40, 47);
+
+            _name = new Label
+            {
+                AutoSize = false,
+                Size = new Size(70, 18),
+                Location = new Point(8, 8),
+                ForeColor = MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+            };
+
+            _ring = new UsageRingControl
+            {
+                Size = new Size(56, 56),
+                Location = new Point(86, 6)
+            };
             _ring.BackColor = BackColor;
-            _name.Location = new Point(8, 6);
-            _name.Size = new Size(68, 18);
-            _ring.Location = new Point(82, 6);
-            _reset.Location = new Point(8, 36);
-            _reset.Size = new Size(68, 18);
+
+            _reset = new Label
+            {
+                AutoSize = false,
+                Size = new Size(70, 18),
+                Location = new Point(8, 38),
+                ForeColor = MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
 
             Controls.Add(_name);
             Controls.Add(_ring);
@@ -416,7 +463,6 @@ internal sealed class StatusForm : Form
 
         public UsageRingControl()
         {
-            Size = new Size(58, 58);
             SetStyle(
                 ControlStyles.AllPaintingInWmPaint
                 | ControlStyles.OptimizedDoubleBuffer
