@@ -20,12 +20,14 @@ internal sealed class StatusForm : Form
 
     private readonly Label _claudeBadge = CreateBadgeLabel();
     private readonly Label _claudeMessage = CreateMutedLabel();
-    private readonly Label _claudeUsage = CreateMutedLabel();
+    private readonly UsageWindowPanel _claudePrimaryWindow = new();
+    private readonly UsageWindowPanel _claudeSecondaryWindow = new();
+    private readonly Label _claudeResetSummary = CreateMutedLabel();
     private readonly Label _codexBadge = CreateBadgeLabel();
     private readonly Label _codexMessage = CreateMutedLabel();
-    private readonly UsageWindowPanel _primaryWindow = new();
-    private readonly UsageWindowPanel _secondaryWindow = new();
-    private readonly Label _resetSummary = CreateMutedLabel();
+    private readonly UsageWindowPanel _codexPrimaryWindow = new();
+    private readonly UsageWindowPanel _codexSecondaryWindow = new();
+    private readonly Label _codexResetSummary = CreateMutedLabel();
     private readonly Label _updatedAt = CreateMutedLabel();
     private readonly TableLayoutPanel _root;
     private readonly Control _claudeCard;
@@ -39,7 +41,7 @@ internal sealed class StatusForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         TopMost = true;
-        Size = new Size(372, 332);
+        Size = new Size(372, 438);
         BackColor = Surface;
         Font = new Font("Segoe UI", 9F);
 
@@ -51,7 +53,7 @@ internal sealed class StatusForm : Form
             ColumnCount = 1,
             BackColor = Surface
         };
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
         _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
         _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
@@ -72,13 +74,13 @@ internal sealed class StatusForm : Form
 
         _claudeCard.Visible = showClaude;
         _codexCard.Visible = showCodex;
-        _root.RowStyles[0].Height = showClaude ? 84 : 0;
+        _root.RowStyles[0].Height = showClaude ? 190 : 0;
         _root.RowStyles[1].Height = showCodex ? 190 : 0;
 
         Height = (showClaude, showCodex) switch
         {
-            (true, true) => 332,
-            (true, false) => 142,
+            (true, true) => 438,
+            (true, false) => 238,
             (false, true) => 238,
             _ => 84
         };
@@ -90,9 +92,12 @@ internal sealed class StatusForm : Form
         _claudeMessage.Text = "";
         SetBadge(_codexBadge, "更新中", Warning);
         _codexMessage.Text = "";
-        _primaryWindow.SetEmpty("5h");
-        _secondaryWindow.SetEmpty("Weekly");
-        _resetSummary.Text = "Reset: n/a";
+        _claudePrimaryWindow.SetEmpty("5h");
+        _claudeSecondaryWindow.SetEmpty("Weekly");
+        _claudeResetSummary.Text = "Reset: n/a";
+        _codexPrimaryWindow.SetEmpty("5h");
+        _codexSecondaryWindow.SetEmpty("Weekly");
+        _codexResetSummary.Text = "Reset: n/a";
         _updatedAt.Text = "最終更新: 更新中";
     }
 
@@ -108,9 +113,9 @@ internal sealed class StatusForm : Form
             : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Codex" && service.Status == ProviderStatus.Available);
 
         SetService(_claudeBadge, _claudeMessage, claude);
-        SetClaudeUsage(fallbackClaude);
+        UpdateServiceWindows(fallbackClaude, _claudePrimaryWindow, _claudeSecondaryWindow, _claudeResetSummary);
         SetService(_codexBadge, _codexMessage, codex);
-        UpdateCodexWindows(fallbackCodex);
+        UpdateServiceWindows(fallbackCodex, _codexPrimaryWindow, _codexSecondaryWindow, _codexResetSummary);
         _updatedAt.Text = $"最終更新: {snapshot.CapturedAtUtc.ToLocalTime():HH:mm:ss}";
     }
 
@@ -121,14 +126,18 @@ internal sealed class StatusForm : Form
         title.Location = new Point(12, 10);
         _claudeBadge.Location = new Point(12, 34);
         _claudeMessage.Location = new Point(112, 35);
-        _claudeMessage.Size = new Size(214, 20);
-        _claudeUsage.Location = new Point(112, 54);
-        _claudeUsage.Size = new Size(214, 18);
+        _claudeMessage.Size = new Size(214, 32);
+        _claudePrimaryWindow.Location = new Point(12, 76);
+        _claudeSecondaryWindow.Location = new Point(174, 76);
+        _claudeResetSummary.Location = new Point(12, 154);
+        _claudeResetSummary.Size = new Size(316, 24);
 
         card.Controls.Add(title);
         card.Controls.Add(_claudeBadge);
         card.Controls.Add(_claudeMessage);
-        card.Controls.Add(_claudeUsage);
+        card.Controls.Add(_claudePrimaryWindow);
+        card.Controls.Add(_claudeSecondaryWindow);
+        card.Controls.Add(_claudeResetSummary);
         return card;
     }
 
@@ -141,23 +150,27 @@ internal sealed class StatusForm : Form
         _codexMessage.Location = new Point(112, 35);
         _codexMessage.Size = new Size(214, 32);
 
-        _primaryWindow.Location = new Point(12, 76);
-        _secondaryWindow.Location = new Point(174, 76);
-        _resetSummary.Location = new Point(12, 154);
-        _resetSummary.Size = new Size(316, 24);
+        _codexPrimaryWindow.Location = new Point(12, 76);
+        _codexSecondaryWindow.Location = new Point(174, 76);
+        _codexResetSummary.Location = new Point(12, 154);
+        _codexResetSummary.Size = new Size(316, 24);
 
         card.Controls.Add(title);
         card.Controls.Add(_codexBadge);
         card.Controls.Add(_codexMessage);
-        card.Controls.Add(_primaryWindow);
-        card.Controls.Add(_secondaryWindow);
-        card.Controls.Add(_resetSummary);
+        card.Controls.Add(_codexPrimaryWindow);
+        card.Controls.Add(_codexSecondaryWindow);
+        card.Controls.Add(_codexResetSummary);
         return card;
     }
 
-    private void UpdateCodexWindows(ServiceUsage? codex)
+    private static void UpdateServiceWindows(
+        ServiceUsage? service,
+        UsageWindowPanel primaryWindow,
+        UsageWindowPanel secondaryWindow,
+        Label resetSummary)
     {
-        var windows = codex?.Windows
+        var windows = service?.Windows
             .Where(window => window.WindowDurationMins is not null)
             .OrderBy(window => window.WindowDurationMins)
             .ToArray() ?? Array.Empty<RateLimitWindow>();
@@ -165,9 +178,9 @@ internal sealed class StatusForm : Form
         var first = windows.ElementAtOrDefault(0);
         var second = windows.ElementAtOrDefault(1);
 
-        _primaryWindow.SetWindow(first, "5h");
-        _secondaryWindow.SetWindow(second, "Weekly");
-        _resetSummary.Text = $"Reset: {FormatReset(first)} / {FormatReset(second)}";
+        primaryWindow.SetWindow(first, "5h");
+        secondaryWindow.SetWindow(second, "Weekly");
+        resetSummary.Text = $"Reset: {FormatReset(first)} / {FormatReset(second)}";
     }
 
     private static void SetService(Label badge, Label message, ServiceUsage? service)
@@ -175,23 +188,6 @@ internal sealed class StatusForm : Form
         var status = service?.Status ?? ProviderStatus.Unknown;
         SetBadge(badge, status.ToString(), StatusColor(status));
         message.Text = SafeMessage(service?.Message);
-    }
-
-    private void SetClaudeUsage(ServiceUsage? claude)
-    {
-        if (claude?.Status != ProviderStatus.Available || claude.Windows.Count == 0)
-        {
-            _claudeUsage.Text = "";
-            return;
-        }
-
-        var windows = claude.Windows
-            .Where(window => window.UsedPercent is not null)
-            .OrderBy(window => window.WindowDurationMins)
-            .Take(2)
-            .Select(window => $"{FormatWindowName(window, "Usage")} {FormatPercent(window)}");
-
-        _claudeUsage.Text = string.Join(" / ", windows);
     }
 
     private static void SetBadge(Label label, string text, Color color)
@@ -225,11 +221,6 @@ internal sealed class StatusForm : Form
             _ => $"{minutes.Value}m"
         };
     }
-
-    private static string FormatPercent(RateLimitWindow? window)
-        => TryClampPercent(window?.UsedPercent, out var percent)
-            ? $"{percent:0.#}%"
-            : "n/a";
 
     private static bool TryClampPercent(double? value, out double percent)
     {

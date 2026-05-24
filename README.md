@@ -40,7 +40,6 @@ The POC prints a JSON `UsageSnapshot` for Claude and Codex. Current provider beh
 - Codex login-required responses are reported as `NotLoggedIn`.
 - Codex TUI startup does not guarantee usage collection is available. The app-server `account/read` result must be a ChatGPT account (`account.type == "chatgpt"`); API-key or unknown account modes cannot provide rate-limit usage for this POC.
 - Codex app-server startup failures, timeouts, and JSON/protocol failures are reported as `Error` without failing the whole POC.
-- Claude CLI and `.credentials.json` presence are detected safely, but Claude usage API collection is not implemented yet.
 - Claude usage collection uses an undocumented OAuth endpoint that may change without notice.
 - Claude OAuth credentials are read only to extract the access token needed for that endpoint; credential JSON, tokens, email addresses, and full local paths are never printed.
 - Claude `five_hour` usage is mapped to a 300-minute `RateLimitWindow`; `seven_day` usage is mapped to a 10080-minute `RateLimitWindow` when present.
@@ -110,8 +109,8 @@ Manual checks:
 - Published app builds should register the published executable path for startup; development `dotnet` runs fall back to a `dotnet "<app dll>"` command.
 - `settings.json` contains only refresh interval, startup preference, visible services, and the status window position.
 - The status window uses compact Claude and Codex cards.
-- Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
-- Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.
+- Claude and Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
+- Claude and Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.
 - Donut rings use muted color for missing values, warning color at 80% or higher, and danger color at 95% or higher.
 - Reset timing is shown as remaining time such as `45m`, `3h`, or `2d`.
 - Claude `NotInstalled`, `NotLoggedIn`, `Error`, and `Available` states remain readable in the compact card.
