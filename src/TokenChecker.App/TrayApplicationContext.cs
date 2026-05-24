@@ -20,6 +20,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly Dictionary<string, ServiceUsage> _lastSuccessfulServices = new(StringComparer.OrdinalIgnoreCase);
     private AppSettings _settings;
     private bool _disposed;
+    private Icon? _currentTrayIcon;
 
     public TrayApplicationContext()
     {
@@ -47,11 +48,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _notifyIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
             Text = "TokenCheckerWin",
             Visible = true,
             ContextMenuStrip = _contextMenu
         };
+        ApplyTrayIcon(null, null, TrayIconRenderer.OverallState.Loading);
         _notifyIcon.MouseUp += NotifyIconOnMouseUp;
 
         _statusForm.FormClosing += (_, args) =>
@@ -92,6 +93,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _refreshMenuItem.Enabled = false;
             _statusForm.SetLoading();
             _notifyIcon.Text = "TokenCheckerWin 更新中";
+            ApplyTrayIcon(null, null, TrayIconRenderer.OverallState.Loading);
 
             UsageSnapshot snapshot;
             try
@@ -121,7 +123,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
             var fallbackSnapshot = BuildFallbackSnapshot(snapshot.CapturedAtUtc);
             _statusForm.UpdateSnapshot(snapshot, fallbackSnapshot);
-            _notifyIcon.Text = TrimTooltip(BuildTooltip(fallbackSnapshot ?? snapshot));
+            var iconSnapshot = fallbackSnapshot ?? snapshot;
+            var state = TrayIconRenderer.DetermineState(iconSnapshot, out var claudePercent, out var codexPercent);
+            ApplyTrayIcon(claudePercent, codexPercent, state);
+            _notifyIcon.Text = TrimTooltip(BuildTooltip(iconSnapshot));
         }
         finally
         {
@@ -256,21 +261,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static string BuildTooltip(UsageSnapshot snapshot)
     {
+        var claude = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Claude");
         var codex = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Codex");
-        if (codex is null)
+        return $"TokenCheckerWin\nClaude: {FormatTooltipService(claude)}\nCodex: {FormatTooltipService(codex)}";
+    }
+
+    private static string FormatTooltipService(ServiceUsage? service)
+    {
+        if (service is null)
         {
-            return "Codex unavailable";
+            return "未取得";
         }
 
-        if (codex.Status != ProviderStatus.Available)
+        if (service.Status != ProviderStatus.Available)
         {
-            return $"Codex {codex.Status}";
+            return ProviderStatusPresenter.BadgeText(service.Status);
         }
 
-        var shortWindow = FindWindow(codex, 300);
-        var weeklyWindow = FindWindow(codex, 10080);
-
-        return $"Codex {FormatPercent(shortWindow)} / Weekly {FormatPercent(weeklyWindow)}";
+        var shortWindow = FindWindow(service, 300);
+        var weeklyWindow = FindWindow(service, 10080);
+        return $"5h {FormatPercent(shortWindow)} / Weekly {FormatPercent(weeklyWindow)}";
     }
 
     private static RateLimitWindow? FindWindow(ServiceUsage service, long durationMins)
@@ -282,7 +292,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
             : $"{Math.Round(window.UsedPercent.Value)}%";
 
     private static string TrimTooltip(string value)
-        => value.Length <= 63 ? value : value[..63];
+        => value.Length <= 127 ? value : value[..127];
+
+    private void ApplyTrayIcon(double? claudePercent, double? codexPercent, TrayIconRenderer.OverallState state)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var newIcon = TrayIconRenderer.CreateIcon(claudePercent, codexPercent, state);
+        _notifyIcon.Icon = newIcon;
+        _currentTrayIcon?.Dispose();
+        _currentTrayIcon = newIcon;
+    }
 
     protected override void ExitThreadCore()
     {
@@ -299,7 +322,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.MouseUp -= NotifyIconOnMouseUp;
         _notifyIcon.Visible = false;
         _notifyIcon.ContextMenuStrip = null;
+        _notifyIcon.Icon = null;
         _notifyIcon.Dispose();
+        _currentTrayIcon?.Dispose();
+        _currentTrayIcon = null;
         _contextMenu.Dispose();
         _statusForm.Dispose();
         _refreshTimer.Dispose();

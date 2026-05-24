@@ -1,6 +1,4 @@
 using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using TokenChecker.Core;
 
@@ -17,21 +15,16 @@ internal sealed class StatusForm : Form
     private static readonly Color Warning = Color.FromArgb(242, 201, 118);
     private static readonly Color Bad = Color.FromArgb(235, 113, 113);
     private static readonly Color RingEmpty = Color.FromArgb(73, 78, 90);
+    private static readonly Color DetailToggle = Color.FromArgb(140, 170, 220);
 
-    private readonly Label _claudeBadge = CreateBadgeLabel();
-    private readonly Label _claudeMessage = CreateMutedLabel();
-    private readonly UsageWindowPanel _claudePrimaryWindow = new();
-    private readonly UsageWindowPanel _claudeSecondaryWindow = new();
-    private readonly Label _claudeResetSummary = CreateMutedLabel();
-    private readonly Label _codexBadge = CreateBadgeLabel();
-    private readonly Label _codexMessage = CreateMutedLabel();
-    private readonly UsageWindowPanel _codexPrimaryWindow = new();
-    private readonly UsageWindowPanel _codexSecondaryWindow = new();
-    private readonly Label _codexResetSummary = CreateMutedLabel();
+    private const int CardHeight = 200;
+    private const int CardSpacing = 10;
+    private const int DetailExtraHeight = 96;
+
+    private readonly ServiceCard _claudeCard;
+    private readonly ServiceCard _codexCard;
     private readonly Label _updatedAt = CreateMutedLabel();
     private readonly TableLayoutPanel _root;
-    private readonly Control _claudeCard;
-    private readonly Control _codexCard;
 
     public StatusForm()
     {
@@ -41,9 +34,13 @@ internal sealed class StatusForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         TopMost = true;
-        Size = new Size(372, 438);
         BackColor = Surface;
         Font = new Font("Segoe UI", 9F);
+
+        _claudeCard = new ServiceCard("Claude");
+        _codexCard = new ServiceCard("Codex");
+        _claudeCard.DetailToggled += (_, _) => RecalculateLayout();
+        _codexCard.DetailToggled += (_, _) => RecalculateLayout();
 
         _root = new TableLayoutPanel
         {
@@ -53,17 +50,16 @@ internal sealed class StatusForm : Form
             ColumnCount = 1,
             BackColor = Surface
         };
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
-        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, 190));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, CardHeight));
+        _root.RowStyles.Add(new RowStyle(SizeType.Absolute, CardHeight));
         _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        _claudeCard = CreateClaudeCard();
-        _codexCard = CreateCodexCard();
         _root.Controls.Add(_claudeCard, 0, 0);
         _root.Controls.Add(_codexCard, 0, 1);
         _root.Controls.Add(_updatedAt, 0, 2);
 
         Controls.Add(_root);
+        Size = new Size(372, ComputeHeight(true, true));
         SetLoading();
     }
 
@@ -71,33 +67,15 @@ internal sealed class StatusForm : Form
     {
         var showClaude = settings.IsServiceVisible("Claude");
         var showCodex = settings.IsServiceVisible("Codex");
-
         _claudeCard.Visible = showClaude;
         _codexCard.Visible = showCodex;
-        _root.RowStyles[0].Height = showClaude ? 190 : 0;
-        _root.RowStyles[1].Height = showCodex ? 190 : 0;
-
-        Height = (showClaude, showCodex) switch
-        {
-            (true, true) => 438,
-            (true, false) => 238,
-            (false, true) => 238,
-            _ => 84
-        };
+        RecalculateLayout();
     }
 
     public void SetLoading()
     {
-        SetBadge(_claudeBadge, "更新中", Warning);
-        _claudeMessage.Text = "";
-        SetBadge(_codexBadge, "更新中", Warning);
-        _codexMessage.Text = "";
-        _claudePrimaryWindow.SetEmpty("5h");
-        _claudeSecondaryWindow.SetEmpty("Weekly");
-        _claudeResetSummary.Text = "Reset: n/a";
-        _codexPrimaryWindow.SetEmpty("5h");
-        _codexSecondaryWindow.SetEmpty("Weekly");
-        _codexResetSummary.Text = "Reset: n/a";
+        _claudeCard.SetLoading();
+        _codexCard.SetLoading();
         _updatedAt.Text = "最終更新: 更新中";
     }
 
@@ -112,89 +90,42 @@ internal sealed class StatusForm : Form
             ? codex
             : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Codex" && service.Status == ProviderStatus.Available);
 
-        SetService(_claudeBadge, _claudeMessage, claude);
-        UpdateServiceWindows(fallbackClaude, _claudePrimaryWindow, _claudeSecondaryWindow, _claudeResetSummary);
-        SetService(_codexBadge, _codexMessage, codex);
-        UpdateServiceWindows(fallbackCodex, _codexPrimaryWindow, _codexSecondaryWindow, _codexResetSummary);
+        _claudeCard.Update(claude, fallbackClaude);
+        _codexCard.Update(codex, fallbackCodex);
         _updatedAt.Text = $"最終更新: {snapshot.CapturedAtUtc.ToLocalTime():HH:mm:ss}";
     }
 
-    private Control CreateClaudeCard()
+    private void RecalculateLayout()
     {
-        var card = new CardPanel();
-        var title = CreateTitleLabel("Claude");
-        title.Location = new Point(12, 10);
-        _claudeBadge.Location = new Point(12, 34);
-        _claudeMessage.Location = new Point(112, 35);
-        _claudeMessage.Size = new Size(214, 32);
-        _claudePrimaryWindow.Location = new Point(12, 76);
-        _claudeSecondaryWindow.Location = new Point(174, 76);
-        _claudeResetSummary.Location = new Point(12, 154);
-        _claudeResetSummary.Size = new Size(316, 24);
-
-        card.Controls.Add(title);
-        card.Controls.Add(_claudeBadge);
-        card.Controls.Add(_claudeMessage);
-        card.Controls.Add(_claudePrimaryWindow);
-        card.Controls.Add(_claudeSecondaryWindow);
-        card.Controls.Add(_claudeResetSummary);
-        return card;
+        var showClaude = _claudeCard.Visible;
+        var showCodex = _codexCard.Visible;
+        _root.RowStyles[0].Height = showClaude ? _claudeCard.PreferredHeight : 0;
+        _root.RowStyles[1].Height = showCodex ? _codexCard.PreferredHeight : 0;
+        Height = ComputeHeight(showClaude, showCodex);
     }
 
-    private Control CreateCodexCard()
+    private int ComputeHeight(bool showClaude, bool showCodex)
     {
-        var card = new CardPanel();
-        var title = CreateTitleLabel("Codex");
-        title.Location = new Point(12, 10);
-        _codexBadge.Location = new Point(12, 34);
-        _codexMessage.Location = new Point(112, 35);
-        _codexMessage.Size = new Size(214, 32);
-
-        _codexPrimaryWindow.Location = new Point(12, 76);
-        _codexSecondaryWindow.Location = new Point(174, 76);
-        _codexResetSummary.Location = new Point(12, 154);
-        _codexResetSummary.Size = new Size(316, 24);
-
-        card.Controls.Add(title);
-        card.Controls.Add(_codexBadge);
-        card.Controls.Add(_codexMessage);
-        card.Controls.Add(_codexPrimaryWindow);
-        card.Controls.Add(_codexSecondaryWindow);
-        card.Controls.Add(_codexResetSummary);
-        return card;
+        const int Chrome = 84;
+        var height = Chrome;
+        if (showClaude)
+        {
+            height += _claudeCard.PreferredHeight + CardSpacing;
+        }
+        if (showCodex)
+        {
+            height += _codexCard.PreferredHeight + CardSpacing;
+        }
+        return height;
     }
 
-    private static void UpdateServiceWindows(
-        ServiceUsage? service,
-        UsageWindowPanel primaryWindow,
-        UsageWindowPanel secondaryWindow,
-        Label resetSummary)
-    {
-        var windows = service?.Windows
-            .Where(window => window.WindowDurationMins is not null)
-            .OrderBy(window => window.WindowDurationMins)
-            .ToArray() ?? Array.Empty<RateLimitWindow>();
-
-        var first = windows.ElementAtOrDefault(0);
-        var second = windows.ElementAtOrDefault(1);
-
-        primaryWindow.SetWindow(first, "5h");
-        secondaryWindow.SetWindow(second, "Weekly");
-        resetSummary.Text = $"Reset: {FormatReset(first)} / {FormatReset(second)}";
-    }
-
-    private static void SetService(Label badge, Label message, ServiceUsage? service)
-    {
-        var status = service?.Status ?? ProviderStatus.Unknown;
-        SetBadge(badge, status.ToString(), StatusColor(status));
-        message.Text = SafeMessage(service?.Message);
-    }
-
-    private static void SetBadge(Label label, string text, Color color)
-    {
-        label.Text = text;
-        label.ForeColor = color;
-    }
+    private static Label CreateMutedLabel()
+        => new()
+        {
+            AutoEllipsis = true,
+            ForeColor = MutedText,
+            BackColor = Color.Transparent
+        };
 
     private static Color StatusColor(ProviderStatus status)
         => status switch
@@ -204,6 +135,21 @@ internal sealed class StatusForm : Form
             ProviderStatus.Error => Bad,
             _ => MutedText
         };
+
+    private static Color UsageAccentColor(double? value)
+    {
+        if (!UsageRingRenderer.TryClampPercent(value, out var percent))
+        {
+            return MutedText;
+        }
+
+        return percent switch
+        {
+            >= 95 => Bad,
+            >= 80 => Warning,
+            _ => Good
+        };
+    }
 
     private static string FormatWindowName(RateLimitWindow? window, string fallback)
     {
@@ -219,33 +165,6 @@ internal sealed class StatusForm : Form
             10080 => "Weekly",
             >= 60 when minutes.Value % 60 == 0 => $"{minutes.Value / 60}h",
             _ => $"{minutes.Value}m"
-        };
-    }
-
-    private static bool TryClampPercent(double? value, out double percent)
-    {
-        if (value is null || double.IsNaN(value.Value) || double.IsInfinity(value.Value))
-        {
-            percent = 0;
-            return false;
-        }
-
-        percent = Math.Clamp(value.Value, 0, 100);
-        return true;
-    }
-
-    private static Color UsageColor(double? value)
-    {
-        if (!TryClampPercent(value, out var percent))
-        {
-            return MutedText;
-        }
-
-        return percent switch
-        {
-            >= 95 => Bad,
-            >= 80 => Warning,
-            _ => Good
         };
     }
 
@@ -275,56 +194,168 @@ internal sealed class StatusForm : Form
         return $"{Math.Max(1, Math.Ceiling(remaining.TotalMinutes))}m";
     }
 
-    private static Label CreateTitleLabel(string text)
-        => new()
-        {
-            Text = text,
-            AutoSize = true,
-            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-            ForeColor = PrimaryText,
-            BackColor = Color.Transparent
-        };
-
-    private static Label CreateBadgeLabel()
-        => new()
-        {
-            AutoSize = true,
-            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-            BackColor = Color.Transparent
-        };
-
-    private static Label CreateMutedLabel()
-        => new()
-        {
-            AutoEllipsis = true,
-            ForeColor = MutedText,
-            BackColor = Color.Transparent
-        };
-
-    private static string SafeMessage(string? message)
+    private sealed class ServiceCard : Panel
     {
-        if (string.IsNullOrWhiteSpace(message))
+        public event EventHandler? DetailToggled;
+
+        private readonly string _serviceName;
+        private readonly Label _title;
+        private readonly Label _badge;
+        private readonly Label _message;
+        private readonly UsageWindowPanel _primary;
+        private readonly UsageWindowPanel _secondary;
+        private readonly Label _resetSummary;
+        private readonly LinkLabel _detailToggle;
+        private readonly TextBox _detailBox;
+        private string _diagnostics = string.Empty;
+        private bool _detailExpanded;
+
+        public ServiceCard(string serviceName)
         {
-            return "";
-        }
-
-        var masked = Regex.Replace(message, @"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "<email>", RegexOptions.IgnoreCase);
-        masked = Regex.Replace(masked, @"[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*", "<path>");
-        masked = Regex.Replace(masked, @"/(?:[^/\s]+/)+[^/\s]*", "<path>");
-        masked = Regex.Replace(masked, @"(?i)(token|secret|key|authorization|bearer)\s*[:=]\s*\S+", "$1=<redacted>");
-        masked = Regex.Replace(masked, @"\b[A-Za-z0-9_-]{32,}\b", "<redacted>");
-
-        return masked.Length <= 120 ? masked : masked[..120];
-    }
-
-    private sealed class CardPanel : Panel
-    {
-        public CardPanel()
-        {
+            _serviceName = serviceName;
             Dock = DockStyle.Fill;
-            Margin = new Padding(0, 0, 0, 10);
+            Margin = new Padding(0, 0, 0, CardSpacing);
             Padding = new Padding(12);
             BackColor = Card;
+
+            _title = new Label
+            {
+                Text = serviceName,
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = PrimaryText,
+                BackColor = Color.Transparent,
+                Location = new Point(12, 10)
+            };
+
+            _badge = new Label
+            {
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                BackColor = Color.Transparent,
+                Location = new Point(12, 34)
+            };
+
+            _message = CreateMutedLabel();
+            _message.Location = new Point(112, 35);
+            _message.Size = new Size(214, 32);
+
+            _primary = new UsageWindowPanel { Location = new Point(12, 76) };
+            _secondary = new UsageWindowPanel { Location = new Point(174, 76) };
+
+            _resetSummary = CreateMutedLabel();
+            _resetSummary.Location = new Point(12, 154);
+            _resetSummary.Size = new Size(240, 18);
+
+            _detailToggle = new LinkLabel
+            {
+                Text = "詳細を表示",
+                AutoSize = true,
+                BackColor = Color.Transparent,
+                LinkColor = DetailToggle,
+                ActiveLinkColor = PrimaryText,
+                VisitedLinkColor = DetailToggle,
+                LinkBehavior = LinkBehavior.HoverUnderline,
+                Location = new Point(258, 154),
+                Font = new Font("Segoe UI", 8.5F)
+            };
+            _detailToggle.LinkClicked += (_, _) => ToggleDetail();
+
+            _detailBox = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.FromArgb(28, 30, 35),
+                ForeColor = MutedText,
+                Location = new Point(12, 178),
+                Size = new Size(316, 80),
+                Visible = false,
+                TabStop = false,
+                WordWrap = true,
+                Font = new Font("Consolas", 8.5F)
+            };
+
+            Controls.Add(_title);
+            Controls.Add(_badge);
+            Controls.Add(_message);
+            Controls.Add(_primary);
+            Controls.Add(_secondary);
+            Controls.Add(_resetSummary);
+            Controls.Add(_detailToggle);
+            Controls.Add(_detailBox);
+        }
+
+        public int PreferredHeight => _detailExpanded ? CardHeight + DetailExtraHeight : CardHeight;
+
+        public void SetLoading()
+        {
+            _badge.Text = "更新中";
+            _badge.ForeColor = Warning;
+            _message.Text = "";
+            _primary.SetEmpty("5h");
+            _secondary.SetEmpty("Weekly");
+            _resetSummary.Text = "Reset: n/a";
+            UpdateDiagnostics(string.Empty);
+        }
+
+        public void Update(ServiceUsage? current, ServiceUsage? fallback)
+        {
+            var status = current?.Status ?? ProviderStatus.Unknown;
+            _badge.Text = ProviderStatusPresenter.BadgeText(status);
+            _badge.ForeColor = StatusColor(status);
+
+            var hasFallbackWindows = fallback is { Windows.Count: > 0 };
+            _message.Text = ProviderStatusPresenter.FriendlyMessage(_serviceName, status, hasFallbackWindows);
+
+            UpdateWindows(fallback);
+            UpdateDiagnostics(ProviderStatusPresenter.SafeDiagnostics(current?.Message));
+        }
+
+        private void UpdateWindows(ServiceUsage? service)
+        {
+            var windows = service?.Windows
+                .Where(window => window.WindowDurationMins is not null)
+                .OrderBy(window => window.WindowDurationMins)
+                .ToArray() ?? Array.Empty<RateLimitWindow>();
+
+            var first = windows.ElementAtOrDefault(0);
+            var second = windows.ElementAtOrDefault(1);
+
+            _primary.SetWindow(first, "5h");
+            _secondary.SetWindow(second, "Weekly");
+            _resetSummary.Text = $"Reset: {FormatReset(first)} / {FormatReset(second)}";
+        }
+
+        private void UpdateDiagnostics(string diagnostics)
+        {
+            _diagnostics = diagnostics;
+            var available = !string.IsNullOrWhiteSpace(diagnostics);
+            _detailToggle.Visible = available;
+            if (!available)
+            {
+                if (_detailExpanded)
+                {
+                    _detailExpanded = false;
+                    _detailBox.Visible = false;
+                    DetailToggled?.Invoke(this, EventArgs.Empty);
+                }
+                _detailBox.Text = string.Empty;
+                _detailToggle.Text = "詳細を表示";
+                return;
+            }
+
+            _detailBox.Text = diagnostics;
+            _detailToggle.Text = _detailExpanded ? "詳細を隠す" : "詳細を表示";
+        }
+
+        private void ToggleDetail()
+        {
+            _detailExpanded = !_detailExpanded;
+            _detailBox.Visible = _detailExpanded;
+            _detailToggle.Text = _detailExpanded ? "詳細を隠す" : "詳細を表示";
+            DetailToggled?.Invoke(this, EventArgs.Empty);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -407,66 +438,10 @@ internal sealed class StatusForm : Form
                 e.Graphics,
                 ClientRectangle,
                 _usedPercent,
-                ForeColor: PrimaryText,
-                EmptyColor: RingEmpty,
-                AccentColor: UsageColor(_usedPercent),
-                BackColor);
-        }
-    }
-
-    private static class UsageRingRenderer
-    {
-        public static void Draw(
-            Graphics graphics,
-            Rectangle bounds,
-            double? usedPercent,
-            Color ForeColor,
-            Color EmptyColor,
-            Color AccentColor,
-            Color BackColor)
-        {
-            graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            graphics.Clear(BackColor);
-
-            var size = Math.Min(bounds.Width, bounds.Height);
-            var stroke = Math.Max(4f, size * 0.11f);
-            var inset = stroke / 2f + 2f;
-            var rect = new RectangleF(
-                bounds.Left + inset,
-                bounds.Top + inset,
-                size - inset * 2f,
-                size - inset * 2f);
-
-            using var backgroundPen = new Pen(EmptyColor, stroke)
-            {
-                StartCap = LineCap.Round,
-                EndCap = LineCap.Round
-            };
-            graphics.DrawArc(backgroundPen, rect, 0, 360);
-
-            if (TryClampPercent(usedPercent, out var percent))
-            {
-                using var accentPen = new Pen(AccentColor, stroke)
-                {
-                    StartCap = LineCap.Round,
-                    EndCap = LineCap.Round
-                };
-                graphics.DrawArc(accentPen, rect, -90, (float)(percent / 100d * 360d));
-            }
-
-            var text = TryClampPercent(usedPercent, out var labelPercent)
-                ? $"{Math.Round(labelPercent):0}%"
-                : "n/a";
-
-            using var font = new Font("Segoe UI", text == "n/a" ? 8F : 9F, FontStyle.Bold);
-            using var brush = new SolidBrush(TryClampPercent(usedPercent, out _) ? ForeColor : EmptyColor);
-            using var format = new StringFormat
-            {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center
-            };
-
-            graphics.DrawString(text, font, brush, bounds, format);
+                foreColor: PrimaryText,
+                emptyColor: RingEmpty,
+                accentColor: UsageAccentColor(_usedPercent),
+                backColor: BackColor);
         }
     }
 }

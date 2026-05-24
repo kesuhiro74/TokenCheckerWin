@@ -113,8 +113,28 @@ Manual checks:
 - Claude and Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.
 - Donut rings use muted color for missing values, warning color at 80% or higher, and danger color at 95% or higher.
 - Reset timing is shown as remaining time such as `45m`, `3h`, or `2d`.
-- Claude `NotInstalled`, `NotLoggedIn`, `Error`, and `Available` states remain readable in the compact card.
+- Status badges are shown in Japanese (`正常取得`, `未インストール`, `未ログイン`, `認証エラー`, `レート制限中`, `取得失敗`, `状態不明`) — raw `ProviderStatus` enum names are not displayed.
+- The body line under each badge shows a short user-facing message (for example `Claude の使用率を取得できています`) instead of the raw `claudeFound=...; usageApi=...` diagnostic string.
+- Each card has a `詳細を表示` / `詳細を隠す` link that toggles a masked diagnostics text box for troubleshooting; tokens, email addresses, full filesystem paths, and credential-style strings are masked before they are shown.
 - Repeated `今すぐ更新` clicks do not start overlapping updates.
 - Exiting during an update removes the tray icon and does not leave an app process behind.
 - If a refresh fails after a successful refresh, the last successful service values are retained per service, so a temporary Claude or Codex failure does not erase the other service's last known windows.
 - Claude CLI diagnostics terminate the `claude --version` child process if the version check times out.
+
+## Tray Icon
+
+- The notification area icon is generated at runtime from code (no external image asset is shipped). The outer ring represents Claude, the inner ring represents Codex, and a centered `T` glyph identifies the app.
+- The ring fill grows clockwise with each provider's highest reported `usedPercent`, so a glance at the tray gives an approximate sense of the busiest window.
+- The icon palette switches with the overall worst usage:
+  - Normal (`< 80%`): blue outer ring + purple inner ring.
+  - Warning (`>= 80%`): amber rings.
+  - Danger (`>= 95%`): red rings.
+  - Error (both providers in `NotInstalled` / `NotLoggedIn` / `Unauthorized` / `RateLimited` / `Error`): muted red rings.
+  - Loading or no usable data yet: light gray rings.
+- The mouseover tooltip is also localized — it shows the Japanese status badge per service, or `5h X% / Weekly Y%` when usage data is available.
+
+## Diagnostics And Privacy
+
+- The tray app never writes tokens, OAuth credentials, full filesystem paths, or email addresses to UI, tooltips, logs, or `settings.json`.
+- Raw provider diagnostic strings (`claudeFound=true; versionPresent=true; ...`, `accountNull=false; ...`) are not shown in the normal card body. They are kept only behind the per-card `詳細を表示` toggle, and are passed through a masking step that replaces email-looking patterns with `<email>`, absolute Windows and POSIX paths with `<path>`, `token=`/`secret=`/`key=`/`authorization=`/`bearer=` values with `<redacted>`, and long opaque alphanumeric blobs with `<redacted>` before display.
+- The Claude usage endpoint is undocumented and may change without notice; treat any Claude usage data shown here as best-effort.
