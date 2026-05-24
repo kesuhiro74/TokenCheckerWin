@@ -99,7 +99,12 @@ Manual checks:
 - Settings are saved under the current user's AppData folder and survive app restarts.
 - If the settings file is damaged, the app starts with default settings.
 - The status window position is restored after it has been moved and closed.
+- If the saved status window position is outside the current monitor layout, the window opens inside the visible work area.
 - Claude and Codex visibility can be toggled in settings.
+- Turning both service cards off leaves the app running and keeps the tray icon/menu usable.
+- Toggling Windows login startup adds or removes the `TokenCheckerWin` value under the current user's Run key.
+- Published app builds should register the published executable path for startup; development `dotnet` runs fall back to a `dotnet "<app dll>"` command.
+- `settings.json` contains only refresh interval, startup preference, visible services, and the status window position.
 - The status window uses compact Claude and Codex cards.
 - Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
 - Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.

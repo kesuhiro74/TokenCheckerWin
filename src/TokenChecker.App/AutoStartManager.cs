@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Reflection;
 
 namespace TokenChecker.App;
 
@@ -21,7 +22,7 @@ internal static class AutoStartManager
 
             if (enabled)
             {
-                runKey.SetValue(ValueName, Quote(Application.ExecutablePath), RegistryValueKind.String);
+                runKey.SetValue(ValueName, BuildStartupCommand(), RegistryValueKind.String);
             }
             else
             {
@@ -36,4 +37,25 @@ internal static class AutoStartManager
 
     private static string Quote(string value)
         => $"\"{value}\"";
+
+    private static string BuildStartupCommand()
+    {
+        var processPath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(processPath)
+            && string.Equals(Path.GetExtension(processPath), ".exe", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(Path.GetFileName(processPath), "dotnet.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            return Quote(processPath);
+        }
+
+        var assemblyPath = Assembly.GetEntryAssembly()?.Location;
+        if (!string.IsNullOrWhiteSpace(processPath)
+            && !string.IsNullOrWhiteSpace(assemblyPath)
+            && File.Exists(assemblyPath))
+        {
+            return $"{Quote(processPath)} {Quote(assemblyPath)}";
+        }
+
+        return Quote(Application.ExecutablePath);
+    }
 }

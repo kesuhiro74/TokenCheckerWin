@@ -79,7 +79,7 @@ internal sealed class StatusForm : Form
             (true, true) => 332,
             (true, false) => 142,
             (false, true) => 238,
-            _ => 332
+            _ => 84
         };
     }
 

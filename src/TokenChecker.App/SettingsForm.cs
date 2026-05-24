@@ -5,8 +5,6 @@ namespace TokenChecker.App;
 
 internal sealed class SettingsForm : Form
 {
-    public static readonly int[] RefreshIntervalOptions = [30, 60, 300, 600];
-
     private readonly ComboBox _refreshInterval = new();
     private readonly CheckBox _autoStart = new();
     private readonly CheckBox _showClaude = new();
@@ -41,7 +39,7 @@ internal sealed class SettingsForm : Form
         _refreshInterval.DropDownStyle = ComboBoxStyle.DropDownList;
         _refreshInterval.Location = new Point(112, 48);
         _refreshInterval.Size = new Size(170, 24);
-        foreach (var option in RefreshIntervalOptions)
+        foreach (var option in AppSettings.AllowedRefreshIntervalSeconds)
         {
             _refreshInterval.Items.Add(new RefreshIntervalOption(option));
         }
@@ -113,7 +111,7 @@ internal sealed class SettingsForm : Form
         var settings = current.Clone();
         settings.RefreshIntervalSeconds = selectedInterval;
         settings.AutoStartEnabled = _autoStart.Checked;
-        settings.VisibleServices = visible.Count == 0 ? ["Claude", "Codex"] : visible.ToArray();
+        settings.VisibleServices = visible.ToArray();
         settings.Normalize();
         return settings;
     }

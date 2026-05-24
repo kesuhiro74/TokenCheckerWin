@@ -82,7 +82,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        if (!await _refreshLock.WaitAsync(0, _shutdown.Token).ConfigureAwait(true))
+        if (!await _refreshLock.WaitAsync(0).ConfigureAwait(true))
         {
             return;
         }
@@ -157,9 +157,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_settings.StatusFormLocation is not null)
         {
             var saved = _settings.StatusFormLocation.Value.ToPoint();
-            if (IsVisibleOnAnyScreen(saved))
+            if (TryClampToVisibleScreen(saved, _statusForm.Size, out var visibleLocation))
             {
-                return saved;
+                return visibleLocation;
             }
         }
 
@@ -169,8 +169,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Math.Max(area.Top, area.Bottom - _statusForm.Height - 16));
     }
 
-    private static bool IsVisibleOnAnyScreen(Point location)
-        => Screen.AllScreens.Any(screen => screen.WorkingArea.Contains(location));
+    private static bool TryClampToVisibleScreen(Point location, Size size, out Point visibleLocation)
+    {
+        foreach (var screen in Screen.AllScreens)
+        {
+            var area = screen.WorkingArea;
+            var formBounds = new Rectangle(location, size);
+            if (!area.IntersectsWith(formBounds))
+            {
+                continue;
+            }
+
+            visibleLocation = new Point(
+                Math.Clamp(location.X, area.Left, Math.Max(area.Left, area.Right - size.Width)),
+                Math.Clamp(location.Y, area.Top, Math.Max(area.Top, area.Bottom - size.Height)));
+            return true;
+        }
+
+        visibleLocation = Point.Empty;
+        return false;
+    }
 
     private void ShowSettings()
     {
@@ -205,7 +223,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void SaveStatusFormLocation()
     {
-        if (_statusForm.WindowState != FormWindowState.Normal)
+        if (!_statusForm.Visible || _statusForm.WindowState != FormWindowState.Normal)
         {
             return;
         }
