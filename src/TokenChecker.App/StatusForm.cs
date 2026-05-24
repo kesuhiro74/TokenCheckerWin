@@ -330,7 +330,11 @@ internal sealed class StatusForm : Form
             _message.Text = ProviderStatusPresenter.FriendlyMessage(_serviceName, status, hasFallbackWindows);
 
             UpdateWindows(fallback);
-            UpdateDiagnostics(ProviderStatusPresenter.SafeDiagnostics(current?.Message));
+
+            var debug = ProviderStatusPresenter.BuildDebugSummary(_serviceName, current, fallback);
+            var masked = ProviderStatusPresenter.SafeDiagnostics(current?.Message);
+            var combined = string.IsNullOrEmpty(masked) ? debug : $"{debug}{Environment.NewLine}{masked}";
+            UpdateDiagnostics(combined);
         }
 
         private void UpdateWindows(ServiceUsage? service)

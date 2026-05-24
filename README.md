@@ -128,6 +128,8 @@ Manual checks:
 - Repeated `今すぐ更新` clicks do not start overlapping updates.
 - Exiting during an update removes the tray icon and does not leave an app process behind.
 - If a refresh fails after a successful refresh, the last successful service values are retained per service, so a temporary Claude or Codex failure does not erase the other service's last known windows.
+- The most recent successful Claude and Codex usage data is also persisted to `last_usage.json` under the same AppData folder as `settings.json`, so a first-refresh failure right after launch (for example, an Anthropic `HTTP 429` because the POC was just run against the same usage endpoint) still renders the previously known donut values instead of falling back to `n/a`. The badge in that case shows the current status (`レート制限中` / `取得失敗` / etc.) and the body says `一時的に取得できません。前回成功値を表示しています`; the next successful refresh updates the rings and overwrites the persisted snapshot.
+- `last_usage.json` contains only the per-service `Status`, `Windows`, and `CapturedAtUtc` values — provider diagnostic `Message` strings are stripped to `null` before writing, and no tokens, credentials, email addresses, or paths are stored.
 - Claude CLI diagnostics terminate the `claude --version` child process if the version check times out.
 
 ## Tray Icon
@@ -146,4 +148,5 @@ Manual checks:
 
 - The tray app never writes tokens, OAuth credentials, full filesystem paths, or email addresses to UI, tooltips, logs, or `settings.json`.
 - Raw provider diagnostic strings (`claudeFound=true; versionPresent=true; ...`, `accountNull=false; ...`) are not shown in the normal card body. They are kept only behind the per-card `詳細を表示` toggle, and are passed through a masking step that replaces email-looking patterns with `<email>`, absolute Windows and POSIX paths with `<path>`, `token=`/`secret=`/`key=`/`authorization=`/`bearer=` values with `<redacted>`, and long opaque alphanumeric blobs with `<redacted>` before display.
+- The `詳細を表示` panel also includes a single `[debug] serviceName=...; currentStatus=...; currentWindowCount=...; fallbackStatus=...; fallbackWindowCount=...;` line that makes it easy to tell whether the rings on screen came from the current refresh or from the fallback snapshot, without touching the raw diagnostic message.
 - The Claude usage endpoint is undocumented and may change without notice; treat any Claude usage data shown here as best-effort.

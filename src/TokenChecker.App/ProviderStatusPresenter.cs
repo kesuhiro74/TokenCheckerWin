@@ -17,6 +17,17 @@ internal static class ProviderStatusPresenter
             _ => "状態不明"
         };
 
+    public static string BuildDebugSummary(string serviceName, ServiceUsage? current, ServiceUsage? fallback)
+    {
+        var currentStatus = current?.Status.ToString() ?? "null";
+        var currentCount = current?.Windows.Count ?? 0;
+        var fallbackStatus = fallback?.Status.ToString() ?? "null";
+        var fallbackCount = fallback?.Windows.Count ?? 0;
+        return $"[debug] serviceName={serviceName}; "
+            + $"currentStatus={currentStatus}; currentWindowCount={currentCount}; "
+            + $"fallbackStatus={fallbackStatus}; fallbackWindowCount={fallbackCount};";
+    }
+
     public static string FriendlyMessage(string serviceName, ProviderStatus status, bool hasFallbackWindows)
         => status switch
         {

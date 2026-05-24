@@ -9,6 +9,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly UsageAggregator _aggregator;
     private readonly SettingsStore _settingsStore;
+    private readonly LastUsageStore _lastUsageStore;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _refreshMenuItem;
@@ -26,6 +27,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _settingsStore = new SettingsStore();
         _settings = _settingsStore.Load();
+        _lastUsageStore = new LastUsageStore();
+        SeedLastSuccessfulFromStore();
         AutoStartManager.Apply(_settings.AutoStartEnabled);
 
         _aggregator = new UsageAggregator(new IUsageProvider[]
@@ -141,7 +144,42 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void UpdateLastSuccessfulServices(UsageSnapshot snapshot)
     {
+        var changed = false;
         foreach (var service in snapshot.Services)
+        {
+            if (service.Status == ProviderStatus.Available && service.Windows.Count > 0)
+            {
+                _lastSuccessfulServices[service.ServiceName] = service;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            PersistLastSuccessfulServices(snapshot.CapturedAtUtc);
+        }
+    }
+
+    private void PersistLastSuccessfulServices(DateTimeOffset capturedAtUtc)
+    {
+        if (_lastSuccessfulServices.Count == 0)
+        {
+            return;
+        }
+
+        var snapshot = new UsageSnapshot(capturedAtUtc, _lastSuccessfulServices.Values.ToArray());
+        _lastUsageStore.Save(snapshot);
+    }
+
+    private void SeedLastSuccessfulFromStore()
+    {
+        var loaded = _lastUsageStore.Load();
+        if (loaded is null)
+        {
+            return;
+        }
+
+        foreach (var service in loaded.Services)
         {
             if (service.Status == ProviderStatus.Available && service.Windows.Count > 0)
             {
