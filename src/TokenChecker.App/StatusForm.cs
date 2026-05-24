@@ -221,6 +221,9 @@ internal sealed class StatusForm : Form
     private static string FormatReset(RateLimitWindow? window)
         => ResetTimeFormatter.Format(window);
 
+    private static string FormatResetRemaining(RateLimitWindow? window)
+        => ResetTimeFormatter.FormatRemaining(window);
+
     private static RateLimitWindow? FindFiveHourWindow(ServiceUsage? service)
     {
         if (service is null || service.Windows.Count == 0)
@@ -301,11 +304,13 @@ internal sealed class StatusForm : Form
             _resetSummary = new Label
             {
                 AutoSize = false,
-                Size = new Size(252, 38),
+                Size = new Size(296, 38),
                 Location = new Point(12, 180),
                 ForeColor = MutedText,
                 BackColor = Color.Transparent,
-                TextAlign = ContentAlignment.MiddleLeft
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 8.5F),
+                AutoEllipsis = true
             };
 
             _detailToggle = new LinkLabel
@@ -572,12 +577,12 @@ internal sealed class StatusForm : Form
             _reset = new Label
             {
                 AutoSize = false,
-                Size = new Size(172, 30),
-                Location = new Point(8, 56),
+                Size = new Size(108, 20),
+                Location = new Point(8, 32),
                 ForeColor = MutedText,
                 BackColor = Color.Transparent,
-                TextAlign = ContentAlignment.TopLeft,
-                Font = new Font("Segoe UI", 7.7F)
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 8.5F)
             };
 
             Controls.Add(_name);
@@ -596,7 +601,7 @@ internal sealed class StatusForm : Form
         {
             _name.Text = FormatWindowName(window, fallbackName);
             _ring.SetValue(window?.UsedPercent);
-            _reset.Text = FormatReset(window);
+            _reset.Text = FormatResetRemaining(window);
         }
 
         protected override void OnPaint(PaintEventArgs e)
