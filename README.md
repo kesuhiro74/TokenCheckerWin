@@ -104,8 +104,14 @@ Manual checks:
 - A notification area icon appears.
 - Left-clicking the icon shows one small status window; repeated left-clicks focus the same window.
 - Closing the status window hides it without exiting the app.
-- Right-clicking the icon opens a menu with `今すぐ更新` and `終了`.
+- Right-clicking the icon opens a menu with `今すぐ更新`, `コンパクトモード`, `設定`, the Claude Code / Codex login/logout helpers, `認証状態を再確認`, and `終了`.
 - Right-clicking the icon opens `設定`.
+- Right-clicking the icon → `Claude Code にログイン` opens an interactive cmd window running the `claude` CLI; the user types `/login` there to authenticate. The tray app does not read `.credentials.json`, OAuth tokens, or any auth payload.
+- Right-clicking the icon → `Claude Code からログアウト` opens the same `claude` console for the user to type `/logout`.
+- Right-clicking the icon → `Codex にログイン` runs `codex login` in a new cmd window so the user can complete the ChatGPT browser flow; `Codex からログアウト` runs `codex logout` the same way. API-key authentication is not supported for usage retrieval — ChatGPT login is recommended.
+- Right-clicking the icon → `認証状態を再確認` simply re-runs the usage refresh; if login succeeded, the per-service status flips to `正常取得` and the rings update.
+- The settings dialog has a `ログイン状態` section that shows `Claude Code` and `Codex` current status (`正常`, `未ログイン`, `CLI未検出`, `認証エラー`, `レート制限中`, `取得失敗`) with per-service `ログイン` / `ログアウト` buttons and a shared `認証状態を再確認` button.
+- When a CLI cannot be found on PATH, the login button reports `Claude Code CLI が見つかりません` / `Codex CLI が見つかりません` and does not attempt to spawn anything.
 - The settings window can change refresh interval between `30秒`, `1分`, `5分`, and `10分`.
 - The settings window can toggle Windows login startup.
 - The settings window and tray menu can toggle compact mode.
@@ -153,3 +159,4 @@ Manual checks:
 - Raw provider diagnostic strings (`claudeFound=true; versionPresent=true; ...`, `accountNull=false; ...`) are not shown in the normal card body. They are kept only behind the per-card `詳細を表示` toggle, and are passed through a masking step that replaces email-looking patterns with `<email>`, absolute Windows and POSIX paths with `<path>`, `token=`/`secret=`/`key=`/`authorization=`/`bearer=` values with `<redacted>`, and long opaque alphanumeric blobs with `<redacted>` before display.
 - The `詳細を表示` panel also includes a single `[debug] serviceName=...; currentStatus=...; currentWindowCount=...; fallbackStatus=...; fallbackWindowCount=...;` line that makes it easy to tell whether the rings on screen came from the current refresh or from the fallback snapshot, without touching the raw diagnostic message.
 - The Claude usage endpoint is undocumented and may change without notice; treat any Claude usage data shown here as best-effort.
+- The login helpers (`Claude Code にログイン`, `Codex にログイン`, etc.) only spawn the official `claude` / `codex` CLI inside a new `cmd.exe` console. The tray app never reads `~/.claude/.credentials.json`, `~/.codex/auth.json`, Windows Credential Manager entries, or any token/API-key value, and never persists them. The only files this app writes are `settings.json` (preferences only) and `last_usage.json` (per-service usage numbers, no `Message` strings).

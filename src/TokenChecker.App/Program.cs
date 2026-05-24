@@ -19,6 +19,16 @@ internal static class Program
                 context.ShowStatusForm();
             }
         }
+        if (args.Any(arg => string.Equals(arg, "--show-settings", StringComparison.OrdinalIgnoreCase)))
+        {
+            Application.Idle += ShowSettingsFormOnce;
+
+            void ShowSettingsFormOnce(object? sender, EventArgs e)
+            {
+                Application.Idle -= ShowSettingsFormOnce;
+                context.ShowSettingsForm();
+            }
+        }
         Application.Run(context);
     }
 }

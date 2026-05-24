@@ -20,9 +20,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly CancellationTokenSource _shutdown = new();
     private readonly System.Windows.Forms.Timer _refreshTimer = new();
     private readonly Dictionary<string, ServiceUsage> _lastSuccessfulServices = new(StringComparer.OrdinalIgnoreCase);
+    private readonly AuthCommandService _authService = new();
     private AppSettings _settings;
     private bool _disposed;
     private Icon? _currentTrayIcon;
+    private UsageSnapshot? _lastSnapshot;
+
+    public AuthCommandService AuthService => _authService;
+
+    public ProviderStatus GetServiceStatus(string serviceName)
+        => _lastSnapshot?.Services.FirstOrDefault(s => string.Equals(s.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase))?.Status
+            ?? ProviderStatus.Unknown;
+
+    public Task RefreshUsageAsync() => RefreshAsync();
 
     public TrayApplicationContext()
     {
@@ -48,11 +58,28 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _settingsMenuItem = new ToolStripMenuItem("設定", null, (_, _) => ShowSettings());
 
+        var claudeLoginItem = new ToolStripMenuItem("Claude Code にログイン", null,
+            (_, _) => RunAuthCommand(_authService.LaunchClaudeLogin));
+        var claudeLogoutItem = new ToolStripMenuItem("Claude Code からログアウト", null,
+            (_, _) => RunAuthCommand(_authService.LaunchClaudeLogout));
+        var codexLoginItem = new ToolStripMenuItem("Codex にログイン", null,
+            (_, _) => RunAuthCommand(_authService.LaunchCodexLogin));
+        var codexLogoutItem = new ToolStripMenuItem("Codex からログアウト", null,
+            (_, _) => RunAuthCommand(_authService.LaunchCodexLogout));
+        var refreshAuthItem = new ToolStripMenuItem("認証状態を再確認", null,
+            async (_, _) => await RefreshAsync().ConfigureAwait(true));
+
         var exitMenuItem = new ToolStripMenuItem("終了", null, (_, _) => ExitThread());
         _contextMenu = new ContextMenuStrip();
         _contextMenu.Items.Add(_refreshMenuItem);
         _contextMenu.Items.Add(_compactModeMenuItem);
         _contextMenu.Items.Add(_settingsMenuItem);
+        _contextMenu.Items.Add(new ToolStripSeparator());
+        _contextMenu.Items.Add(claudeLoginItem);
+        _contextMenu.Items.Add(claudeLogoutItem);
+        _contextMenu.Items.Add(codexLoginItem);
+        _contextMenu.Items.Add(codexLogoutItem);
+        _contextMenu.Items.Add(refreshAuthItem);
         _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add(exitMenuItem);
 
@@ -131,6 +158,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 return;
             }
 
+            _lastSnapshot = snapshot;
             var fallbackSnapshot = BuildFallbackSnapshot(snapshot.CapturedAtUtc);
             _statusForm.UpdateSnapshot(snapshot, fallbackSnapshot);
             var iconSnapshot = fallbackSnapshot ?? snapshot;
@@ -272,6 +300,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return false;
     }
 
+    public void ShowSettingsForm() => ShowSettings();
+
     private void ShowSettings()
     {
         if (_disposed)
@@ -279,7 +309,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        using var form = new SettingsForm(_settings);
+        using var form = new SettingsForm(_settings, this);
         if (form.ShowDialog(_statusForm.Visible ? _statusForm : null) != DialogResult.OK)
         {
             return;
@@ -362,6 +392,28 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static string TrimTooltip(string value)
         => value.Length <= 127 ? value : value[..127];
+
+    private void RunAuthCommand(Func<AuthLaunchResult> command)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        AuthLaunchResult result;
+        try
+        {
+            result = command();
+        }
+        catch
+        {
+            result = new AuthLaunchResult(false, "コマンドの実行に失敗しました。");
+        }
+
+        var owner = _statusForm.Visible ? _statusForm : null;
+        var icon = result.Ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
+        MessageBox.Show(owner, result.Message, "TokenCheckerWin", MessageBoxButtons.OK, icon);
+    }
 
     private void ApplyTrayIcon(double? claudePercent, double? codexPercent, TrayIconRenderer.OverallState state)
     {
