@@ -1,165 +1,238 @@
 # TokenCheckerWin
 
-Windows notification area app for checking Claude Code and OpenAI Codex usage and rate-limit state.
+TokenCheckerWin は、Claude Code と OpenAI Codex の使用率を Windows の通知領域から確認できる常駐アプリです。
 
-This repository currently contains a console proof of concept and a minimal WinForms notification area app.
+Claude Code / Codex の 5時間制限・週次制限を取得し、通常モード、コンパクトモード、ミニマムモードで見やすく表示します。取得に失敗した場合でも、前回成功した使用率を表示できます。
 
-## Requirements
+## 主な機能
+
+- Claude Code / Codex の使用率表示
+- 5時間制限・週次制限の表示
+- Windows通知領域への常駐
+- 通常 / コンパクト / ミニマム表示モード
+- 使用率のドーナツチャート表示
+- リセットまでの残り時間表示
+- Claude Code / Codex のログイン補助
+- 前回成功値のフォールバック表示
+- Windowsログイン時の自動起動設定
+
+## 注意事項
+
+- Claude Code の使用率取得には非公式の usage endpoint を利用しています
+- 将来の仕様変更により取得できなくなる可能性があります
+- このアプリは認証情報やトークンを保存しません
+- Claude Code / Codex のログイン処理は、それぞれの公式 CLI を起動して行います
+- Windows SmartScreen の警告が表示される場合があります
+
+## 動作環境
 
 - Windows 11
 - VS Code
-- .NET 8 SDK or newer .NET 8 compatible SDK
-- Visual Studio is not required
+- .NET 8 SDK 以降の .NET 8 互換 SDK
+- Visual Studio は不要
 
-## Projects
+## プロジェクト構成
 
-- `src/TokenChecker.Core`: shared usage models, provider interfaces, aggregator, and usage providers
-- `src/TokenChecker.Poc`: console POC that writes a `UsageSnapshot` JSON document to stdout
-- `src/TokenChecker.App`: minimal WinForms + `NotifyIcon` tray app
+- `src/TokenChecker.Core`: 使用率のモデル、プロバイダ・インタフェース、アグリゲータ、各プロバイダ実装の共有ライブラリ
+- `src/TokenChecker.Poc`: `UsageSnapshot` を JSON で標準出力に書き出すコンソール POC
+- `src/TokenChecker.App`: WinForms + `NotifyIcon` の通知領域常駐アプリ
 
-## Build
+## ビルド
 
 ```powershell
 dotnet build
 ```
 
-## Run The POC
+## POC を実行する
 
 ```powershell
 dotnet run --project src/TokenChecker.Poc
 ```
 
-The POC prints a JSON `UsageSnapshot` for Claude and Codex. Current provider behavior:
+POC は Claude / Codex の `UsageSnapshot` を JSON で出力します。プロバイダの主な挙動は次の通りです。
 
-- They check whether `claude` or `codex` appears to be available on `PATH`.
-- The Codex provider starts `codex app-server --listen stdio://`, sends JSONL requests over stdin/stdout, and stops the app-server process after the read attempt.
-- The Codex provider calls `initialize`, `account/read`, and `account/rateLimits/read`.
-- Codex `rateLimitsByLimitId` entries are parsed generically. `usedPercent`, `windowDurationMins`, and `resetsAt` are exposed in `RateLimitWindow` when available.
-- They do not read or print tokens, authentication data, email addresses, or local paths.
-- Missing CLIs are reported as `NotInstalled`.
-- Codex login-required responses are reported as `NotLoggedIn`.
-- Codex TUI startup does not guarantee usage collection is available. The app-server `account/read` result must be a ChatGPT account (`account.type == "chatgpt"`); API-key or unknown account modes cannot provide rate-limit usage for this POC.
-- Codex app-server startup failures, timeouts, and JSON/protocol failures are reported as `Error` without failing the whole POC.
-- Claude usage collection uses an undocumented OAuth endpoint that may change without notice.
-- Claude OAuth credentials are read only to extract the access token needed for that endpoint; credential JSON, tokens, email addresses, and full local paths are never printed.
-- Claude `five_hour` usage is mapped to a 300-minute `RateLimitWindow`; `seven_day` usage is mapped to a 10080-minute `RateLimitWindow` when present.
-- Claude usage endpoint `401`/`403` is reported as `Unauthorized`, `429` as `RateLimited`, and 5xx/timeouts/invalid JSON as `Error`.
+- `claude` / `codex` が PATH 上に存在するかをまずチェックします。
+- Codex プロバイダは `codex app-server --listen stdio://` を起動し、stdin/stdout に JSONL を流して `initialize` → `account/read` → `account/rateLimits/read` を呼びます。読み取り後は app-server プロセスを停止します。
+- `rateLimitsByLimitId` の各エントリは汎用的にパースし、`usedPercent` / `windowDurationMins` / `resetsAt` が取得できた場合に `RateLimitWindow` として公開します。
+- トークン・認証データ・メールアドレス・パス全体は読み取りも出力もしません。
+- CLI が見つからない場合は `NotInstalled` を返します。
+- Codex のログイン未完了レスポンスは `NotLoggedIn` として扱います。
+- Codex の `account.type` が `chatgpt` でない(API キー認証など)場合、使用率を取得できないことを `Error` として報告します。
+- Codex の起動失敗・タイムアウト・JSON/プロトコルエラーは `Error` として報告し、POC 全体は失敗させません。
+- Claude Code の使用率取得は非公式の OAuth usage endpoint を利用しています。仕様は予告なく変わる可能性があります。
+- Claude Code の OAuth 認証情報は、その endpoint に必要なアクセストークンを取り出すためだけに読み取ります。認証情報 JSON 本文、トークン、メールアドレス、パス全体を出力することはありません。
+- Claude Code の `five_hour` は 300 分の `RateLimitWindow`、`seven_day` は 10080 分の `RateLimitWindow` にマッピングします。
+- Claude Code usage endpoint の HTTP `401`/`403` は `Unauthorized`、`429` は `RateLimited`、5xx・タイムアウト・JSON エラーは `Error` として報告します。
 
-## VS Code
+## VS Code から使う
 
-Open this folder in VS Code, then use:
+このフォルダを VS Code で開き、次のいずれかを利用します。
 
-- Terminal: `dotnet build`
-- Terminal: `dotnet run --project src/TokenChecker.Poc`
-- Task: `dotnet build`
-- Task: `run poc`
-- Debug configuration: `TokenChecker.Poc`
+- ターミナル: `dotnet build`
+- ターミナル: `dotnet run --project src/TokenChecker.Poc`
+- タスク: `dotnet build`
+- タスク: `run poc`
+- デバッグ構成: `TokenChecker.Poc`
 
-## Current Verification
+## 通知領域アプリの動作確認
 
-Verification was run in this environment on 2026-05-23:
-
-```powershell
-dotnet build
-dotnet run --project src/TokenChecker.Poc
-```
-
-Observed result:
-
-- `dotnet build` succeeded.
-- `dotnet run --project src/TokenChecker.Poc` succeeded.
-- Claude was reported as `NotInstalled`.
-- Codex CLI was detected, but this environment was not logged in, so Codex was reported as `NotLoggedIn`.
-
-Expected result in a Codex logged-in environment:
-
-- Codex is reported as `Available`.
-- `UsageSnapshot.Services[].Windows` contains at least one Codex `RateLimitWindow`.
-
-Current constraints:
-
-- The POC does not use Codex `chatgptAuthTokens`.
-- Output intentionally avoids tokens, authentication data, email addresses, and full local paths.
-
-## Manual Tray App Checks
-
-Run the tray app:
+タスクトレイ常駐として起動するには次を実行します。
 
 ```powershell
 dotnet run --project src/TokenChecker.App
 ```
 
-To open the status window automatically right after the app starts (useful for development, screenshots, and post-publish smoke checks without having to click the tray icon), pass `--show-status`:
+起動直後に状態ウィンドウを開いて確認したい場合(開発・スクリーンショット・publish 後の動作確認向け)は `--show-status` を渡してください。
 
 ```powershell
 dotnet run --project src/TokenChecker.App -- --show-status
 .\publish\win-x64\TokenChecker.App.exe --show-status
 ```
 
-Without `--show-status` the app starts as a tray-only process as usual.
+`--show-status` を渡さない場合は、通常通りトレイ常駐として静かに起動します。
 
-Manual checks:
+設定ダイアログだけを開きたい場合は `--show-settings` を渡します。
 
-- The app starts without showing a main window.
-- A notification area icon appears.
-- Left-clicking the icon shows one small status window; repeated left-clicks focus the same window.
-- Closing the status window hides it without exiting the app.
-- Right-clicking the icon opens a menu with `今すぐ更新`, `コンパクトモード`, `設定`, the Claude Code / Codex login/logout helpers, `認証状態を再確認`, and `終了`.
-- Right-clicking the icon opens `設定`.
-- Right-clicking the icon → `Claude Code にログイン` opens an interactive cmd window running the `claude` CLI; the user types `/login` there to authenticate. The tray app does not read `.credentials.json`, OAuth tokens, or any auth payload.
-- Right-clicking the icon → `Claude Code からログアウト` opens the same `claude` console for the user to type `/logout`.
-- Right-clicking the icon → `Codex にログイン` runs `codex login` in a new cmd window so the user can complete the ChatGPT browser flow; `Codex からログアウト` runs `codex logout` the same way. API-key authentication is not supported for usage retrieval — ChatGPT login is recommended.
-- Right-clicking the icon → `認証状態を再確認` simply re-runs the usage refresh; if login succeeded, the per-service status flips to `正常取得` and the rings update.
-- The settings dialog has a `ログイン状態` section that shows `Claude Code` and `Codex` current status (`正常`, `未ログイン`, `CLI未検出`, `認証エラー`, `レート制限中`, `取得失敗`) with per-service `ログイン` / `ログアウト` buttons and a shared `認証状態を再確認` button.
-- When a CLI cannot be found on PATH, the login button reports `Claude Code CLI が見つかりません` / `Codex CLI が見つかりません` and does not attempt to spawn anything.
-- The settings window can change refresh interval between `30秒`, `1分`, `5分`, and `10分`.
-- The settings window can toggle Windows login startup.
-- The settings window and tray menu can switch between three display modes: `通常モード` (Normal), `コンパクトモード` (Compact), and `ミニマムモード` (Minimum). The selection is persisted in `settings.json` as `DisplayMode`; the legacy `CompactMode` boolean is still written for back-compat with older builds.
-- Settings are saved under the current user's AppData folder and survive app restarts.
-- If the settings file is damaged, the app starts with default settings.
-- The status window position is restored after it has been moved and closed.
-- If the saved status window position is outside the current monitor layout, the window opens inside the visible work area.
-- Claude and Codex visibility can be toggled in settings.
-- Turning both service cards off leaves the app running and keeps the tray icon/menu usable.
-- Toggling Windows login startup adds or removes the `TokenCheckerWin` value under the current user's Run key.
-- Published app builds should register the published executable path for startup; development `dotnet` runs fall back to a `dotnet "<app dll>"` command.
-- `settings.json` contains only refresh interval, startup preference, visible services, and the status window position.
-- The status window uses a light theme with rounded white cards on a soft gray surface; service icons next to the `Claude Code` / `Codex` headings have been removed so the layout is text-first.
-- The status window labels Claude as `Claude Code` everywhere — section title, settings checkbox, tray tooltip, and login menu items.
-- Normal mode shows each service as a card with a `5時間` percentage and horizontal progress bar as the headline, a reset-remaining line (`あと2時間18分（11:50リセット）`), and a smaller `週次` percentage below. A `詳細を表示` link expands the masked diagnostics text box without leaving the card.
-- Compact mode keeps the two-up donut layout (`5時間` only) with badge and reset line under the title.
-- Minimum mode is a small horizontal pill (~224 × 84) that only renders the Claude Code and Codex `5h` donut + percentage side by side. Weekly, badges, reset times, and diagnostic links are intentionally hidden in this mode; it is the smallest at-a-glance view. Left-click and right-click menu still work the same way.
-- Claude and Codex usage is shown with large percentages for the `5h` and `Weekly` windows when those durations are present.
-- Claude and Codex `5h` and `Weekly` usage windows show lightweight donut rings with the percentage centered in each ring.
-- Compact mode shows only the Claude Code and Codex `5h` usage rings and reset timing in a smaller window. Minimum mode further drops everything except the two `5h` donuts and their percentages.
-- Donut rings use muted color for missing values, warning color at 80% or higher, and danger color at 95% or higher.
-- Reset timing is shown in local time, such as `あと2時間18分（11:50リセット）` for `5h` and `あと3日4時間（5/27 18:00リセット）` for `Weekly`.
-- Status badges are shown in Japanese (`正常取得`, `未インストール`, `未ログイン`, `認証エラー`, `レート制限中`, `取得失敗`, `状態不明`) — raw `ProviderStatus` enum names are not displayed.
-- The body line under each badge shows a short user-facing message (for example `Claude の使用率を取得できています`) instead of the raw `claudeFound=...; usageApi=...` diagnostic string.
-- Each card has a `詳細を表示` / `詳細を隠す` link that toggles a masked diagnostics text box for troubleshooting; tokens, email addresses, full filesystem paths, and credential-style strings are masked before they are shown.
-- Repeated `今すぐ更新` clicks do not start overlapping updates.
-- Exiting during an update removes the tray icon and does not leave an app process behind.
-- If a refresh fails after a successful refresh, the last successful service values are retained per service, so a temporary Claude or Codex failure does not erase the other service's last known windows.
-- The most recent successful Claude and Codex usage data is also persisted to `last_usage.json` under the same AppData folder as `settings.json`, so a first-refresh failure right after launch (for example, an Anthropic `HTTP 429` because the POC was just run against the same usage endpoint) still renders the previously known donut values instead of falling back to `n/a`. The badge in that case shows the current status (`レート制限中` / `取得失敗` / etc.) and the body says `一時的に取得できません。前回成功値を表示しています`; the next successful refresh updates the rings and overwrites the persisted snapshot.
-- `last_usage.json` contains only the per-service `Status`, `Windows`, and `CapturedAtUtc` values — provider diagnostic `Message` strings are stripped to `null` before writing, and no tokens, credentials, email addresses, or paths are stored.
-- Claude CLI diagnostics terminate the `claude --version` child process if the version check times out.
+```powershell
+dotnet run --project src/TokenChecker.App -- --show-settings
+```
 
-## Tray Icon
+### 表示モード
 
-- The notification area icon is generated at runtime from code (no external image asset is shipped). The outer ring represents Claude, the inner ring represents Codex, and a centered `T` glyph identifies the app.
-- The ring fill grows clockwise with each provider's highest reported `usedPercent`, so a glance at the tray gives an approximate sense of the busiest window.
-- The icon palette switches with the overall worst usage:
-  - Normal (`< 80%`): blue outer ring + purple inner ring.
-  - Warning (`>= 80%`): amber rings.
-  - Danger (`>= 95%`): red rings.
-  - Error (both providers in `NotInstalled` / `NotLoggedIn` / `Unauthorized` / `RateLimited` / `Error`): muted red rings.
-  - Loading or no usable data yet: light gray rings.
-- The mouseover tooltip is also localized — it shows the Japanese status badge per service, or `5h X% / Weekly Y%` when usage data is available.
+設定ダイアログとトレイ右クリックメニューから、次の 3 つの表示モードを切り替えられます。選択値は `settings.json` の `DisplayMode` フィールドに保存されます(旧バージョン向けに `CompactMode` の真偽値も互換のために書き出されます)。
 
-## Diagnostics And Privacy
+- **通常モード (Normal)**: Claude Code / Codex のカードを縦に並べ、`5時間` の使用率を大きな数字 + 横長プログレスバーで主役表示します。リセットまでの残り時間(例: `あと2時間18分（11:50リセット）`)と `週次` 使用率もカード内に表示します。各カードに `詳細を表示` リンクがあり、マスク済みの診断情報を折りたたんで確認できます。
+- **コンパクトモード (Compact)**: Claude Code / Codex を横並びの 2 カードにまとめ、`5時間` のドーナツチャートとバッジ、リセット文だけを表示する省スペースモードです。
+- **ミニマムモード (Minimum)**: 横長のカプセル(約 224 × 84)に 2 サービスの `5時間` ドーナツと使用率%だけを並べる最小表示です。ドーナツ中央には `C` (Claude Code) / `X` (Codex) の識別記号を描画して判別できるようにしています。週次・診断・リセット時刻はこのモードでは省略します。左クリックでウィンドウ表示、右クリックメニュー、終了などの基本操作は他モードと同様です。
 
-- The tray app never writes tokens, OAuth credentials, full filesystem paths, or email addresses to UI, tooltips, logs, or `settings.json`.
-- Raw provider diagnostic strings (`claudeFound=true; versionPresent=true; ...`, `accountNull=false; ...`) are not shown in the normal card body. They are kept only behind the per-card `詳細を表示` toggle, and are passed through a masking step that replaces email-looking patterns with `<email>`, absolute Windows and POSIX paths with `<path>`, `token=`/`secret=`/`key=`/`authorization=`/`bearer=` values with `<redacted>`, and long opaque alphanumeric blobs with `<redacted>` before display.
-- The `詳細を表示` panel also includes a single `[debug] serviceName=...; currentStatus=...; currentWindowCount=...; fallbackStatus=...; fallbackWindowCount=...;` line that makes it easy to tell whether the rings on screen came from the current refresh or from the fallback snapshot, without touching the raw diagnostic message.
-- The Claude usage endpoint is undocumented and may change without notice; treat any Claude usage data shown here as best-effort.
-- The login helpers (`Claude Code にログイン`, `Codex にログイン`, etc.) only spawn the official `claude` / `codex` CLI inside a new `cmd.exe` console. The tray app never reads `~/.claude/.credentials.json`, `~/.codex/auth.json`, Windows Credential Manager entries, or any token/API-key value, and never persists them. The only files this app writes are `settings.json` (preferences only) and `last_usage.json` (per-service usage numbers, no `Message` strings).
+### 通知領域アイコン
+
+- 外部画像を持たず、起動時にコードでアイコンを生成します。外側リングが Claude Code、内側リングが Codex、中央の `T` グリフがアプリ識別子です。
+- それぞれのリングは最大 `usedPercent` の値に応じて時計回りに伸び、トレイを一目見るだけで最も逼迫しているウィンドウの目安が分かります。
+- 全体最悪値に応じて配色が変わります。
+  - 通常 (`< 80%`): 青の外リング + 紫の内リング
+  - 警告 (`>= 80%`): アンバー
+  - 危険 (`>= 95%`): 赤
+  - エラー (両プロバイダが `NotInstalled` / `NotLoggedIn` / `Unauthorized` / `RateLimited` / `Error`): くすんだ赤
+  - 取得前 / データなし: ライトグレー
+- マウスオーバーのツールチップも日本語化されており、サービスごとに日本語のステータスバッジ、または `5h X% / Weekly Y%` を表示します。
+
+### Claude Code / Codex のログイン補助
+
+このアプリは認証情報を保存しません。ログイン処理はすべて公式 CLI に委ねます。
+
+- トレイ右クリックメニューに次の項目があります。
+  - `今すぐ更新`
+  - `表示モード` ▶(通常 / コンパクト / ミニマム)
+  - `設定`
+  - `Claude Code にログイン` / `Claude Code からログアウト`
+  - `Codex にログイン` / `Codex からログアウト`
+  - `認証状態を再確認`
+  - `終了`
+- `Claude Code にログイン` を選ぶと、新しい `cmd.exe` を開いて `claude` CLI を起動します。プロンプトで `/login` と入力してログインを完了し、その後に `認証状態を再確認` を押してください。`Claude Code からログアウト` も同じく `claude` を開き、ユーザーが `/logout` を入力します。アプリ側で `.credentials.json` や OAuth トークンを読むことはありません。
+- `Codex にログイン` を選ぶと、新しい `cmd.exe` で `codex login` を実行します。ブラウザで ChatGPT サインインを完了したあと、`認証状態を再確認` を押してください。`codex logout` も同じく実行できます。Codex の使用率取得は ChatGPT ログインを前提としており、API キー認証では使用率を取得できません。
+- `認証状態を再確認` は単に使用率取得を再実行します。ログインが成功していればステータスが `正常取得` に切り替わり、リング表示も更新されます。
+- 設定ダイアログには `ログイン状態` セクションがあり、`Claude Code` / `Codex` の現在のステータス(`正常` / `未ログイン` / `CLI未検出` / `認証エラー` / `レート制限中` / `取得失敗`)と、サービス別の `ログイン` / `ログアウト` ボタン、共通の `認証状態を再確認` ボタンが置かれています。
+- CLI が PATH に見つからない場合は `Claude Code CLI が見つかりません` / `Codex CLI が見つかりません` とメッセージを出すだけで、プロセスは起動しません。
+
+### ステータスバッジとメッセージ
+
+- ステータスバッジは日本語表示(`正常取得` / `未インストール` / `未ログイン` / `認証エラー` / `レート制限中` / `取得失敗` / `状態不明`)です。`ProviderStatus` enum の英名はそのまま画面に出しません。
+- バッジ下の本文は短いユーザ向け文(例: `Claude Code の使用率を取得できています`)を表示します。`claudeFound=...; usageApi=...` のような生診断文字列は通常表示には出しません。
+- 各カードの `詳細を表示` / `詳細を隠す` リンクから、トラブルシュート用にマスク済みの診断情報を確認できます。
+
+### リセット時刻
+
+- リセットまでの残り時間はローカルタイムで表示します。
+- `5時間` ウィンドウ: `あと2時間18分（11:50リセット）`
+- `週次` ウィンドウ: `あと3日4時間（5/27 18:00リセット）`
+
+### 設定と保存ファイル
+
+- 設定は現在ユーザーの `AppData` フォルダ配下に保存され、アプリ再起動後も維持されます。
+- `settings.json` には更新間隔、自動起動設定、表示対象サービス、状態ウィンドウの位置、`DisplayMode`(と後方互換のための `CompactMode`)だけを保存します。
+- 設定ファイルが破損していた場合は、デフォルト設定で起動します。
+- 状態ウィンドウの位置は移動・閉じる後も復元されます。保存された位置が現在のモニタ構成外にある場合は、表示領域内に補正して開きます。
+- 設定で Claude Code / Codex の表示・非表示を切り替えられます。両方非表示にしてもアプリは常駐し、トレイアイコン / メニューは利用できます。
+- Windows ログイン時の自動起動は、現在ユーザーの Run キーにある `TokenCheckerWin` の値で管理します。publish 済みビルドは publish 済み exe のパスを登録し、開発中の `dotnet` 実行では `dotnet "<app dll>"` 形式にフォールバックします。
+- 更新間隔は `30秒` / `1分` / `5分` / `10分` から選択できます。
+
+### 前回成功値のフォールバック
+
+- 取得に失敗しても、サービスごとに最後に成功した使用率を保持しているため、Claude / Codex の片方が一時的に失敗してももう片方の前回値は消えません。
+- 最後に成功した Claude / Codex の使用率は、`settings.json` と同じ AppData フォルダの `last_usage.json` にも永続化されます。起動直後に Anthropic 側で `HTTP 429` を引いた場合(例: 同じ usage endpoint に対して POC を直前に実行した直後など)でも、前回の使用率がドーナツに残ったまま表示されます。
+- 失敗時のバッジには現在のステータス(`レート制限中` / `取得失敗` など)が出て、本文には `一時的に取得できません。前回成功値を表示しています` と表示されます。次回の取得が成功するとドーナツが更新され、永続化スナップショットも上書きされます。
+- `last_usage.json` にはサービスごとの `Status` / `Windows` / `CapturedAtUtc` の数値だけを保存し、プロバイダの診断 `Message` 文字列は `null` にクリアしてから書き出します。トークン・認証情報・メールアドレス・パスは一切保存しません。
+
+### その他の挙動
+
+- `今すぐ更新` を連打しても重複した更新は走らないようロックされています。
+- 更新中にアプリを終了するとトレイアイコンも消え、プロセスが残りません。
+- Claude CLI 診断で `claude --version` がタイムアウトした場合、子プロセスは Kill されます。
+
+## 認証情報とプライバシー
+
+- アプリは UI・ツールチップ・ログ・`settings.json` のいずれにも、トークン・OAuth 認証情報・パス全体・メールアドレスを書き出しません。
+- 通常表示には生の診断文字列(`claudeFound=true; versionPresent=true; ...`、`accountNull=false; ...`)を出しません。`詳細を表示` の中だけに表示し、しかも次のマスク処理を通します。
+  - メールアドレス風 → `<email>`
+  - 絶対パス(Windows / POSIX) → `<path>`
+  - `token=` / `secret=` / `key=` / `authorization=` / `bearer=` の値 → `<redacted>`
+  - 長い英数字の塊 → `<redacted>`
+- `詳細を表示` には `[debug] serviceName=...; currentStatus=...; currentWindowCount=...; fallbackStatus=...; fallbackWindowCount=...;` の 1 行も含まれます。これにより、画面のリングが今回取得値かフォールバック値かを生診断文字列を見ずに判定できます。
+- ログイン補助(`Claude Code にログイン`、`Codex にログイン` など)は、公式 CLI を新しい `cmd.exe` 内で起動するだけです。アプリは `~/.claude/.credentials.json`、`~/.codex/auth.json`、Windows 資格情報マネージャー、API キーなどを読みません。保存も行いません。書き込むのは `settings.json`(設定のみ)と `last_usage.json`(数値の使用率のみ)だけです。
+- Claude Code usage endpoint は非公式で、予告なく変更される可能性があります。表示される Claude の使用率はベストエフォートとして扱ってください。
+
+## 動作確認(本リポジトリでの履歴)
+
+2026-05-23 に次のコマンドで動作確認を行いました。
+
+```powershell
+dotnet build
+dotnet run --project src/TokenChecker.Poc
+```
+
+観測結果:
+
+- `dotnet build` は成功
+- `dotnet run --project src/TokenChecker.Poc` は成功
+- Claude は `NotInstalled` を報告
+- Codex CLI は検出されたがログインしていない環境のため `NotLoggedIn` を報告
+
+Codex にログイン済みの環境で期待される結果:
+
+- Codex が `Available` を報告
+- `UsageSnapshot.Services[].Windows` に少なくとも 1 つの Codex `RateLimitWindow` が含まれる
+
+その他の制約:
+
+- POC は Codex の `chatgptAuthTokens` を直接読みません。
+- 出力には意図的にトークン・認証データ・メールアドレス・パス全体を含めません。
+
+## GitHub Release 用説明文
+
+GitHub Release を作成する際の本文として、以下をそのまま貼り付けて利用できます。
+
+```
+TokenCheckerWin v0.1.0
+
+Claude Code と Codex の使用率を Windows 通知領域から確認できる常駐アプリです。
+
+使い方:
+1. zip ファイルをダウンロードして展開します
+2. TokenChecker.App.exe を起動します
+3. Windows 通知領域のアイコンをクリックすると使用率を確認できます
+4. 未ログインの場合は、右クリックメニューから Claude Code / Codex にログインしてください
+
+注意事項:
+- Claude Code の使用率取得には非公式の usage endpoint を利用しています
+- 将来の仕様変更により取得できなくなる可能性があります
+- このアプリは認証情報やトークンを保存しません
+- ログイン処理は公式 CLI (claude / codex) を起動して行います
+- Windows SmartScreen の警告が表示される場合があります
+```
+
+リポジトリの GitHub description(About 欄)には、以下を設定することを推奨します。
+
+```
+Claude Code / Codex の5時間・週次使用率をWindowsタスクトレイで確認できる常駐アプリ
+```
