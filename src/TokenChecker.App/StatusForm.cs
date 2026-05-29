@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using TokenChecker.Core;
 
@@ -23,6 +24,11 @@ internal sealed class StatusForm : Form
     private static readonly Color DetailBackground = Color.FromArgb(247, 248, 252);
     private static readonly Color Separator = Color.FromArgb(232, 235, 240);
 
+    // Service brand colors, echoing the tray icon (Claude=blue / Codex=purple)
+    // but deepened so they stay legible on the light surface.
+    private static readonly Color ClaudeBrand = Color.FromArgb(74, 124, 232);
+    private static readonly Color CodexBrand = Color.FromArgb(139, 92, 214);
+
     private const int FormPadding = 14;
 
     // Normal mode dimensions
@@ -35,9 +41,10 @@ internal sealed class StatusForm : Form
     private const int CompactFormWidth = 440;
     private const int CompactPanelHeight = 96;
 
-    // Minimum mode dimensions
-    private const int MinimumFormWidth = 224;
-    private const int MinimumPanelHeight = 56;
+    // Minimum mode dimensions — the popup hugs the card with no outer padding.
+    private const int MinimumFormWidth = 200;
+    private const int MinimumPanelHeight = 46;
+    private const float MinimumStripRadius = 8f;
 
     private const int FooterHeight = 22;
 
@@ -55,7 +62,8 @@ internal sealed class StatusForm : Form
     public StatusForm()
     {
         Text = "TokenCheckerWin";
-        FormBorderStyle = FormBorderStyle.FixedSingle;
+        FormBorderStyle = FormBorderStyle.None;
+        ControlBox = false;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
@@ -99,6 +107,79 @@ internal sealed class StatusForm : Form
         ApplyVisibilityForMode();
         RecalculateLayout();
         SetLoading();
+
+        MouseDown += OnDragMouseDown;
+        AttachDragHandlers(this);
+    }
+
+    // Raised when the user dismisses the borderless popup with Esc. The tray
+    // context saves the location and hides the form in response.
+    public event EventHandler? HideRequested;
+
+    // The popup is borderless (no title bar); give it a native drop shadow so
+    // it reads as a floating card instead of a flat rectangle.
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            const int CS_DROPSHADOW = 0x00020000;
+            var cp = base.CreateParams;
+            cp.ClassStyle |= CS_DROPSHADOW;
+            return cp;
+        }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    private const int WM_NCLBUTTONDOWN = 0x00A1;
+    private const int HTCAPTION = 2;
+
+    // With no title bar (and no surrounding padding in minimum mode), let the
+    // user move the popup by dragging anywhere on it. Genuinely interactive
+    // controls (the "詳細" link and diagnostics box) are skipped in
+    // AttachDragHandlers so they still receive their own clicks.
+    private void BeginWindowDrag()
+    {
+        ReleaseCapture();
+        SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+    }
+
+    private void OnDragMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left)
+        {
+            BeginWindowDrag();
+        }
+    }
+
+    private void AttachDragHandlers(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child is LinkLabel || child is TextBoxBase)
+            {
+                continue;
+            }
+
+            child.MouseDown += OnDragMouseDown;
+            AttachDragHandlers(child);
+        }
+    }
+
+    // Esc closes the popup (no close button anymore).
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.Escape)
+        {
+            HideRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     public void ApplySettings(AppSettings settings)
@@ -196,6 +277,7 @@ internal sealed class StatusForm : Form
         _updatedAt.Location = new Point(FormPadding, y);
         var contentHeight = y + FooterHeight + FormPadding;
         ClientSize = new Size(NormalFormWidth, contentHeight);
+        ClearRegion();
     }
 
     private void LayoutCompact()
@@ -227,14 +309,41 @@ internal sealed class StatusForm : Form
         _updatedAt.Location = new Point(FormPadding, y);
         var contentHeight = y + FooterHeight + FormPadding;
         ClientSize = new Size(CompactFormWidth, contentHeight);
+        ClearRegion();
     }
 
     private void LayoutMinimum()
     {
-        _minimumPanel.Location = new Point(FormPadding, FormPadding);
-        _minimumPanel.Size = new Size(MinimumFormWidth - FormPadding * 2, MinimumPanelHeight);
-        var contentHeight = FormPadding + MinimumPanelHeight + FormPadding;
-        ClientSize = new Size(MinimumFormWidth, contentHeight);
+        // No outer padding: the rounded card fills the whole popup window.
+        _minimumPanel.Location = new Point(0, 0);
+        _minimumPanel.Size = new Size(MinimumFormWidth, MinimumPanelHeight);
+        ClientSize = new Size(MinimumFormWidth, MinimumPanelHeight);
+        ApplyRoundedRegion(MinimumStripRadius);
+    }
+
+    // In minimum mode the borderless popup is clipped to a rounded rectangle so
+    // it reads as a single rounded card with no surrounding padding. Other
+    // modes keep a normal rectangular window (cleared below).
+    private void ApplyRoundedRegion(float radius)
+    {
+        var rect = new RectangleF(0, 0, ClientSize.Width, ClientSize.Height);
+        using var path = CreateRoundedRectPath(rect, radius);
+        var region = new Region(path);
+        var previous = Region;
+        Region = region;
+        previous?.Dispose();
+    }
+
+    private void ClearRegion()
+    {
+        if (Region is null)
+        {
+            return;
+        }
+
+        var previous = Region;
+        Region = null;
+        previous.Dispose();
     }
 
     private static Color StatusColor(ProviderStatus status)
@@ -259,6 +368,24 @@ internal sealed class StatusForm : Form
             >= 95 => Bad,
             >= 80 => Warning,
             _ => Good
+        };
+    }
+
+    // Like UsageAccentColor, but keeps the service brand color in the normal
+    // range so the minimum strip carries each service's identity (blue/purple)
+    // while still escalating to amber/red as usage climbs.
+    private static Color BrandUsageColor(Color brand, double? value)
+    {
+        if (!UsageRingRenderer.TryClampPercent(value, out var percent))
+        {
+            return MutedText;
+        }
+
+        return percent switch
+        {
+            >= 95 => Bad,
+            >= 80 => Warning,
+            _ => brand
         };
     }
 
@@ -665,27 +792,27 @@ internal sealed class StatusForm : Form
     }
 
     // ----- MinimumStripPanel (minimum mode) --------------------------------
+    // Two stacked rows ("● Claude ▰▰▰▱▱ 45%") inside a single rounded card.
     private sealed class MinimumStripPanel : Panel
     {
-        private readonly MinimumServiceCell _claude;
-        private readonly MinimumServiceCell _codex;
-        private readonly Panel _divider;
+        private const int RowHeight = 21;
+        private const int RowGap = 2;
+        // Keep rows clear of the rounded corners so the card border stays crisp.
+        private const int SideInset = 8;
+
+        private readonly MinimumServiceRow _claude;
+        private readonly MinimumServiceRow _codex;
 
         public MinimumStripPanel()
         {
-            BackColor = Surface;
+            BackColor = Card;
+            DoubleBuffered = true;
 
-            _claude = new MinimumServiceCell("C");
-            _codex = new MinimumServiceCell("X");
-            _divider = new Panel
-            {
-                Size = new Size(1, 22),
-                BackColor = CardBorder
-            };
+            _claude = new MinimumServiceRow("Claude", ClaudeBrand);
+            _codex = new MinimumServiceRow("Codex", CodexBrand);
 
             Controls.Add(_claude);
             Controls.Add(_codex);
-            Controls.Add(_divider);
         }
 
         public void SetLoading()
@@ -698,7 +825,6 @@ internal sealed class StatusForm : Form
         {
             _claude.Visible = showClaude;
             _codex.Visible = showCodex;
-            _divider.Visible = showClaude && showCodex;
 
             if (showClaude)
             {
@@ -710,36 +836,57 @@ internal sealed class StatusForm : Form
                 _codex.SetWindow(FindFiveHourWindow(codex));
             }
 
-            LayoutCells();
+            LayoutRows();
         }
 
         protected override void OnResize(EventArgs eventargs)
         {
             base.OnResize(eventargs);
-            LayoutCells();
+            LayoutRows();
         }
 
-        private void LayoutCells()
+        // Child panel bounds can be reset to their default size when the handle
+        // is created (i.e. when the form is first shown), and the strip is not
+        // necessarily resized afterwards to re-trigger OnResize. Re-assert the
+        // row layout on handle creation and whenever the strip becomes visible
+        // so the two rows never collapse onto the same position.
+        protected override void OnHandleCreated(EventArgs e)
         {
-            var both = _claude.Visible && _codex.Visible;
-            if (both)
+            base.OnHandleCreated(e);
+            LayoutRows();
+        }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            if (Visible)
             {
-                var cellWidth = (Width - 1) / 2;
-                _claude.Location = new Point(0, 0);
-                _claude.Size = new Size(cellWidth, Height);
-                _divider.Location = new Point(cellWidth, (Height - _divider.Height) / 2);
-                _codex.Location = new Point(cellWidth + 1, 0);
-                _codex.Size = new Size(Width - cellWidth - 1, Height);
+                LayoutRows();
+            }
+        }
+
+        private void LayoutRows()
+        {
+            var rowWidth = Width - SideInset * 2;
+
+            if (_claude.Visible && _codex.Visible)
+            {
+                var stackHeight = RowHeight * 2 + RowGap;
+                var top = Math.Max(0, (Height - stackHeight) / 2);
+                _claude.Location = new Point(SideInset, top);
+                _claude.Size = new Size(rowWidth, RowHeight);
+                _codex.Location = new Point(SideInset, top + RowHeight + RowGap);
+                _codex.Size = new Size(rowWidth, RowHeight);
             }
             else if (_claude.Visible)
             {
-                _claude.Location = new Point(0, 0);
-                _claude.Size = new Size(Width, Height);
+                _claude.Location = new Point(SideInset, (Height - RowHeight) / 2);
+                _claude.Size = new Size(rowWidth, RowHeight);
             }
             else if (_codex.Visible)
             {
-                _codex.Location = new Point(0, 0);
-                _codex.Size = new Size(Width, Height);
+                _codex.Location = new Point(SideInset, (Height - RowHeight) / 2);
+                _codex.Size = new Size(rowWidth, RowHeight);
             }
         }
 
@@ -748,7 +895,7 @@ internal sealed class StatusForm : Form
             base.OnPaint(e);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             var rect = new RectangleF(0, 0, Width - 1, Height - 1);
-            using var path = CreateRoundedRectPath(rect, Height / 2f);
+            using var path = CreateRoundedRectPath(rect, MinimumStripRadius);
             using var bg = new SolidBrush(Card);
             e.Graphics.FillPath(bg, path);
             using var pen = new Pen(CardBorder);
@@ -756,61 +903,89 @@ internal sealed class StatusForm : Form
         }
     }
 
-    private sealed class MinimumServiceCell : Panel
+    // A single linear row: brand dot + service name + usage bar + percent.
+    private sealed class MinimumServiceRow : Panel
     {
-        private readonly UsageRingControl _ring;
+        private const int DotSize = 8;
+        private const int Gap = 7;
+        private const int LabelWidth = 48;
+        private const int PercentWidth = 42;
+        private const int BarHeight = 6;
+
+        private readonly Color _brand;
+        private readonly Label _name;
+        private readonly UsageBarControl _bar;
         private readonly Label _percent;
-        private double? _value;
+        private bool _hasValue;
 
-        public MinimumServiceCell(string glyph)
+        public MinimumServiceRow(string displayName, Color brand)
         {
+            _brand = brand;
             BackColor = Card;
+            DoubleBuffered = true;
 
-            _ring = new UsageRingControl
+            _name = new Label
             {
-                Size = new Size(34, 34),
+                Text = displayName,
+                AutoSize = false,
+                ForeColor = PrimaryText,
+                BackColor = Color.Transparent,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
+
+            _bar = new UsageBarControl
+            {
                 BackColor = Card,
-                CenterText = glyph
+                AccentColor = brand
             };
 
             _percent = new Label
             {
+                Text = "—",
                 AutoSize = false,
-                Size = new Size(62, 26),
-                ForeColor = PrimaryText,
+                ForeColor = MutedText,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 12.5F, FontStyle.Bold),
-                TextAlign = ContentAlignment.MiddleLeft,
-                Text = "—"
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleRight
             };
 
-            Controls.Add(_ring);
+            Controls.Add(_name);
+            Controls.Add(_bar);
             Controls.Add(_percent);
         }
 
         public void SetLoading()
         {
-            _value = null;
-            _ring.SetValue(null);
+            _hasValue = false;
+            _bar.SetValue(null);
             _percent.Text = "—";
             _percent.ForeColor = MutedText;
+            Invalidate();
             LayoutChildren();
         }
 
         public void SetWindow(RateLimitWindow? window)
         {
-            _value = window?.UsedPercent;
-            _ring.SetValue(_value);
-            if (UsageRingRenderer.TryClampPercent(_value, out var pct))
+            var value = window?.UsedPercent;
+            if (UsageRingRenderer.TryClampPercent(value, out var pct))
             {
+                _hasValue = true;
+                _bar.AccentColor = BrandUsageColor(_brand, value);
+                _bar.SetValue(value);
                 _percent.Text = $"{Math.Round(pct):0}%";
-                _percent.ForeColor = UsageAccentColor(_value);
+                _percent.ForeColor = PrimaryText;
             }
             else
             {
+                _hasValue = false;
+                _bar.SetValue(null);
                 _percent.Text = "n/a";
                 _percent.ForeColor = MutedText;
             }
+
+            Invalidate();
             LayoutChildren();
         }
 
@@ -822,12 +997,28 @@ internal sealed class StatusForm : Form
 
         private void LayoutChildren()
         {
-            var totalWidth = _ring.Width + 8 + _percent.Width;
-            var startX = Math.Max(8, (Width - totalWidth) / 2);
-            var ringY = (Height - _ring.Height) / 2;
-            var percentY = (Height - _percent.Height) / 2;
-            _ring.Location = new Point(startX, ringY);
-            _percent.Location = new Point(startX + _ring.Width + 8, percentY);
+            var nameX = DotSize + Gap;
+            _name.Location = new Point(nameX, 0);
+            _name.Size = new Size(LabelWidth, Height);
+
+            var barX = nameX + LabelWidth + Gap;
+            var percentX = Width - PercentWidth;
+            var barWidth = Math.Max(16, percentX - Gap - barX);
+            _bar.Location = new Point(barX, (Height - BarHeight) / 2);
+            _bar.Size = new Size(barWidth, BarHeight);
+
+            _percent.Location = new Point(percentX, 0);
+            _percent.Size = new Size(PercentWidth, Height);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var dotColor = _hasValue ? _brand : MutedText;
+            var dotY = (Height - DotSize) / 2f;
+            using var brush = new SolidBrush(dotColor);
+            e.Graphics.FillEllipse(brush, 0, dotY, DotSize, DotSize);
         }
     }
 

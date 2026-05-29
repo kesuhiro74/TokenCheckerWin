@@ -110,6 +110,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
             }
         };
 
+        _statusForm.HideRequested += (_, _) =>
+        {
+            SaveStatusFormLocation();
+            _statusForm.Hide();
+        };
+
         _refreshTimer.Tick += async (_, _) => await RefreshAsync().ConfigureAwait(true);
         ApplyRefreshInterval();
         Application.Idle += OnApplicationIdle;
@@ -248,7 +254,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        ShowStatusForm();
+        // The borderless popup has no close button, so a left-click on the
+        // tray icon toggles it: dismiss it the same way it was opened.
+        if (_statusForm.Visible)
+        {
+            SaveStatusFormLocation();
+            _statusForm.Hide();
+        }
+        else
+        {
+            ShowStatusForm();
+        }
     }
 
     public void ShowStatusForm()
