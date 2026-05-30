@@ -33,7 +33,7 @@ internal sealed class StatusForm : Form
 
     // Normal mode dimensions
     private const int NormalFormWidth = 392;
-    private const int NormalCardHeight = 178;
+    private const int NormalCardHeight = 184;
     private const int NormalCardGap = 10;
     private const int NormalDetailExtra = 92;
 
@@ -436,6 +436,7 @@ internal sealed class StatusForm : Form
         private readonly Label _shortReset;
         private readonly Label _weeklyLabel;
         private readonly Label _weeklyPercent;
+        private readonly UsageBarControl _weeklyBar;
         private readonly LinkLabel _detailToggle;
         private readonly TextBox _detailBox;
         private bool _detailExpanded;
@@ -547,6 +548,16 @@ internal sealed class StatusForm : Form
                 Text = "—"
             };
 
+            // Weekly mirrors the 5h bar but is deliberately understated: thinner
+            // (5px vs 8px) and paired with the smaller weekly percent above, so
+            // the 5h window stays the visual focus of the card.
+            _weeklyBar = new UsageBarControl
+            {
+                Location = new Point(14, 148),
+                Size = new Size(340, 5),
+                BackColor = Card
+            };
+
             _detailToggle = new LinkLabel
             {
                 Text = "詳細を表示",
@@ -556,7 +567,7 @@ internal sealed class StatusForm : Form
                 ActiveLinkColor = PrimaryText,
                 VisitedLinkColor = DetailToggle,
                 LinkBehavior = LinkBehavior.HoverUnderline,
-                Location = new Point(14, 152),
+                Location = new Point(14, 160),
                 Font = new Font("Segoe UI", 8.5F),
                 Visible = false
             };
@@ -587,6 +598,7 @@ internal sealed class StatusForm : Form
             Controls.Add(_shortReset);
             Controls.Add(_weeklyLabel);
             Controls.Add(_weeklyPercent);
+            Controls.Add(_weeklyBar);
             Controls.Add(_detailToggle);
             Controls.Add(_detailBox);
         }
@@ -603,6 +615,7 @@ internal sealed class StatusForm : Form
             _shortReset.Text = "更新中";
             _weeklyPercent.Text = "—";
             _weeklyPercent.ForeColor = MutedText;
+            _weeklyBar.SetValue(null);
             UpdateDiagnostics(string.Empty);
         }
 
@@ -639,6 +652,8 @@ internal sealed class StatusForm : Form
 
             _weeklyPercent.Text = FormatPercent(weekly);
             _weeklyPercent.ForeColor = UsageAccentColor(weekly?.UsedPercent);
+            _weeklyBar.AccentColor = UsageAccentColor(weekly?.UsedPercent);
+            _weeklyBar.SetValue(weekly?.UsedPercent);
 
             var debug = ProviderStatusPresenter.BuildDebugSummary(_displayName, current, fallback);
             var masked = ProviderStatusPresenter.SafeDiagnostics(current?.Message);
