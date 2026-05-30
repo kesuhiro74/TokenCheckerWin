@@ -9,7 +9,13 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
         var context = new TrayApplicationContext();
-        if (args.Any(arg => string.Equals(arg, "--show-status", StringComparison.OrdinalIgnoreCase)))
+
+        // Open the status window on launch when the user has the "show on
+        // startup" setting enabled (the default, so first-time users see it) or
+        // when explicitly requested with --show-status. A single one-shot Idle
+        // handler avoids opening it twice.
+        var showStatusRequested = args.Any(arg => string.Equals(arg, "--show-status", StringComparison.OrdinalIgnoreCase));
+        if (showStatusRequested || context.ShouldShowOnStartup)
         {
             Application.Idle += ShowStatusFormOnce;
 

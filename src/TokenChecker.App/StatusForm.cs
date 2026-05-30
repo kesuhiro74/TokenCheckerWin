@@ -29,6 +29,19 @@ internal sealed class StatusForm : Form
     private static readonly Color ClaudeBrand = Color.FromArgb(74, 124, 232);
     private static readonly Color CodexBrand = Color.FromArgb(139, 92, 214);
 
+    // Card title typefaces, each echoing the service's own wordmark:
+    // Claude Code uses an elegant serif (Georgia ~ the Claude serif wordmark),
+    // Codex/ChatGPT uses a clean grotesque sans (Arial ~ the ChatGPT wordmark).
+    // Both ship with Windows; CreateTitleFont falls back to Segoe UI Bold if a
+    // family is somehow missing.
+    private const string ClaudeTitleFontFamily = "Georgia";
+    private const float ClaudeTitleFontSize = 11.5F;
+    private const FontStyle ClaudeTitleFontStyle = FontStyle.Bold;
+
+    private const string CodexTitleFontFamily = "Arial";
+    private const float CodexTitleFontSize = 11F;
+    private const FontStyle CodexTitleFontStyle = FontStyle.Bold;
+
     private const int FormPadding = 14;
 
     // Normal mode dimensions
@@ -47,7 +60,8 @@ internal sealed class StatusForm : Form
     private const float CompactWindowRadius = 12f;
 
     // Minimum mode dimensions — the popup hugs the card with no outer padding.
-    private const int MinimumFormWidth = 200;
+    // Wide enough that a serif service name ("Claude") isn't clipped.
+    private const int MinimumFormWidth = 232;
     private const int MinimumPanelHeight = 46;
     private const float MinimumStripRadius = 8f;
 
@@ -78,16 +92,24 @@ internal sealed class StatusForm : Form
         Font = new Font("Segoe UI", 9F);
         StartPosition = FormStartPosition.Manual;
 
-        _claudeCard = new ServiceCard("Claude Code")
+        _claudeCard = new ServiceCard("Claude Code", ClaudeBrand,
+            CreateTitleFont(ClaudeTitleFontFamily, ClaudeTitleFontSize, ClaudeTitleFontStyle),
+            "✳", new Font("Segoe UI Symbol", 11F))
         {
             Size = new Size(NormalFormWidth - FormPadding * 2, NormalCardHeight)
         };
-        _codexCard = new ServiceCard("Codex")
+        _codexCard = new ServiceCard("Codex", CodexBrand,
+            CreateTitleFont(CodexTitleFontFamily, CodexTitleFontSize, CodexTitleFontStyle),
+            "</>")
         {
             Size = new Size(NormalFormWidth - FormPadding * 2, NormalCardHeight)
         };
-        _compactClaude = new CompactServicePanel("Claude Code");
-        _compactCodex = new CompactServicePanel("Codex");
+        _compactClaude = new CompactServicePanel("Claude Code", ClaudeBrand,
+            CreateTitleFont(ClaudeTitleFontFamily, 9.5F, ClaudeTitleFontStyle),
+            "✳", new Font("Segoe UI Symbol", 9F));
+        _compactCodex = new CompactServicePanel("Codex", CodexBrand,
+            CreateTitleFont(CodexTitleFontFamily, 9.5F, CodexTitleFontStyle),
+            "</>");
         _minimumPanel = new MinimumStripPanel();
 
         _claudeCard.HeightChanged += (_, _) => RecalculateLayout();
@@ -408,6 +430,98 @@ internal sealed class StatusForm : Form
     private static RateLimitWindow? FindWeeklyWindow(ServiceUsage? service)
         => service?.Windows.FirstOrDefault(window => window.WindowDurationMins == 10080);
 
+    // Build a title font from the requested family, falling back to Segoe UI
+    // Bold if the family is not installed (so a missing display face never
+    // leaves the title in an unexpected substitute face).
+    private static Font CreateTitleFont(string family, float size, FontStyle style)
+    {
+        try
+        {
+            var font = new Font(family, size, style);
+            if (string.Equals(font.Name, family, StringComparison.OrdinalIgnoreCase))
+            {
+                return font;
+            }
+
+            font.Dispose();
+        }
+        catch
+        {
+            // Fall through to the default below.
+        }
+
+        return new Font("Segoe UI", 10.5F, FontStyle.Bold);
+    }
+
+    // Frosted-glass card backdrop shared by the normal and compact service
+    // panels: a faint brand-tinted vertical gradient, a soft top highlight, a
+    // brand accent pill down the left edge, and a delicate double border. Brand
+    // color is decorative only — usage severity stays on the numbers/bars/ring.
+    private static void PaintGlassCard(Graphics g, int width, int height, Color brand)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Card);
+
+        const float radius = 13f;
+        var rect = new RectangleF(0, 0, width - 1, height - 1);
+        using var path = CreateRoundedRectPath(rect, radius);
+
+        var top = Lighten(Card, 0.40f);
+        var bottom = Tint(Card, brand, 0.11f);
+        using (var fill = new LinearGradientBrush(
+            new RectangleF(0, 0, width, height), top, bottom, LinearGradientMode.Vertical))
+        {
+            g.FillPath(fill, path);
+        }
+
+        var prevClip = g.Clip;
+        g.SetClip(path, CombineMode.Replace);
+
+        var glossHeight = Math.Max(8f, height * 0.45f);
+        using (var gloss = new LinearGradientBrush(
+            new RectangleF(0, 0, width, glossHeight),
+            Color.FromArgb(120, 255, 255, 255),
+            Color.FromArgb(0, 255, 255, 255),
+            LinearGradientMode.Vertical))
+        {
+            g.FillRectangle(gloss, new RectangleF(0, 0, width, glossHeight));
+        }
+
+        var accentRect = new RectangleF(8f, 13f, 4f, height - 26f);
+        using (var accentPath = CreateRoundedRectPath(accentRect, 2f))
+        using (var accentBrush = new SolidBrush(brand))
+        {
+            g.FillPath(accentBrush, accentPath);
+        }
+
+        g.Clip = prevClip;
+
+        var innerRect = new RectangleF(1f, 1f, width - 3f, height - 3f);
+        using (var innerPath = CreateRoundedRectPath(innerRect, radius - 1f))
+        using (var innerPen = new Pen(Color.FromArgb(150, 255, 255, 255)))
+        {
+            g.DrawPath(innerPen, innerPath);
+        }
+
+        using var border = new Pen(CardBorder);
+        g.DrawPath(border, path);
+    }
+
+    // Blend a base color toward an accent color by `amount` (0..1). Used to mix
+    // a faint brand tint into the otherwise near-white card gradient.
+    private static Color Tint(Color baseColor, Color accent, float amount)
+    {
+        amount = Math.Clamp(amount, 0f, 1f);
+        return Color.FromArgb(
+            (int)Math.Round(baseColor.R + (accent.R - baseColor.R) * amount),
+            (int)Math.Round(baseColor.G + (accent.G - baseColor.G) * amount),
+            (int)Math.Round(baseColor.B + (accent.B - baseColor.B) * amount));
+    }
+
+    // Blend a color toward white by `amount` (0..1).
+    private static Color Lighten(Color color, float amount)
+        => Tint(color, Color.White, amount);
+
     private static GraphicsPath CreateRoundedRectPath(RectangleF rect, float radius)
     {
         var diameter = Math.Min(radius * 2f, Math.Min(rect.Width, rect.Height));
@@ -427,6 +541,8 @@ internal sealed class StatusForm : Form
         public event EventHandler? HeightChanged;
 
         private readonly string _displayName;
+        private readonly Color _brand;
+        private readonly Label? _titleMark;
         private readonly Label _title;
         private readonly Label _badge;
         private readonly Label _statusMessage;
@@ -441,19 +557,49 @@ internal sealed class StatusForm : Form
         private readonly TextBox _detailBox;
         private bool _detailExpanded;
 
-        public ServiceCard(string displayName)
+        public ServiceCard(string displayName, Color brand, Font titleFont, string? mark = null, Font? markFont = null)
         {
             _displayName = displayName;
+            _brand = brand;
             BackColor = Card;
+            // Custom gradient/glass background is painted in OnPaint; double
+            // buffer so the layered fills don't flicker on refresh.
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer
+                | ControlStyles.UserPaint
+                | ControlStyles.ResizeRedraw,
+                true);
+
+            // An optional brand mark (e.g. "✳") is drawn in its own glyph-capable
+            // font so it never falls back to a tofu box when the title face (a
+            // serif such as Georgia) lacks the symbol. The name keeps the brand
+            // title font; _displayName stays plain for status messages.
+            var nameX = 14;
+            if (!string.IsNullOrEmpty(mark))
+            {
+                var glyphFont = markFont ?? titleFont;
+                _titleMark = new Label
+                {
+                    Text = mark,
+                    AutoSize = true,
+                    Font = glyphFont,
+                    ForeColor = _brand,
+                    BackColor = Color.Transparent,
+                    Location = new Point(14, 13)
+                };
+                var markWidth = TextRenderer.MeasureText(mark, glyphFont, Size.Empty, TextFormatFlags.NoPadding).Width;
+                nameX = 14 + markWidth + 7;
+            }
 
             _title = new Label
             {
                 Text = displayName,
                 AutoSize = true,
-                Font = new Font("Segoe UI", 10.5F, FontStyle.Bold),
+                Font = titleFont,
                 ForeColor = PrimaryText,
                 BackColor = Color.Transparent,
-                Location = new Point(14, 12)
+                Location = new Point(nameX, 12)
             };
 
             _badge = new Label
@@ -509,7 +655,8 @@ internal sealed class StatusForm : Form
             {
                 Location = new Point(14, 78),
                 Size = new Size(340, 8),
-                BackColor = Card
+                BackColor = Color.Transparent,
+                UseGradient = true
             };
 
             _shortReset = new Label
@@ -555,7 +702,8 @@ internal sealed class StatusForm : Form
             {
                 Location = new Point(14, 148),
                 Size = new Size(340, 5),
-                BackColor = Card
+                BackColor = Color.Transparent,
+                UseGradient = true
             };
 
             _detailToggle = new LinkLabel
@@ -588,6 +736,11 @@ internal sealed class StatusForm : Form
                 WordWrap = true,
                 Font = new Font("Consolas", 8.5F)
             };
+
+            if (_titleMark is not null)
+            {
+                Controls.Add(_titleMark);
+            }
 
             Controls.Add(_title);
             Controls.Add(_badge);
@@ -702,42 +855,62 @@ internal sealed class StatusForm : Form
         }
 
         protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            var rect = new RectangleF(0, 0, Width - 1, Height - 1);
-            using var path = CreateRoundedRectPath(rect, 10f);
-            using var bg = new SolidBrush(Card);
-            e.Graphics.FillPath(bg, path);
-            using var pen = new Pen(CardBorder);
-            e.Graphics.DrawPath(pen, path);
-        }
+            => PaintGlassCard(e.Graphics, Width, Height, _brand);
     }
 
     // ----- CompactServicePanel (compact mode) ------------------------------
     private sealed class CompactServicePanel : Panel
     {
         private readonly string _displayName;
+        private readonly Color _brand;
+        private readonly Label? _titleMark;
         private readonly Label _title;
         private readonly Label _status;
         private readonly UsageRingControl _ring;
         private readonly Label _reset;
 
-        public CompactServicePanel(string displayName)
+        public CompactServicePanel(string displayName, Color brand, Font titleFont, string? mark = null, Font? markFont = null)
         {
             _displayName = displayName;
+            _brand = brand;
             BackColor = Card;
+            // Glass background is painted in OnPaint; double buffer to avoid
+            // flicker, matching the normal-mode ServiceCard.
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer
+                | ControlStyles.UserPaint
+                | ControlStyles.ResizeRedraw,
+                true);
+
+            // Optional brand mark (e.g. "✳") drawn in its own glyph-capable font
+            // so a serif title face never falls back to a tofu box. _displayName
+            // stays plain for status messages.
+            var nameX = 14;
+            if (!string.IsNullOrEmpty(mark))
+            {
+                var glyphFont = markFont ?? titleFont;
+                _titleMark = new Label
+                {
+                    Text = mark,
+                    AutoSize = true,
+                    Font = glyphFont,
+                    ForeColor = _brand,
+                    BackColor = Color.Transparent,
+                    Location = new Point(14, 13)
+                };
+                var markWidth = TextRenderer.MeasureText(mark, glyphFont, Size.Empty, TextFormatFlags.NoPadding).Width;
+                nameX = 14 + markWidth + 6;
+            }
 
             _title = new Label
             {
                 Text = displayName,
-                AutoSize = false,
-                Size = new Size(118, 18),
-                Location = new Point(14, 12),
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                AutoSize = true,
+                Location = new Point(nameX, 12),
+                Font = titleFont,
                 ForeColor = PrimaryText,
-                BackColor = Color.Transparent,
-                AutoEllipsis = true
+                BackColor = Color.Transparent
             };
 
             _status = new Label
@@ -754,19 +927,24 @@ internal sealed class StatusForm : Form
             {
                 Size = new Size(54, 54),
                 Location = new Point(140, 10),
-                BackColor = BackColor
+                BackColor = Color.Transparent
             };
 
             _reset = new Label
             {
                 AutoSize = false,
-                Size = new Size(184, 22),
-                Location = new Point(10, 66),
+                Size = new Size(180, 22),
+                Location = new Point(16, 66),
                 ForeColor = MutedText,
                 BackColor = Color.Transparent,
                 AutoEllipsis = true,
                 Font = new Font("Segoe UI", 8F)
             };
+
+            if (_titleMark is not null)
+            {
+                Controls.Add(_titleMark);
+            }
 
             Controls.Add(_title);
             Controls.Add(_status);
@@ -796,16 +974,7 @@ internal sealed class StatusForm : Form
         }
 
         protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            var rect = new RectangleF(0, 0, Width - 1, Height - 1);
-            using var path = CreateRoundedRectPath(rect, 10f);
-            using var bg = new SolidBrush(Card);
-            e.Graphics.FillPath(bg, path);
-            using var pen = new Pen(CardBorder);
-            e.Graphics.DrawPath(pen, path);
-        }
+            => PaintGlassCard(e.Graphics, Width, Height, _brand);
     }
 
     // ----- MinimumStripPanel (minimum mode) --------------------------------
@@ -825,8 +994,10 @@ internal sealed class StatusForm : Form
             BackColor = Card;
             DoubleBuffered = true;
 
-            _claude = new MinimumServiceRow("Claude", ClaudeBrand);
-            _codex = new MinimumServiceRow("Codex", CodexBrand);
+            _claude = new MinimumServiceRow("Claude", ClaudeBrand,
+                CreateTitleFont(ClaudeTitleFontFamily, 9.5F, ClaudeTitleFontStyle));
+            _codex = new MinimumServiceRow("Codex", CodexBrand,
+                CreateTitleFont(CodexTitleFontFamily, 9.5F, CodexTitleFontStyle));
 
             Controls.Add(_claude);
             Controls.Add(_codex);
@@ -925,7 +1096,8 @@ internal sealed class StatusForm : Form
     {
         private const int DotSize = 8;
         private const int Gap = 7;
-        private const int LabelWidth = 48;
+        // Wide enough for a serif name (Georgia "Claude") at this size.
+        private const int LabelWidth = 66;
         private const int PercentWidth = 42;
         private const int BarHeight = 6;
 
@@ -935,7 +1107,7 @@ internal sealed class StatusForm : Form
         private readonly Label _percent;
         private bool _hasValue;
 
-        public MinimumServiceRow(string displayName, Color brand)
+        public MinimumServiceRow(string displayName, Color brand, Font nameFont)
         {
             _brand = brand;
             BackColor = Card;
@@ -947,7 +1119,7 @@ internal sealed class StatusForm : Form
                 AutoSize = false,
                 ForeColor = PrimaryText,
                 BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Font = nameFont,
                 TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = true
             };
@@ -1046,13 +1218,19 @@ internal sealed class StatusForm : Form
 
         public Color AccentColor { get; set; } = Good;
 
+        // When true, the fill is drawn as a light→accent horizontal gradient
+        // (used by the glass cards in normal mode). Other modes leave it false
+        // for the original flat fill.
+        public bool UseGradient { get; set; }
+
         public UsageBarControl()
         {
             SetStyle(
                 ControlStyles.AllPaintingInWmPaint
                 | ControlStyles.OptimizedDoubleBuffer
                 | ControlStyles.ResizeRedraw
-                | ControlStyles.UserPaint,
+                | ControlStyles.UserPaint
+                | ControlStyles.SupportsTransparentBackColor,
                 true);
         }
 
@@ -1060,6 +1238,26 @@ internal sealed class StatusForm : Form
         {
             _value = usedPercent;
             Invalidate();
+        }
+
+        // When the bar is transparent (glass cards), let the parent paint its
+        // gradient slice behind us so the track sits seamlessly on the card
+        // instead of leaving an opaque rectangle.
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            if (BackColor == Color.Transparent && Parent is not null)
+            {
+                var g = e.Graphics;
+                var state = g.Save();
+                g.TranslateTransform(-Left, -Top);
+                using var pe = new PaintEventArgs(g, new Rectangle(Left, Top, Width, Height));
+                InvokePaintBackground(Parent, pe);
+                InvokePaint(Parent, pe);
+                g.Restore(state);
+                return;
+            }
+
+            base.OnPaintBackground(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1096,8 +1294,20 @@ internal sealed class StatusForm : Form
             actualWidth = Math.Min(actualWidth, rect.Width);
             var fillRect = new RectangleF(0, 0, actualWidth, Height);
             using var fillPath = CreateRoundedRectPath(fillRect, radius);
-            using var fillBrush = new SolidBrush(AccentColor);
-            g.FillPath(fillBrush, fillPath);
+            if (UseGradient)
+            {
+                using var fillBrush = new LinearGradientBrush(
+                    new RectangleF(0, 0, actualWidth, Height),
+                    Lighten(AccentColor, 0.22f),
+                    AccentColor,
+                    LinearGradientMode.Horizontal);
+                g.FillPath(fillBrush, fillPath);
+            }
+            else
+            {
+                using var fillBrush = new SolidBrush(AccentColor);
+                g.FillPath(fillBrush, fillPath);
+            }
         }
     }
 
@@ -1113,7 +1323,8 @@ internal sealed class StatusForm : Form
                 ControlStyles.AllPaintingInWmPaint
                 | ControlStyles.OptimizedDoubleBuffer
                 | ControlStyles.ResizeRedraw
-                | ControlStyles.UserPaint,
+                | ControlStyles.UserPaint
+                | ControlStyles.SupportsTransparentBackColor,
                 true);
         }
 
@@ -1121,6 +1332,25 @@ internal sealed class StatusForm : Form
         {
             _usedPercent = usedPercent;
             Invalidate();
+        }
+
+        // When transparent (the glass compact card), let the parent paint its
+        // gradient behind the ring so it doesn't sit on an opaque square.
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            if (BackColor == Color.Transparent && Parent is not null)
+            {
+                var g = e.Graphics;
+                var state = g.Save();
+                g.TranslateTransform(-Left, -Top);
+                using var pe = new PaintEventArgs(g, new Rectangle(Left, Top, Width, Height));
+                InvokePaintBackground(Parent, pe);
+                InvokePaint(Parent, pe);
+                g.Restore(state);
+                return;
+            }
+
+            base.OnPaintBackground(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1133,7 +1363,7 @@ internal sealed class StatusForm : Form
                 foreColor: PrimaryText,
                 emptyColor: TrackEmpty,
                 accentColor: UsageAccentColor(_usedPercent),
-                backColor: BackColor == Color.Transparent ? Card : BackColor,
+                backColor: BackColor == Color.Transparent ? Color.Transparent : BackColor,
                 centerLabel: CenterText);
         }
     }

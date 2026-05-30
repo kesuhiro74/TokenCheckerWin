@@ -17,6 +17,11 @@ internal sealed class AppSettings
 
     public bool AutoStartEnabled { get; set; }
 
+    // When true, the status window is opened automatically on launch. Defaults
+    // to true so first-time users see the popup without hunting for the tray
+    // icon; can be turned off in settings to start silently in the tray.
+    public bool ShowOnStartup { get; set; } = true;
+
     // Kept for backward compatibility with settings.json written by older builds
     // that only knew about a compact-mode boolean. Normalize() reconciles this
     // with the newer DisplayMode field.
@@ -66,6 +71,7 @@ internal sealed class AppSettings
         {
             RefreshIntervalSeconds = RefreshIntervalSeconds,
             AutoStartEnabled = AutoStartEnabled,
+            ShowOnStartup = ShowOnStartup,
             CompactMode = CompactMode,
             DisplayMode = DisplayMode,
             VisibleServices = VisibleServices.ToArray(),

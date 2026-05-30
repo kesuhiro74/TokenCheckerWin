@@ -28,7 +28,13 @@ internal static class UsageRingRenderer
         string? centerLabel = null)
     {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        graphics.Clear(backColor);
+        // A fully transparent backColor means the caller already painted the
+        // background (e.g. the glass card behind a transparent ring); skip the
+        // clear so we don't paint over it.
+        if (backColor.A != 0)
+        {
+            graphics.Clear(backColor);
+        }
 
         var size = Math.Min(bounds.Width, bounds.Height);
         var stroke = Math.Max(4f, size * 0.11f);

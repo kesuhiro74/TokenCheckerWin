@@ -31,6 +31,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     public AuthCommandService AuthService => _authService;
 
+    // Whether the status window should be opened automatically at launch.
+    // Program.cs reads this after construction to decide on the initial popup.
+    public bool ShouldShowOnStartup => _settings.ShowOnStartup;
+
     public ProviderStatus GetServiceStatus(string serviceName)
         => _lastSnapshot?.Services.FirstOrDefault(s => string.Equals(s.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase))?.Status
             ?? ProviderStatus.Unknown;
