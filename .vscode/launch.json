@@ -6,7 +6,7 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "dotnet build",
-      "program": "${workspaceFolder}/src/TokenChecker.Poc/bin/Debug/net8.0/TokenChecker.Poc.dll",
+      "program": "${workspaceFolder}/src/TokenChecker.Poc/bin/Debug/net10.0/TokenChecker.Poc.dll",
       "args": [],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",

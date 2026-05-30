@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -1216,11 +1217,13 @@ internal sealed class StatusForm : Form
     {
         private double? _value;
 
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public Color AccentColor { get; set; } = Good;
 
         // When true, the fill is drawn as a light→accent horizontal gradient
         // (used by the glass cards in normal mode). Other modes leave it false
         // for the original flat fill.
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool UseGradient { get; set; }
 
         public UsageBarControl()
@@ -1315,6 +1318,7 @@ internal sealed class StatusForm : Form
     {
         private double? _usedPercent;
 
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public string? CenterText { get; set; }
 
         public UsageRingControl()

@@ -10,7 +10,7 @@ TokenCheckerWin で作業する Claude Code 向けのガイドです。ユーザ
 
 ## このアプリは何か
 
-Claude Code / OpenAI Codex の使用率（5時間・週次のレート制限）を Windows 通知領域に常駐表示する .NET 8 WinForms トレイアプリ。取得失敗時は前回成功値にフォールバックする。**認証情報・トークンは一切保存しない**（最重要の設計制約。後述）。
+Claude Code / OpenAI Codex の使用率（5時間・週次のレート制限）を Windows 通知領域に常駐表示する .NET 10 WinForms トレイアプリ。取得失敗時は前回成功値にフォールバックする。**認証情報・トークンは一切保存しない**（最重要の設計制約。後述）。
 
 ## ビルド・実行
 
@@ -37,7 +37,7 @@ dotnet run --project src/TokenChecker.Poc
 ビルド済み exe を直接起動する場合（`dotnet run` がルート外で失敗する時の回避にも）:
 
 ```powershell
-& "C:\dev\TokenCheckerWin\src\TokenChecker.App\bin\Debug\net8.0-windows\TokenChecker.exe" --show-status
+& "C:\dev\TokenCheckerWin\src\TokenChecker.App\bin\Debug\net10.0-windows\TokenChecker.exe" --show-status
 ```
 
 CLI フラグは `Program.cs` で処理: `--show-status` / `--show-settings`（大文字小文字区別なし）。フラグなしは静かにトレイ常駐。
@@ -54,8 +54,8 @@ Stop-Process -Name TokenChecker -Force -ErrorAction SilentlyContinue
 
 ## プロジェクト構成
 
-- **`src/TokenChecker.Core`** — プラットフォーム非依存の共有ライブラリ。使用率モデル（`UsageSnapshot` / `ServiceUsage` / `RateLimitWindow` / `ProviderStatus`）、`IUsageProvider`、`UsageAggregator`、プロバイダ実装（`Providers/`）。`net8.0`。
-- **`src/TokenChecker.App`** — WinForms + `NotifyIcon` のトレイ UI。`net8.0-windows`, `WinExe`, `UseWindowsForms`。Core を参照。
+- **`src/TokenChecker.Core`** — プラットフォーム非依存の共有ライブラリ。使用率モデル（`UsageSnapshot` / `ServiceUsage` / `RateLimitWindow` / `ProviderStatus`）、`IUsageProvider`、`UsageAggregator`、プロバイダ実装（`Providers/`）。`net10.0`。
+- **`src/TokenChecker.App`** — WinForms + `NotifyIcon` のトレイ UI。`net10.0-windows`, `WinExe`, `UseWindowsForms`。Core を参照。
 - **`src/TokenChecker.Poc`** — `UsageSnapshot` を JSON で吐くコンソール。プロバイダ挙動の確認用。
 
 ### データフロー
