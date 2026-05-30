@@ -37,17 +37,17 @@ dotnet run --project src/TokenChecker.Poc
 ビルド済み exe を直接起動する場合（`dotnet run` がルート外で失敗する時の回避にも）:
 
 ```powershell
-& "C:\dev\TokenCheckerWin\src\TokenChecker.App\bin\Debug\net8.0-windows\TokenChecker.App.exe" --show-status
+& "C:\dev\TokenCheckerWin\src\TokenChecker.App\bin\Debug\net8.0-windows\TokenChecker.exe" --show-status
 ```
 
 CLI フラグは `Program.cs` で処理: `--show-status` / `--show-settings`（大文字小文字区別なし）。フラグなしは静かにトレイ常駐。
 
 ### 落とし穴: 再ビルド前に実行中インスタンスを止める
 
-App が起動したままだと exe がロックされてビルドが失敗する。コード変更→ビルド前に必ず停止する:
+App が起動したままだと exe がロックされてビルドが失敗する。コード変更→ビルド前に必ず停止する（出力 exe は `TokenChecker.exe`＝プロセス名 `TokenChecker`）:
 
 ```powershell
-Stop-Process -Name TokenChecker.App -Force -ErrorAction SilentlyContinue
+Stop-Process -Name TokenChecker -Force -ErrorAction SilentlyContinue
 ```
 
 テストプロジェクトは無い（`dotnet test` 対象なし）。検証はビルド + POC + 実起動の目視で行う。
