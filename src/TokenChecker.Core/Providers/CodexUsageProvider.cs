@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 namespace TokenChecker.Core.Providers;
 
@@ -466,20 +465,11 @@ public sealed class CodexUsageProvider : IUsageProvider
         private static string SummarizeJsonRpcError(JsonNode error)
         {
             var code = error["code"]?.ToJsonString() ?? "unknown";
-            var message = SafeErrorText(error["message"]?.GetValue<string>() ?? "Codex app-server returned an error.");
+            var message = DiagnosticMasker.Mask(
+                error["message"]?.GetValue<string>() ?? "Codex app-server returned an error.",
+                maxLength: 160);
 
             return $"code={code}; message={message}";
-        }
-
-        private static string SafeErrorText(string value)
-        {
-            var masked = Regex.Replace(value, @"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "<email>", RegexOptions.IgnoreCase);
-            masked = Regex.Replace(masked, @"[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*", "<path>");
-            masked = Regex.Replace(masked, @"/(?:[^/\s]+/)+[^/\s]*", "<path>");
-            masked = Regex.Replace(masked, @"(?i)(token|secret|key|authorization|bearer)\s*[:=]\s*\S+", "$1=<redacted>");
-            masked = Regex.Replace(masked, @"\b[A-Za-z0-9_-]{32,}\b", "<redacted>");
-
-            return masked.Length <= 160 ? masked : masked[..160];
         }
 
         private static ProcessStartInfo CreateStartInfo(string codexCommand)

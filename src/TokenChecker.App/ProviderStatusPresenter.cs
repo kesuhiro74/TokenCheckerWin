@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using TokenChecker.Core;
 
 namespace TokenChecker.App;
@@ -47,19 +46,9 @@ internal static class ProviderStatusPresenter
             _ => $"{serviceName} の状態を確認できません"
         };
 
+    // Delegates to the shared masker (TokenChecker.Core.DiagnosticMasker) so the
+    // privacy rules live in exactly one place; the UI allows a longer tail than
+    // the providers' own summaries.
     public static string SafeDiagnostics(string? rawMessage)
-    {
-        if (string.IsNullOrWhiteSpace(rawMessage))
-        {
-            return "";
-        }
-
-        var masked = Regex.Replace(rawMessage, @"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "<email>", RegexOptions.IgnoreCase);
-        masked = Regex.Replace(masked, @"[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*", "<path>");
-        masked = Regex.Replace(masked, @"/(?:[^/\s]+/)+[^/\s]*", "<path>");
-        masked = Regex.Replace(masked, @"(?i)(token|secret|key|authorization|bearer)\s*[:=]\s*\S+", "$1=<redacted>");
-        masked = Regex.Replace(masked, @"\b[A-Za-z0-9_-]{32,}\b", "<redacted>");
-
-        return masked.Length <= 400 ? masked : masked[..400];
-    }
+        => DiagnosticMasker.Mask(rawMessage, maxLength: 400);
 }
