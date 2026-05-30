@@ -3,6 +3,9 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <Product>TokenCheckerWin</Product>
+    <AssemblyTitle>TokenCheckerWin</AssemblyTitle>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
