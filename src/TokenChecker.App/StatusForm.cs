@@ -37,9 +37,14 @@ internal sealed class StatusForm : Form
     private const int NormalCardGap = 10;
     private const int NormalDetailExtra = 92;
 
-    // Compact mode dimensions
-    private const int CompactFormWidth = 440;
+    // Compact mode dimensions — the window hugs the cards with a thin margin and
+    // its width follows how many services are shown (no wasted space on the right
+    // when only one service is visible).
+    private const int CompactFormPadding = 6;
+    private const int CompactPanelWidth = 200;
     private const int CompactPanelHeight = 96;
+    private const int CompactPanelGap = 8;
+    private const float CompactWindowRadius = 12f;
 
     // Minimum mode dimensions — the popup hugs the card with no outer padding.
     private const int MinimumFormWidth = 200;
@@ -227,7 +232,7 @@ internal sealed class StatusForm : Form
         _compactClaude.Visible = _displayMode == DisplayMode.Compact && _showClaude;
         _compactCodex.Visible = _displayMode == DisplayMode.Compact && _showCodex;
         _minimumPanel.Visible = _displayMode == DisplayMode.Minimum && (_showClaude || _showCodex);
-        _updatedAt.Visible = _displayMode != DisplayMode.Minimum;
+        _updatedAt.Visible = _displayMode == DisplayMode.Normal;
     }
 
     private void RecalculateLayout()
@@ -282,34 +287,31 @@ internal sealed class StatusForm : Form
 
     private void LayoutCompact()
     {
-        var contentWidth = CompactFormWidth - FormPadding * 2;
-        _updatedAt.Size = new Size(contentWidth, FooterHeight);
+        // Tight uniform margin, no footer; width tracks the visible service count
+        // so a single card doesn't leave a large empty gap on the right.
+        var pad = CompactFormPadding;
+        var visibleCount = (_showClaude ? 1 : 0) + (_showCodex ? 1 : 0);
 
-        var y = FormPadding;
-        var compactWidth = (contentWidth - NormalCardGap) / 2;
-
+        var x = pad;
         if (_showClaude)
         {
-            _compactClaude.Location = new Point(FormPadding, y);
-            _compactClaude.Size = new Size(compactWidth, CompactPanelHeight);
+            _compactClaude.Location = new Point(x, pad);
+            _compactClaude.Size = new Size(CompactPanelWidth, CompactPanelHeight);
+            x += CompactPanelWidth + CompactPanelGap;
         }
 
         if (_showCodex)
         {
-            var x = _showClaude ? FormPadding + compactWidth + NormalCardGap : FormPadding;
-            _compactCodex.Location = new Point(x, y);
-            _compactCodex.Size = new Size(compactWidth, CompactPanelHeight);
+            _compactCodex.Location = new Point(x, pad);
+            _compactCodex.Size = new Size(CompactPanelWidth, CompactPanelHeight);
         }
 
-        if (_showClaude || _showCodex)
-        {
-            y += CompactPanelHeight + NormalCardGap;
-        }
-
-        _updatedAt.Location = new Point(FormPadding, y);
-        var contentHeight = y + FooterHeight + FormPadding;
-        ClientSize = new Size(CompactFormWidth, contentHeight);
-        ClearRegion();
+        var contentWidth = visibleCount > 0
+            ? CompactPanelWidth * visibleCount + CompactPanelGap * (visibleCount - 1)
+            : CompactPanelWidth;
+        var contentHeight = (visibleCount > 0 ? CompactPanelHeight : 0) + pad * 2;
+        ClientSize = new Size(contentWidth + pad * 2, contentHeight);
+        ApplyRoundedRegion(CompactWindowRadius);
     }
 
     private void LayoutMinimum()
