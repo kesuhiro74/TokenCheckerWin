@@ -40,6 +40,8 @@ internal static class AutoStartManager
 
     private static string BuildStartupCommand()
     {
+        // Published builds (incl. single-file): ProcessPath is the real .exe, so
+        // register it directly. Environment.ProcessPath is single-file safe.
         var processPath = Environment.ProcessPath;
         if (!string.IsNullOrWhiteSpace(processPath)
             && string.Equals(Path.GetExtension(processPath), ".exe", StringComparison.OrdinalIgnoreCase)
@@ -48,12 +50,19 @@ internal static class AutoStartManager
             return Quote(processPath);
         }
 
-        var assemblyPath = Assembly.GetEntryAssembly()?.Location;
+        // Development (`dotnet run`): ProcessPath is dotnet.exe, so register
+        // `dotnet "<app dll>"`. Build the DLL path from AppContext.BaseDirectory
+        // and the entry assembly's simple name — both single-file safe. We avoid
+        // Assembly.Location, which returns "" in single-file apps (IL3000).
+        var entryName = Assembly.GetEntryAssembly()?.GetName().Name;
         if (!string.IsNullOrWhiteSpace(processPath)
-            && !string.IsNullOrWhiteSpace(assemblyPath)
-            && File.Exists(assemblyPath))
+            && !string.IsNullOrWhiteSpace(entryName))
         {
-            return $"{Quote(processPath)} {Quote(assemblyPath)}";
+            var assemblyPath = Path.Combine(AppContext.BaseDirectory, entryName + ".dll");
+            if (File.Exists(assemblyPath))
+            {
+                return $"{Quote(processPath)} {Quote(assemblyPath)}";
+            }
         }
 
         return Quote(Application.ExecutablePath);
