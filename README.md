@@ -217,7 +217,7 @@ Codex にログイン済みの環境で期待される結果:
 GitHub Release を作成する際の本文として、以下をそのまま貼り付けて利用できます。
 
 ```
-TokenCheckerWin v0.2.0
+TokenCheckerWin v0.2.1
 
 Claude Code と Codex の使用率(5時間制限・週次制限)を Windows 通知領域から確認できる常駐アプリです。
 
