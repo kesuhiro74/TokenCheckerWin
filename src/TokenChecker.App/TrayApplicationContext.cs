@@ -28,6 +28,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private bool _disposed;
     private Icon? _currentTrayIcon;
     private UsageSnapshot? _lastSnapshot;
+    private SettingsForm? _settingsForm;
 
     public AuthCommandService AuthService => _authService;
 
@@ -337,19 +338,36 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        using var form = new SettingsForm(_settings, this);
-        if (form.ShowDialog(_statusForm.Visible ? _statusForm : null) != DialogResult.OK)
+        // Only one settings dialog at a time: a second "設定" click (or a
+        // surface request from a relaunch) re-enters here while the modal loop
+        // is still pumping, so just bring the existing dialog forward.
+        if (_settingsForm is not null)
         {
+            _settingsForm.Activate();
             return;
         }
 
-        _settings = form.ToSettings(_settings);
-        _statusForm.ApplySettings(_settings);
-        SyncDisplayModeMenuChecks();
-        _settingsStore.Save(_settings);
-        AutoStartManager.Apply(_settings.AutoStartEnabled);
-        ApplyRefreshInterval();
-        _ = RefreshAsync();
+        using var form = new SettingsForm(_settings, this);
+        _settingsForm = form;
+        try
+        {
+            if (form.ShowDialog(_statusForm.Visible ? _statusForm : null) != DialogResult.OK)
+            {
+                return;
+            }
+
+            _settings = form.ToSettings(_settings);
+            _statusForm.ApplySettings(_settings);
+            SyncDisplayModeMenuChecks();
+            _settingsStore.Save(_settings);
+            AutoStartManager.Apply(_settings.AutoStartEnabled);
+            ApplyRefreshInterval();
+            _ = RefreshAsync();
+        }
+        finally
+        {
+            _settingsForm = null;
+        }
     }
 
     private void SetDisplayMode(DisplayMode mode)
