@@ -8,7 +8,7 @@
     <AssemblyName>TokenChecker</AssemblyName>
     <Product>TokenCheckerWin</Product>
     <AssemblyTitle>TokenCheckerWin</AssemblyTitle>
-    <Version>0.4.0</Version>
+    <Version>0.4.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
