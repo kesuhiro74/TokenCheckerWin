@@ -94,6 +94,17 @@ dotnet run --project src/TokenChecker.Poc -- --github-copilot
 
 > 注: fine-grained PAT が billing 系で使えるかはプラットフォーム移行（2026-06-01 の従量課金化）に伴い変わり得る。403/404/503 は権限だけでなく対象外アカウント・未対応プラットフォーム・一時障害の可能性もある点に留意。
 
+### 再検証の結果（2026-05-31）
+
+- **User permissions「Plan: Read」を付与した fine-grained PAT で `Available` になった。** 通常 PAT では billing usage が 403 だったが、Plan: Read 付与で 200 を取得。
+- 取得できた当月の **Copilot Premium Request の利用量 = 1488.9 requests**（Copilot 該当 17 件の `quantity` 合計）。
+- **確定した Copilot 利用量マッピング**:
+  - Copilot 判定 = `product==copilot` **かつ** `sku∈{Copilot Premium Request, copilot_premium_request}` **かつ** `unitType==requests`（厳格一致）。
+  - 利用量 = `quantity`（無ければ `grossQuantity`）の合計。**`netQuantity` は 0/null のため集計に使わない**。`netAmount`（=0）は割引後金額であり課金額ではない。
+  - `RateLimitWindow.Used`（`long?`）は丸め値、精密な小数は診断 Message の `usedExact=1488.9; unit=requests;` に出す（共有モデルは非侵襲で維持）。
+  - 月次の上限（Limit/Remaining/UsedPercent）は API 非公開のため `null`。`ResetAtUtc` は翌月1日 0時 UTC の計算値。
+- 詳細は `findings.md` を参照。
+
 ## プライバシー規則（厳守）
 
 - トークン・OAuth 認証情報・メール・絶対パスを、出力・ログ・保存ファイル・本リポジトリのどこにも書かない。

@@ -31,11 +31,35 @@ tokenPresent=true; tokenSource=env; userApi=ok; loginResolved=true; billing=unau
 → POC としては「認証は通るが個人 billing usage は本トークンでは取得不可（403）」を確認。
 次アクションは下記「次アクション」を参照（Plan: Read 付き fine-grained PAT で再検証）。
 
+## 観測ログ: 2026-05-31（再検証: Plan: Read 付き fine-grained PAT）
+
+**User permissions の「Plan: Read」を付与した fine-grained PAT** で再実行したところ、**Status = `Available`** になった。
+個人課金の Copilot 利用量が個人 billing usage endpoint から取得できることを確認。
+
+観測した Message（マスク済み・そのまま記録可）:
+
+```
+tokenPresent=true; tokenSource=env; userApi=ok; loginResolved=true; billing=available; itemsTotal=17; itemsCopilot=17; used=1489; resetAt=computed;
+```
+
+`--raw` で各 `usageItem` の実フィールドを確認した結果:
+
+- **product**: `copilot` / `Copilot`
+- **sku**: `Copilot Premium Request` / `copilot_premium_request`
+- **unitType**: `Requests` / `requests`
+- **quantity**: 実消費量（リクエスト数）。Copilot 該当行の合計 = **1488.9 requests**
+- **grossQuantity**: quantity と同系の総量フィールド（quantity が無い場合のフォールバックに使用）
+- **netQuantity**: **0 または null** → 利用量集計には**使わない**
+- **netAmount**: **0** → 課金額ではなく割引後金額
+
+**確定マッピング**: 月次利用量 = **1488.9 requests**（`quantity` 合計、無ければ `grossQuantity`）。
+構造化出力の `Used=1489` は `RateLimitWindow.Used`（`long?`）に丸めた値で、精密値 `1488.9` は Message の `usedExact=1488.9; unit=requests;` に出す（モデルは非侵襲で維持）。
+
 ## 実行環境
 
 - 実行日(UTC): 2026-05-31
-- 使用トークンの**種別のみ**: <!-- 値は書かない。今回使用したトークンの種別を記入（classic PAT / fine-grained PAT / GitHub App） -->
-- fine-grained の場合の権限: <!-- 今回: Plan 権限は未確認/未付与の可能性 -->
+- 使用トークンの**種別のみ**: fine-grained PAT（再検証時。値は書かない）
+- fine-grained の場合の権限: **User permissions「Plan: Read」付与**（これで billing usage が 200 に変化）
 - Copilot プラン種別: <!-- 例: Pro / Pro+ / Business(org) / 不明 -->
 
 ## エンドポイント別の結果
@@ -43,25 +67,31 @@ tokenPresent=true; tokenSource=env; userApi=ok; loginResolved=true; billing=unau
 | エンドポイント | HTTP ステータス | 備考 |
 |---|---|---|
 | `GET /user` | 200 | login 解決成功（`userApi=ok`） |
-| `GET /users/{login}/settings/billing/usage` | 403 | `billing=unauthorized(403)`。Plan:Read 不足 / 対象外 / Org・Ent 管理の可能性 |
-| `GET /users/{login}/settings/billing/premium_request/usage` | <!-- 未確認（--raw で確認） --> | best-effort 確認 |
-| `GET /users/{login}/settings/billing/usage/summary` | <!-- 未確認（--raw で確認） --> | best-effort 確認 |
+| `GET /users/{login}/settings/billing/usage`（通常 PAT） | 403 | `billing=unauthorized(403)`。Plan:Read 不足が原因 |
+| `GET /users/{login}/settings/billing/usage`（**Plan:Read 付き fine-grained PAT**） | **200** | `billing=available; itemsTotal=17; itemsCopilot=17;`。取得成功 |
 
 ## 観測した実フィールド（usageItems）
 
 `--raw` で観測した各 item の実フィールドを記録（最終マッピング決定の材料）。**値は最小限・再マスク済みで**:
 
-| product | sku | unitType | netQuantity | netAmount | Copilot 該当? |
-|---|---|---|---|---|---|
-| <!-- 例: Copilot --> | | | | | |
+| product | sku | unitType | quantity | grossQuantity | netQuantity | netAmount | Copilot 該当? |
+|---|---|---|---|---|---|---|---|
+| `copilot` / `Copilot` | `Copilot Premium Request` / `copilot_premium_request` | `Requests` / `requests` | 実消費量（合計 1488.9） | 総量（quantity 無し時のフォールバック） | **0 / null** | **0** | ✅ |
 
-- `product` の distinct 値: <!-- 例: ["Copilot", "Actions", ...] -->
-- Copilot 相当の判定に使えそうなフィールド: <!-- product? sku? -->
+- Copilot 該当 17 件の `quantity` 合計 = **1488.9 requests**。
+- 判定に使うフィールド: **product（=copilot）＋ sku（=Copilot Premium Request 系）＋ unitType（=requests）の3点**で厳格化。
+- **集計に使うフィールド**: `quantity`（無ければ `grossQuantity`）。**`netQuantity` は 0/null のため使わない**。`netAmount` は 0（割引後金額であり課金額ではない）。
 
 ## 暫定マッピングの妥当性
 
-- 現状の暫定: `product`/`sku` に "copilot" を緩く含む行を `Used = Σ(netQuantity ?? quantity)` で集計。
-- 観測を踏まえた最終マッピング案: <!-- raw 確認後に記入 -->
+- 旧暫定（不採用）: `product`/`sku` に "copilot" を緩く含む行を `Used = Σ(netQuantity ?? quantity)` で集計。
+  → `netQuantity` が **0（非 null）** だと `??` が `quantity` にフォールバックせず 0 が加算される不具合があった。
+- **確定マッピング（採用）**:
+  1. Copilot 判定 = `product==copilot` **かつ** `sku∈{Copilot Premium Request, copilot_premium_request}`（空白/アンダースコアを除去して正規化比較） **かつ** `unitType==requests`。
+  2. `Used = Σ(quantity ?? grossQuantity ?? 0)`。`netQuantity` は使わない。
+  3. `RateLimitWindow.Used`（`long?`）は丸め値（例 1489）、精密値は Message に `usedExact=1488.9; unit=requests;`。
+  4. `Limit / Remaining / UsedPercent` は引き続き `null`（API が枠を出さない）。
+  5. `ResetAtUtc` は翌月1日 0時 UTC の計算値、`WindowDurationMins=43200`（月次の公称値）。
 
 ## 2026-06-01 課金変更の影響
 
@@ -70,9 +100,10 @@ tokenPresent=true; tokenSource=env; userApi=ok; loginResolved=true; billing=unau
 
 ## 結論 / 次アクション
 
-- 個人トークンで Copilot 利用量を取得できたか: **条件付き不可（2026-05-31 時点）**。`/user` は成功するが billing usage は 403。
-- 次アクション（最優先）: **fine-grained PAT に User permissions「Plan: Read」を付与**したトークンで再検証する（手順は README「403 が出たときの再検証」参照）。
-  - 再検証で 200 が返れば → 個人課金で取得可能。`--raw` で `product/sku` を確認し最終マッピングを確定。
-  - なお 403/404 が続く場合 → Enhanced Billing Platform 対象外、または Org/Enterprise 管理（個人 billing には現れない）。その場合この POC のアプローチでは個人利用量は取得不可。
-- UI 統合に進む価値があるか: <!-- 再検証の結果を見て判断 -->
-- 残課題: <!-- 再検証結果、product/sku 実値、最終マッピング -->
+- 個人トークンで Copilot 利用量を取得できたか: **取得可能（2026-05-31 時点）**。ただし条件あり:
+  - **通常 PAT では billing usage が 403**（権限不足）。
+  - **User permissions「Plan: Read」を付与した fine-grained PAT で 200 Available**。月次 Copilot Premium Request = **1488.9 requests** を取得。
+  - 前提として **Enhanced Billing Platform 対象アカウント**かつ **個人課金**（Org/Enterprise 管理の利用量はこの endpoint には現れない）。
+- 最終マッピング: 上記「暫定マッピングの妥当性 → 確定マッピング」で確定。`quantity`/`grossQuantity` 採用、`netQuantity` 不使用。
+- UI 統合に進む価値があるか: リアルタイムのレート制限窓は無く**月次消費量のみ**のため、Claude/Codex と同じ「5時間/週次の使用率」UI には乗らない。出すなら「当月の Copilot Premium Request 消費量」という別表示になる点を踏まえて別途判断。
+- 残課題: Copilot プラン種別ごとの月次上限（Limit）は API 非公開のため未取得。2026-06-01 の従量課金移行後にフィールド差分を再観測する。

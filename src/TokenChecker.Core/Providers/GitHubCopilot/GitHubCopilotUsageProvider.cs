@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -85,10 +86,15 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
 
             var root = SafeParse(billingProbe.Body);
             var items = GitHubBillingUsageParser.ParseUsageItems(root);
-            var copilotItems = items.Where(GitHubBillingUsageParser.LooksLikeCopilot).ToArray();
-            var used = (long)Math.Round(
-                copilotItems.Sum(i => i.NetQuantity ?? i.Quantity ?? 0d),
-                MidpointRounding.AwayFromZero);
+            var copilotItems = items.Where(GitHubBillingUsageParser.IsCopilotPremiumRequestUsage).ToArray();
+
+            // Consumption = sum of quantity (fallback grossQuantity). netQuantity
+            // is deliberately NOT used: it was observed as 0/null and represents a
+            // post-discount value, not the request count. The shared RateLimitWindow
+            // model carries Used as long?, so the window keeps the rounded value and
+            // the precise decimal is surfaced in the (masked) diagnostic Message.
+            var usedExact = copilotItems.Sum(i => i.Quantity ?? i.GrossQuantity ?? 0d);
+            var used = (long)Math.Round(usedExact, MidpointRounding.AwayFromZero);
 
             var resetAtUtc = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero).AddMonths(1);
             var window = new RateLimitWindow(
@@ -108,6 +114,7 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
                 itemsTotal: items.Count,
                 itemsCopilot: copilotItems.Length,
                 used: used,
+                usedExact: usedExact,
                 resetComputed: true);
 
             return new ServiceUsage(ServiceName, ProviderStatus.Available, message, new[] { window });
@@ -228,6 +235,7 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
         int? itemsTotal = null,
         int? itemsCopilot = null,
         long? used = null,
+        double? usedExact = null,
         bool resetComputed = false)
     {
         var builder = new StringBuilder();
@@ -262,6 +270,12 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
         if (used is not null)
         {
             builder.Append($"used={used}; ");
+        }
+
+        if (usedExact is not null)
+        {
+            // Precise (decimal) request count; the window's long Used is rounded.
+            builder.Append($"usedExact={usedExact.Value.ToString(CultureInfo.InvariantCulture)}; unit=requests; ");
         }
 
         if (resetComputed)

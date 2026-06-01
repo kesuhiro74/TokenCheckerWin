@@ -8,18 +8,22 @@ namespace TokenChecker.Core.Providers.GitHubCopilot;
 // rolls out 2026-06-01) and isolating the parsing makes it cheap to iterate.
 //
 // These types are public (not internal) on purpose: the POC runner lives in the
-// separate TokenChecker.Poc assembly and reuses ParseUsageItems/LooksLikeCopilot
-// to dump the real fields it observes. This is experimental surface only.
+// separate TokenChecker.Poc assembly and reuses ParseUsageItems/
+// IsCopilotPremiumRequestUsage to dump the real fields it observes. This is
+// experimental surface only.
 public static class GitHubBillingUsageParser
 {
     // Only the fields the POC needs to observe for the final mapping decision.
     // repositoryName is intentionally NOT captured so it can never leak through
-    // the structured output or the item listing.
+    // the structured output or the item listing. Both quantity and grossQuantity
+    // are captured because netQuantity was observed as 0/null and is unusable for
+    // the consumption total (see docs/experiments/github-copilot/findings.md).
     public sealed record GitHubBillingUsageItem(
         string? Product,
         string? Sku,
         string? UnitType,
         double? Quantity,
+        double? GrossQuantity,
         double? NetQuantity,
         double? NetAmount);
 
@@ -60,6 +64,7 @@ public static class GitHubBillingUsageParser
                 GetString(node["sku"]),
                 GetString(node["unitType"]),
                 GetDouble(node["quantity"]),
+                GetDouble(node["grossQuantity"]),
                 GetDouble(node["netQuantity"]),
                 GetDouble(node["netAmount"])));
         }
@@ -67,14 +72,23 @@ public static class GitHubBillingUsageParser
         return parsed;
     }
 
-    // Provisional Copilot match. The final rule is decided after observing the
-    // real product/sku values via --raw; for now we match loosely so we don't
-    // silently drop Copilot rows whose label changes (e.g. post-2026-06-01).
-    public static bool LooksLikeCopilot(GitHubBillingUsageItem item)
-        => ContainsCopilot(item.Product) || ContainsCopilot(item.Sku);
+    // Strict Copilot Premium Request match, finalized after observing the real
+    // --raw fields (2026-05-31): product "copilot"/"Copilot", sku "Copilot
+    // Premium Request"/"copilot_premium_request", unitType "Requests"/"requests".
+    // Spaces and underscores in the sku are normalized away so both label forms
+    // match a single comparison. Only these rows count toward the consumption
+    // total; netQuantity is ignored on purpose (observed 0/null).
+    public static bool IsCopilotPremiumRequestUsage(GitHubBillingUsageItem item)
+        => string.Equals(item.Product, "copilot", StringComparison.OrdinalIgnoreCase)
+            && NormalizeSku(item.Sku) == "copilotpremiumrequest"
+            && string.Equals(item.UnitType, "requests", StringComparison.OrdinalIgnoreCase);
 
-    private static bool ContainsCopilot(string? value)
-        => value is not null && value.Contains("copilot", StringComparison.OrdinalIgnoreCase);
+    private static string NormalizeSku(string? sku)
+        => sku is null
+            ? string.Empty
+            : sku.Replace(" ", string.Empty, StringComparison.Ordinal)
+                 .Replace("_", string.Empty, StringComparison.Ordinal)
+                 .ToLowerInvariant();
 
     private static string? GetString(JsonNode? node)
     {

@@ -15,8 +15,9 @@ namespace TokenChecker.Poc.GitHubCopilot;
 //                             UsageAggregator + JSON options the default POC uses.
 //   --github-copilot --raw    raw probe: hit the candidate billing endpoints and
 //                             print masked bodies + the parsed product/sku/
-//                             unitType/netQuantity/netAmount of each usageItem so
-//                             the real (possibly post-2026-06-01) schema is visible.
+//                             unitType/quantity/grossQuantity/netQuantity/
+//                             netAmount of each usageItem so the real (possibly
+//                             post-2026-06-01) schema is visible.
 //
 // Privacy: the token is never printed; the resolved login is never printed (URLs
 // are shown with {login} substituted); raw bodies are run through DiagnosticMasker.
@@ -152,9 +153,11 @@ internal static class GitHubCopilotPocRunner
                 $"    product={item.Product ?? "(null)"}; "
                 + $"sku={item.Sku ?? "(null)"}; "
                 + $"unitType={item.UnitType ?? "(null)"}; "
+                + $"quantity={Format(item.Quantity)}; "
+                + $"grossQuantity={Format(item.GrossQuantity)}; "
                 + $"netQuantity={Format(item.NetQuantity)}; "
                 + $"netAmount={Format(item.NetAmount)}; "
-                + $"copilot={GitHubBillingUsageParser.LooksLikeCopilot(item)}");
+                + $"copilot={GitHubBillingUsageParser.IsCopilotPremiumRequestUsage(item)}");
         }
     }
 
