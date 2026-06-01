@@ -35,17 +35,17 @@ TokenCheckerWin に将来 GitHub Copilot 用 `IUsageProvider` を追加できる
 - **認証情報は環境変数 `GITHUB_TOKEN` からのみ読み取ります。** ファイルや認証ストアからは読みません。トークンを source / json / appsettings / ログ / 本ドキュメントに **絶対に書かない**でください。
 - billing usage endpoint は **Enhanced Billing Platform（拡張請求基盤）対象**のアカウントでのみ動作します。
 - **fine-grained PAT** で叩く場合は、**User permissions の「Plan」を Read** に設定する必要があります。
-- **`403` / `404` / `503` は「権限不足」だけが原因とは限りません。** 対象外アカウント（Enhanced Billing Platform 未対象）や、未対応プラットフォーム／一時的なサービス状態の可能性もあります。POC ではこれらを区別せず、まず生レスポンスとステータスを観測して切り分けます。
+- **`403` / `404` / `503` は「権限不足」だけが原因とは限りません。** 対象外アカウント（Enhanced Billing Platform 未対象）や、未対応プラットフォーム／一時的なサービス状態の可能性もあります。POC ではこれらを区別せず、まずステータスと `--raw` の観測項目（後述のホワイトリスト）で切り分けます。
 
 ## AI Credits に関する注意（2026-06-01）
 
-- **2026-06-01** から全 Copilot プランが従量課金（AI Credits）へ移行します。billing usage のフィールド名・概念が変わり得るため、POC は **生 JSON ダンプ経路**（`--raw`）を備え、スキーマを決め打ちしません。
+- **2026-06-01** から全 Copilot プランが従量課金（AI Credits）へ移行します。billing usage のフィールド名・概念が変わり得るため、POC は `--raw` で usageItems の主要フィールドを観測する経路（body は出さずホワイトリスト項目のみ。後述）を備え、スキーマを決め打ちしません。
 - **AI Credits の対象は主に Chat / CLI / Cloud Agent などです。コード補完（code completion）と Next Edit Suggestions は、有料プランでは AI Credits の対象外**です。したがって billing usage に現れる Copilot 消費は補完系を含まない可能性が高い点に留意してください。
 - ドキュメントでは相対表現（「明日」等）を使わず、**絶対日付（例: 2026-06-01）**で記載します。
 
 ## 実行方法
 
-リポジトリのルート（`C:\dev\TokenCheckerWin`）から実行します（`src/...` 相対パスはルート以外だと `MSB1009` で落ちます）。
+リポジトリのルート（以下 `<repo-root>`）から実行します（`<repo-root>` 以外で実行すると `src/...` 相対パスが `MSB1009` で落ちます。必要なら先に `cd <repo-root>`）。
 
 ```powershell
 # 1) 既定 POC（Claude + Codex のみ。本実験では変更されない）
@@ -54,9 +54,17 @@ dotnet run --project src/TokenChecker.Poc
 # 2) Copilot プロバイダを構造化 JSON で実行（トークン未設定なら NotLoggedIn になる）
 dotnet run --project src/TokenChecker.Poc -- --github-copilot
 
-# 3) 生スキーマ確認（マスク済みの本文 + 各 usageItem の product/sku/unitType/netQuantity/netAmount を一覧）
+# 3) スキーマ観測（body は出さず、status とヘッダ + usageItems のホワイトリスト項目のみ。下記参照）
 dotnet run --project src/TokenChecker.Poc -- --github-copilot --raw
 ```
+
+`--raw` は **レスポンス body を一切出力しません**（body は login・repositoryName・メール・URL などの PII を含み得るため）。出力するのは次だけです:
+
+- `status`（HTTP ステータスコード）
+- `x-ratelimit-remaining` ヘッダ
+- `x-github-api-version` ヘッダ
+- `loginResolved` の真偽（解決した `login` 値そのものは出さない）
+- `usageItems` のホワイトリスト項目のみ: `product` / `sku` / `unitType` / `quantity` / `grossQuantity` / `netQuantity` / `netAmount` / `copilot`（厳格判定の結果）
 
 トークンを設定して実行する場合（**履歴・画面にトークンを残さない**）:
 
@@ -89,7 +97,7 @@ dotnet run --project src/TokenChecker.Poc -- --github-copilot
    ```
 
 6. 結果の読み方:
-   - **`Available`** → 個人課金で取得可能。`--raw` で `product/sku/unitType/netQuantity/netAmount` を確認し、最終的な Copilot マッピングを `findings.md` に確定する。
+   - **`Available`** → 個人課金で取得可能。`--raw` で `product` / `sku` / `unitType` / `quantity` / `grossQuantity` / `netQuantity` / `netAmount` / `copilot` を確認し、最終的な Copilot マッピングを `findings.md` に確定する。
    - **まだ `Unauthorized`（`billing=unauthorized(403)`）/ `Error`（`billing=notFound(404)`）** → 権限ではなく **Enhanced Billing Platform 対象外**、または Copilot が **Org/Enterprise 管理**（個人 billing endpoint には現れない）の可能性が高い。その場合、本 POC の「個人 billing usage」アプローチでは取得できない（組織メトリクスはスコープ外）。
 
 > 注: fine-grained PAT が billing 系で使えるかはプラットフォーム移行（2026-06-01 の従量課金化）に伴い変わり得る。403/404/503 は権限だけでなく対象外アカウント・未対応プラットフォーム・一時障害の可能性もある点に留意。
@@ -109,5 +117,5 @@ dotnet run --project src/TokenChecker.Poc -- --github-copilot
 
 - トークン・OAuth 認証情報・メール・絶対パスを、出力・ログ・保存ファイル・本リポジトリのどこにも書かない。
 - 診断文字列はすべて `TokenChecker.Core.DiagnosticMasker.Mask(value, maxLength)` を通す。
-- `--raw` の出力をこのフォルダの `findings.md` に貼るときは、**手動で再マスクしてから**貼る（`login`・`repositoryName`・URL 中のユーザー名なども落とす）。
+- `--raw` は body を出さずホワイトリスト項目のみを出力するため、その出力はそのまま `findings.md` に貼れる（`login`・`repositoryName`・URL 中のユーザー名などは元から含まれない）。手で要約・転記する際も `login` やメール等は書かない。
 - 公式 REST API のみ。Web スクレイピング禁止。
