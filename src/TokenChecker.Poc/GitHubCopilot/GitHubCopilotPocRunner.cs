@@ -14,13 +14,17 @@ namespace TokenChecker.Poc.GitHubCopilot;
 //   --github-copilot          structured: run the provider through the same
 //                             UsageAggregator + JSON options the default POC uses.
 //   --github-copilot --raw    raw probe: hit the candidate billing endpoints and
-//                             print masked bodies + the parsed product/sku/
-//                             unitType/quantity/grossQuantity/netQuantity/
-//                             netAmount of each usageItem so the real (possibly
-//                             post-2026-06-01) schema is visible.
+//                             print ONLY the status, a couple of safe headers, and
+//                             the whitelisted product/sku/unitType/quantity/
+//                             grossQuantity/netQuantity/netAmount/copilot of each
+//                             usageItem so the real (possibly post-2026-06-01)
+//                             schema is visible without leaking PII.
 //
 // Privacy: the token is never printed; the resolved login is never printed (URLs
-// are shown with {login} substituted); raw bodies are run through DiagnosticMasker.
+// are shown with {login} substituted); response BODIES are never printed (they can
+// contain the login, repositoryName, emails, or URLs) — only status, the
+// x-ratelimit-remaining / x-github-api-version headers, and the whitelisted
+// usageItems fields above are emitted.
 internal static class GitHubCopilotPocRunner
 {
     private const string ApiBaseUrl = "https://api.github.com";
@@ -140,8 +144,9 @@ internal static class GitHubCopilotPocRunner
         Console.WriteLine($"  status: {probe.Code}");
         Console.WriteLine($"  x-ratelimit-remaining: {probe.RateLimitRemaining ?? "(none)"}");
         Console.WriteLine($"  x-github-api-version: {probe.ApiVersionHeader ?? "(none)"}");
-        Console.WriteLine("  body (masked; may still contain repo names — re-mask before sharing):");
-        Console.WriteLine(DiagnosticMasker.Mask(probe.Body, 20000));
+        // The response body is intentionally NOT printed: it can contain the login,
+        // repositoryName, emails, or URLs. Only the whitelisted usageItems fields
+        // are surfaced (see PrintItems), so nothing here needs manual re-masking.
     }
 
     private static void PrintItems(IReadOnlyList<GitHubBillingUsageParser.GitHubBillingUsageItem> items)

@@ -42,17 +42,26 @@ public static class GitHubBillingUsageParser
     }
 
     // Parses the "usageItems" array of a billing usage / premium_request usage
-    // response. Returns an empty list for any unexpected shape (defensive: the
-    // schema may shift on 2026-06-01).
+    // response. Returns an empty list for any unexpected shape. Callers that must
+    // tell "no usageItems array" (unexpected/changed schema) apart from "empty
+    // array" (zero consumption) should use TryParseUsageItems instead.
     public static IReadOnlyList<GitHubBillingUsageItem> ParseUsageItems(JsonNode? root)
+        => TryParseUsageItems(root, out var items) ? items : Array.Empty<GitHubBillingUsageItem>();
+
+    // Like ParseUsageItems but reports shape validity: returns false when
+    // "usageItems" is absent or is not a JSON array (an unexpected/changed schema),
+    // and true with a (possibly empty) list when it is a valid array. Defensive:
+    // the schema may shift on 2026-06-01.
+    public static bool TryParseUsageItems(JsonNode? root, out IReadOnlyList<GitHubBillingUsageItem> items)
     {
-        if (root?["usageItems"] is not JsonArray items)
+        if (root?["usageItems"] is not JsonArray array)
         {
-            return Array.Empty<GitHubBillingUsageItem>();
+            items = Array.Empty<GitHubBillingUsageItem>();
+            return false;
         }
 
-        var parsed = new List<GitHubBillingUsageItem>(items.Count);
-        foreach (var node in items)
+        var parsed = new List<GitHubBillingUsageItem>(array.Count);
+        foreach (var node in array)
         {
             if (node is null)
             {
@@ -69,7 +78,8 @@ public static class GitHubBillingUsageParser
                 GetDouble(node["netAmount"])));
         }
 
-        return parsed;
+        items = parsed;
+        return true;
     }
 
     // Strict Copilot Premium Request match, finalized after observing the real

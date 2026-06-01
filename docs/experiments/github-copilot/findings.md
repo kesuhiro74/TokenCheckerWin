@@ -36,11 +36,13 @@ tokenPresent=true; tokenSource=env; userApi=ok; loginResolved=true; billing=unau
 **User permissions の「Plan: Read」を付与した fine-grained PAT** で再実行したところ、**Status = `Available`** になった。
 個人課金の Copilot 利用量が個人 billing usage endpoint から取得できることを確認。
 
-観測した Message（マスク済み・そのまま記録可）:
+観測した Message（マスク済み・現行実装に対応）:
 
 ```
-tokenPresent=true; tokenSource=env; userApi=ok; loginResolved=true; billing=available; itemsTotal=17; itemsCopilot=17; used=1489; resetAt=computed;
+tokenPresent=true; tokenSource=env; userApi=ok; loginResolved=true; billing=available; itemsTotal=17; itemsCopilot=17; usedExact=1488.9; unit=requests;
 ```
+
+> 診断ハードニング（`Harden GitHub Copilot POC diagnostics`）後の形式。丸め値 `used` と `resetAt=computed` は **`RateLimitWindow` 側（`Used`=1489 / `ResetAtUtc`）に持たせ、Message からは省略**した（`DiagnosticMasker.Mask` の 160 文字上限に収め、構造化データとの重複を避けるため）。精密な小数は `usedExact=1488.9; unit=requests;` として Message にのみ出る。
 
 `--raw` で各 `usageItem` の実フィールドを確認した結果:
 
@@ -53,7 +55,11 @@ tokenPresent=true; tokenSource=env; userApi=ok; loginResolved=true; billing=avai
 - **netAmount**: **0** → 課金額ではなく割引後金額
 
 **確定マッピング**: 月次利用量 = **1488.9 requests**（`quantity` 合計、無ければ `grossQuantity`）。
-構造化出力の `Used=1489` は `RateLimitWindow.Used`（`long?`）に丸めた値で、精密値 `1488.9` は Message の `usedExact=1488.9; unit=requests;` に出す（モデルは非侵襲で維持）。
+`RateLimitWindow.Used`（`long?`）は丸め値 `1489`、`ResetAtUtc` は翌月1日 UTC の計算値。精密値 `1488.9` は Message の `usedExact=1488.9; unit=requests;` に出す（共有モデルは非侵襲で維持）。
+
+### App 統合の懸念（スコープ外・将来課題）
+
+既存 UI（トレイ／ステータス窓）は **Claude/Codex の 5時間・週次の使用率（`UsedPercent`）** を前提に配色・バー・リングを描く。一方 Copilot は **月次の Premium Requests（件数）** で、API が上限を出さないため **`UsedPercent=null` / `Limit=null` / `Remaining=null`**。このままでは既存 UI に**そのまま載せられない**（割合エスカレーションが成立しない）。App 統合する場合は「当月の Copilot Premium Request 消費量」という**件数ベースの別表示**が要る。本 POC では UI 統合はスコープ外とし、将来課題として記録する。
 
 ## 実行環境
 

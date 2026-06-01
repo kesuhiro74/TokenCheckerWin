@@ -84,8 +84,26 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
                     BuildMessage(tokenPresent: true, userApi: "ok", loginResolved: true, billing: summary));
             }
 
+            // A 200 with a body we can't make sense of must NOT be reported as a
+            // confident "Available, used=0". Distinguish parse failure from a
+            // missing/!array usageItems shape; only a genuine empty array means
+            // zero consumption.
             var root = SafeParse(billingProbe.Body);
-            var items = GitHubBillingUsageParser.ParseUsageItems(root);
+            if (root is null)
+            {
+                return Failure(
+                    ProviderStatus.Error,
+                    BuildMessage(tokenPresent: true, userApi: "ok", loginResolved: true, billing: "invalidJson"));
+            }
+
+            if (!GitHubBillingUsageParser.TryParseUsageItems(root, out var items))
+            {
+                return Failure(
+                    ProviderStatus.Error,
+                    BuildMessage(tokenPresent: true, userApi: "ok", loginResolved: true, billing: "unexpectedShape"));
+            }
+
+            // An empty usageItems array is legitimate (no consumption this month).
             var copilotItems = items.Where(GitHubBillingUsageParser.IsCopilotPremiumRequestUsage).ToArray();
 
             // Consumption = sum of quantity (fallback grossQuantity). netQuantity
@@ -113,9 +131,7 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
                 billing: "available",
                 itemsTotal: items.Count,
                 itemsCopilot: copilotItems.Length,
-                used: used,
-                usedExact: usedExact,
-                resetComputed: true);
+                usedExact: usedExact);
 
             return new ServiceUsage(ServiceName, ProviderStatus.Available, message, new[] { window });
         }
@@ -150,13 +166,17 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
             .ConfigureAwait(false);
 
         var code = (int)response.StatusCode;
-        var rateLimited = code == 429 || (code == 403 && IsRateLimitSignal(response));
 
-        // Only read the body on success: error bodies are never needed by the
-        // provider and we avoid pulling response text we won't use.
-        string? body = response.IsSuccessStatusCode
+        // Read the body on success (we need usageItems) and on 403 (so a
+        // primary/secondary rate limit can be told apart from a genuine auth
+        // failure). The 403 body is used ONLY for classification here — it is
+        // never placed in the diagnostic Message. Other error bodies are skipped.
+        string? body = (response.IsSuccessStatusCode || code == 403)
             ? await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
             : null;
+
+        var rateLimited = code == 429
+            || (code == 403 && (IsRateLimitSignal(response) || BodyLooksRateLimited(body)));
 
         return new HttpProbe(code, response.IsSuccessStatusCode, rateLimited, body);
     }
@@ -182,9 +202,19 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
         return false;
     }
 
+    // GitHub reports primary/secondary rate limits with a 403/429 whose JSON body
+    // carries a "rate limit" message (e.g. "You have exceeded a secondary rate
+    // limit. Please wait ..."). We classify on that text only; the body itself is
+    // never logged or surfaced.
+    private static bool BodyLooksRateLimited(string? body)
+        => body is not null
+            && body.Contains("rate limit", StringComparison.OrdinalIgnoreCase);
+
     // A 403 is mapped to Unauthorized (most often missing scope / "Plan: read"
-    // for fine-grained PATs), unless it carries rate-limit signals. A 404 on the
-    // billing call is reported distinctly (notFound(404)) because it usually
+    // for fine-grained PATs), unless it carries rate-limit signals (Retry-After,
+    // x-ratelimit-remaining:0, or a "rate limit" message body) in which case it is
+    // RateLimited. A 404 on the billing call is reported distinctly (notFound(404))
+    // because it usually
     // means the account isn't on the enhanced billing platform rather than a
     // login problem — there is no CLI here, so NotInstalled is never returned.
     private static (ProviderStatus Status, string Summary) MapFailure(HttpProbe probe, bool isBilling)
@@ -234,9 +264,7 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
         string? billing = null,
         int? itemsTotal = null,
         int? itemsCopilot = null,
-        long? used = null,
-        double? usedExact = null,
-        bool resetComputed = false)
+        double? usedExact = null)
     {
         var builder = new StringBuilder();
         builder.Append($"tokenPresent={FormatBool(tokenPresent)}; ");
@@ -267,20 +295,12 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
             builder.Append($"itemsCopilot={itemsCopilot}; ");
         }
 
-        if (used is not null)
-        {
-            builder.Append($"used={used}; ");
-        }
-
         if (usedExact is not null)
         {
-            // Precise (decimal) request count; the window's long Used is rounded.
+            // Precise (decimal) request count. The window's long Used carries the
+            // rounded value and ResetAtUtc the reset, so neither is repeated here —
+            // that also keeps this string inside the 160-char mask budget.
             builder.Append($"usedExact={usedExact.Value.ToString(CultureInfo.InvariantCulture)}; unit=requests; ");
-        }
-
-        if (resetComputed)
-        {
-            builder.Append("resetAt=computed;");
         }
 
         return DiagnosticMasker.Mask(builder.ToString(), 160);
