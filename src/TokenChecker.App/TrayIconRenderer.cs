@@ -29,6 +29,12 @@ internal static class TrayIconRenderer
     private static readonly Color UnknownColor = Color.FromArgb(160, 165, 175);
     private static readonly Color LoadingColor = Color.FromArgb(190, 195, 210);
 
+    // GitHub Copilot vertical-bar palette. Normal fill is a Copilot-leaning green
+    // (clearly distinct from the Claude/Codex rings); it escalates to amber/red on
+    // the same 80%/95% thresholds as everything else (UsageTheme).
+    private static readonly Color CopilotNormalFill = Color.FromArgb(96, 198, 140);
+    private static readonly Color CopilotBarOutline = Color.FromArgb(120, 128, 145);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr handle);
 
@@ -51,6 +57,80 @@ internal static class TrayIconRenderer
             DestroyIcon(handle);
         }
     }
+
+    // Renders the alternate tray icon for the GitHub Copilot mode: a tall vertical
+    // % bar that uses as much of the icon area as possible (a rectangle), filling
+    // bottom→top to `percent` with the shared 80/95 severity escalation. A null
+    // percent (no plan/allowance or no data) or loading shows an empty track.
+    public static Icon CreateCopilotIcon(double? percent, bool loading, int size = 32)
+    {
+        using var bitmap = new Bitmap(size, size);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            DrawCopilotBar(graphics, size, percent, loading);
+        }
+
+        var handle = bitmap.GetHicon();
+        try
+        {
+            using var temp = Icon.FromHandle(handle);
+            return (Icon)temp.Clone();
+        }
+        finally
+        {
+            DestroyIcon(handle);
+        }
+    }
+
+    private static void DrawCopilotBar(Graphics graphics, int size, double? percent, bool loading)
+    {
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.Clear(Color.Transparent);
+
+        var barWidth = size * 0.46f;
+        var left = (size - barWidth) / 2f;
+        var topPad = size * 0.07f;
+        var barHeight = size - topPad * 2f;
+        var rect = new RectangleF(left, topPad, barWidth, barHeight);
+        var radius = barWidth * 0.45f;
+
+        using (var trackPath = UsageTheme.CreateRoundedRectPath(rect, radius))
+        using (var trackBrush = new SolidBrush(InnerTrack))
+        {
+            graphics.FillPath(trackBrush, trackPath);
+        }
+
+        if (!loading && UsageRingRenderer.TryClampPercent(percent, out var clamped))
+        {
+            var fillHeight = (float)(barHeight * (clamped / 100d));
+            if (fillHeight > 0.5f)
+            {
+                // Clip the fill to the rounded track so its top/bottom follow the pill.
+                using var clip = UsageTheme.CreateRoundedRectPath(rect, radius);
+                var previous = graphics.Clip;
+                graphics.SetClip(clip, CombineMode.Replace);
+                var fillRect = new RectangleF(rect.X, rect.Bottom - fillHeight, barWidth, fillHeight);
+                using (var fillBrush = new SolidBrush(CopilotBarColor(clamped)))
+                {
+                    graphics.FillRectangle(fillBrush, fillRect);
+                }
+
+                graphics.Clip = previous;
+            }
+        }
+
+        using var outline = new Pen(CopilotBarOutline, Math.Max(1f, size * 0.045f));
+        using var outlinePath = UsageTheme.CreateRoundedRectPath(rect, radius);
+        graphics.DrawPath(outline, outlinePath);
+    }
+
+    private static Color CopilotBarColor(double percent)
+        => percent switch
+        {
+            >= UsageTheme.CriticalPercent => DangerColor,
+            >= UsageTheme.WarningPercent => WarningColor,
+            _ => CopilotNormalFill
+        };
 
     public static OverallState DetermineState(UsageSnapshot snapshot, out double? claudePercent, out double? codexPercent)
     {
@@ -75,8 +155,8 @@ internal static class TrayIconRenderer
 
         return highest switch
         {
-            >= 95 => OverallState.Danger,
-            >= 80 => OverallState.Warning,
+            >= UsageTheme.CriticalPercent => OverallState.Danger,
+            >= UsageTheme.WarningPercent => OverallState.Warning,
             _ => OverallState.Normal
         };
     }

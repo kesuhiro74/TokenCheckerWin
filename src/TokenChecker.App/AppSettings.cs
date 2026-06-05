@@ -1,5 +1,3 @@
-using System.Drawing;
-
 namespace TokenChecker.App;
 
 internal enum DisplayMode
@@ -9,32 +7,121 @@ internal enum DisplayMode
     Minimum = 2
 }
 
+// GitHub Copilot plan. The bundled monthly AI-credit allowance is NOT exposed by
+// the API, so the user picks a plan (or enters a custom cap) and the App overlays
+// it at display time. None = no allowance (show raw used credits only).
+internal enum CopilotPlan
+{
+    None = 0,
+    Pro = 1,
+    ProPlus = 2,
+    Max = 3,
+    Custom = 4
+}
+
+// How a popup window is surfaced from its dedicated tray icon (per window).
+internal enum WindowDisplayMode
+{
+    // Shown whenever the app is running while the window is enabled; re-openable
+    // (tray click / menu) if the user closes it.
+    Always = 0,
+
+    // Hovering the window's tray icon fades it in; moving the mouse off the window
+    // hides it immediately (with a small grace for the icon->window move). Clicking
+    // the tray icon pins it (treated as always-visible until unpinned/closed).
+    HoverPreview = 1
+}
+
 internal sealed class AppSettings
 {
+    // GitHub Copilot is keyed in snapshots by this exact provider name. (It is no
+    // longer placed in VisibleServices — CopilotWindowEnabled is its on/off.)
+    public const string CopilotServiceName = "GitHub Copilot";
+
+    // Bundled monthly AI credits per plan. Flex allocation can change in the
+    // market, so this is the ONE place to edit the plan values.
+    public const int ProCredits = 1500;
+    public const int ProPlusCredits = 7000;
+    public const int MaxCredits = 20000;
+
     public static readonly int[] AllowedRefreshIntervalSeconds = [30, 60, 300, 600];
+
+    // ----- Common ----------------------------------------------------------
 
     public int RefreshIntervalSeconds { get; set; } = 60;
 
     public bool AutoStartEnabled { get; set; }
 
-    // When true, the status window is opened automatically on launch. Defaults
-    // to true so first-time users see the popup without hunting for the tray
-    // icon; can be turned off in settings to start silently in the tray.
-    public bool ShowOnStartup { get; set; } = true;
-
     // Kept for backward compatibility with settings.json written by older builds
     // that only knew about a compact-mode boolean. Normalize() reconciles this
-    // with the newer DisplayMode field.
+    // with the DisplayMode field (the source of truth).
     public bool CompactMode { get; set; }
 
+    // ----- Claude / Codex window -------------------------------------------
+
+    // The status window content layout (independent of the Always/HoverPreview
+    // display method below).
     public DisplayMode DisplayMode { get; set; } = DisplayMode.Normal;
 
+    // Which Claude/Codex cards are shown inside the status window.
     public string[] VisibleServices { get; set; } = ["Claude", "Codex"];
 
     public FormLocation? StatusFormLocation { get; set; }
 
+    public bool ClaudeCodexWindowEnabled { get; set; } = true;
+
+    public WindowDisplayMode ClaudeCodexDisplayMode { get; set; } = WindowDisplayMode.Always;
+
+    // ----- GitHub Copilot window (opt-in; default off) ----------------------
+
+    public bool CopilotWindowEnabled { get; set; }
+
+    public WindowDisplayMode CopilotDisplayMode { get; set; } = WindowDisplayMode.Always;
+
+    public CopilotPlan CopilotPlan { get; set; } = CopilotPlan.None;
+
+    // Custom monthly allowance when CopilotPlan == Custom. 0/negative = unset.
+    public int CopilotCustomCredits { get; set; }
+
+    public FormLocation? CopilotWindowLocation { get; set; }
+
     public bool IsServiceVisible(string serviceName)
         => VisibleServices?.Any(service => string.Equals(service, serviceName, StringComparison.OrdinalIgnoreCase)) == true;
+
+    // Provider gates: fetch ONLY what an enabled window/service needs, so a
+    // disabled window never triggers its provider (no Claude/Codex calls when the
+    // status window is off; no billing endpoint when the Copilot window is off).
+    public bool ClaudeProviderEnabled => ClaudeCodexWindowEnabled && IsServiceVisible("Claude");
+
+    public bool CodexProviderEnabled => ClaudeCodexWindowEnabled && IsServiceVisible("Codex");
+
+    public bool CopilotProviderEnabled => CopilotWindowEnabled;
+
+    // Resolves the plan/custom selection to a monthly credit allowance, or null
+    // when no allowance applies. The App overlays this on the API's raw Used.
+    public int? CopilotCreditAllowance()
+        => CopilotPlan switch
+        {
+            CopilotPlan.Pro => ProCredits,
+            CopilotPlan.ProPlus => ProPlusCredits,
+            CopilotPlan.Max => MaxCredits,
+            CopilotPlan.Custom => CopilotCustomCredits > 0 ? CopilotCustomCredits : null,
+            _ => null
+        };
+
+    // Title shown on the Copilot card. The full service name ("GitHub Copilot")
+    // lives in the settings dialog and tray tooltip instead.
+    public string CopilotPlanTitle()
+        => CopilotPlan switch
+        {
+            CopilotPlan.Pro => "Copilot Pro",
+            CopilotPlan.ProPlus => "Copilot Pro+",
+            CopilotPlan.Max => "Copilot Max",
+            CopilotPlan.Custom => CopilotCustomCredits > 0
+                ? $"Custom {CopilotCustomCredits:N0} credits"
+                : "Custom",
+            _ => "GitHub Copilot"
+        };
 
     public void Normalize()
     {
@@ -45,6 +132,8 @@ internal sealed class AppSettings
 
         VisibleServices ??= [];
 
+        // VisibleServices is Claude/Codex card selection only; the Copilot window
+        // is gated by CopilotWindowEnabled, never by this list.
         VisibleServices = VisibleServices
             .Where(service => string.Equals(service, "Claude", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(service, "Codex", StringComparison.OrdinalIgnoreCase))
@@ -56,13 +145,25 @@ internal sealed class AppSettings
             DisplayMode = DisplayMode.Normal;
         }
 
-        // CompactMode is a derived back-compat write only — DisplayMode is the
-        // source of truth. The legacy "CompactMode=true → DisplayMode=Compact"
-        // migration runs once in SettingsStore.Load (where we can tell whether
-        // the JSON file actually contained a DisplayMode field). We must NOT
-        // re-apply that migration here, otherwise switching from Compact back
-        // to Normal in the settings dialog would immediately get reverted to
-        // Compact because the clone still has CompactMode=true.
+        if (!Enum.IsDefined(ClaudeCodexDisplayMode))
+        {
+            ClaudeCodexDisplayMode = WindowDisplayMode.Always;
+        }
+
+        if (!Enum.IsDefined(CopilotDisplayMode))
+        {
+            CopilotDisplayMode = WindowDisplayMode.Always;
+        }
+
+        if (!Enum.IsDefined(CopilotPlan))
+        {
+            CopilotPlan = CopilotPlan.None;
+        }
+
+        CopilotCustomCredits = Math.Max(0, CopilotCustomCredits);
+
+        // CompactMode is a derived back-compat write only (see SettingsStore.Load
+        // for the one-shot CompactMode -> DisplayMode migration).
         CompactMode = DisplayMode == DisplayMode.Compact;
     }
 
@@ -71,11 +172,17 @@ internal sealed class AppSettings
         {
             RefreshIntervalSeconds = RefreshIntervalSeconds,
             AutoStartEnabled = AutoStartEnabled,
-            ShowOnStartup = ShowOnStartup,
             CompactMode = CompactMode,
             DisplayMode = DisplayMode,
             VisibleServices = VisibleServices.ToArray(),
-            StatusFormLocation = StatusFormLocation
+            StatusFormLocation = StatusFormLocation,
+            ClaudeCodexWindowEnabled = ClaudeCodexWindowEnabled,
+            ClaudeCodexDisplayMode = ClaudeCodexDisplayMode,
+            CopilotWindowEnabled = CopilotWindowEnabled,
+            CopilotDisplayMode = CopilotDisplayMode,
+            CopilotPlan = CopilotPlan,
+            CopilotCustomCredits = CopilotCustomCredits,
+            CopilotWindowLocation = CopilotWindowLocation
         };
 }
 

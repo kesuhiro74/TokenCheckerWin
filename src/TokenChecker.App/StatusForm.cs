@@ -157,6 +157,11 @@ internal sealed class StatusForm : Form
         }
     }
 
+    // Shown without stealing focus (the tray context manages activation per the
+    // display method); the context calls Activate() explicitly when the window is
+    // opened by a click/menu so Esc still works.
+    protected override bool ShowWithoutActivation => true;
+
     [DllImport("user32.dll")]
     private static extern bool ReleaseCapture();
 
@@ -381,38 +386,15 @@ internal sealed class StatusForm : Form
             _ => MutedText
         };
 
-    private static Color UsageAccentColor(double? value)
-    {
-        if (!UsageRingRenderer.TryClampPercent(value, out var percent))
-        {
-            return MutedText;
-        }
-
-        return percent switch
-        {
-            >= 95 => Bad,
-            >= 80 => Warning,
-            _ => Good
-        };
-    }
+    // Severity coloring is centralized in UsageTheme so the 80%/95% escalation
+    // lives in exactly one place (CLAUDE.md). These thin wrappers keep the rest
+    // of StatusForm unchanged.
+    private static Color UsageAccentColor(double? value) => UsageTheme.AccentColor(value);
 
     // Like UsageAccentColor, but keeps the service brand color in the normal
     // range so the minimum strip carries each service's identity (blue/purple)
     // while still escalating to amber/red as usage climbs.
-    private static Color BrandUsageColor(Color brand, double? value)
-    {
-        if (!UsageRingRenderer.TryClampPercent(value, out var percent))
-        {
-            return MutedText;
-        }
-
-        return percent switch
-        {
-            >= 95 => Bad,
-            >= 80 => Warning,
-            _ => brand
-        };
-    }
+    private static Color BrandUsageColor(Color brand, double? value) => UsageTheme.BrandUsageColor(brand, value);
 
     private static RateLimitWindow? FindFiveHourWindow(ServiceUsage? service)
     {
@@ -1213,107 +1195,8 @@ internal sealed class StatusForm : Form
     }
 
     // ----- Drawing primitives ----------------------------------------------
-    private sealed class UsageBarControl : Control
-    {
-        private double? _value;
-
-        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public Color AccentColor { get; set; } = Good;
-
-        // When true, the fill is drawn as a light→accent horizontal gradient
-        // (used by the glass cards in normal mode). Other modes leave it false
-        // for the original flat fill.
-        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public bool UseGradient { get; set; }
-
-        public UsageBarControl()
-        {
-            SetStyle(
-                ControlStyles.AllPaintingInWmPaint
-                | ControlStyles.OptimizedDoubleBuffer
-                | ControlStyles.ResizeRedraw
-                | ControlStyles.UserPaint
-                | ControlStyles.SupportsTransparentBackColor,
-                true);
-        }
-
-        public void SetValue(double? usedPercent)
-        {
-            _value = usedPercent;
-            Invalidate();
-        }
-
-        // When the bar is transparent (glass cards), let the parent paint its
-        // gradient slice behind us so the track sits seamlessly on the card
-        // instead of leaving an opaque rectangle.
-        protected override void OnPaintBackground(PaintEventArgs e)
-        {
-            if (BackColor == Color.Transparent && Parent is not null)
-            {
-                var g = e.Graphics;
-                var state = g.Save();
-                g.TranslateTransform(-Left, -Top);
-                using var pe = new PaintEventArgs(g, new Rectangle(Left, Top, Width, Height));
-                InvokePaintBackground(Parent, pe);
-                InvokePaint(Parent, pe);
-                g.Restore(state);
-                return;
-            }
-
-            base.OnPaintBackground(e);
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            if (BackColor != Color.Transparent)
-            {
-                g.Clear(BackColor);
-            }
-
-            var rect = new RectangleF(0, 0, Width, Height);
-            var radius = Math.Max(2f, Height / 2f);
-            using (var trackPath = CreateRoundedRectPath(rect, radius))
-            using (var trackBrush = new SolidBrush(TrackEmpty))
-            {
-                g.FillPath(trackBrush, trackPath);
-            }
-
-            if (!UsageRingRenderer.TryClampPercent(_value, out var pct))
-            {
-                return;
-            }
-
-            var fillWidth = (float)(rect.Width * (pct / 100d));
-            if (fillWidth <= 0.1f)
-            {
-                return;
-            }
-
-            // Always draw at least a circle-shaped pill at the start
-            var actualWidth = Math.Max(fillWidth, Height);
-            actualWidth = Math.Min(actualWidth, rect.Width);
-            var fillRect = new RectangleF(0, 0, actualWidth, Height);
-            using var fillPath = CreateRoundedRectPath(fillRect, radius);
-            if (UseGradient)
-            {
-                using var fillBrush = new LinearGradientBrush(
-                    new RectangleF(0, 0, actualWidth, Height),
-                    Lighten(AccentColor, 0.22f),
-                    AccentColor,
-                    LinearGradientMode.Horizontal);
-                g.FillPath(fillBrush, fillPath);
-            }
-            else
-            {
-                using var fillBrush = new SolidBrush(AccentColor);
-                g.FillPath(fillBrush, fillPath);
-            }
-        }
-    }
-
+    // UsageBarControl now lives in its own file (UsageBarControl.cs) so the
+    // dedicated Copilot window can share it; UsageRingControl stays nested.
     private sealed class UsageRingControl : Control
     {
         private double? _usedPercent;

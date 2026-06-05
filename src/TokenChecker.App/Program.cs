@@ -28,11 +28,10 @@ internal static class Program
         guard.ShowSettingsRequested += context.ShowSettingsForm;
         guard.StartListening(SynchronizationContext.Current!);
 
-        // Open the status window on launch when the user has the "show on
-        // startup" setting enabled (the default, so first-time users see it) or
-        // when explicitly requested with --show-status. A single one-shot Idle
-        // handler avoids opening it twice.
-        if (showStatusRequested || context.ShouldShowOnStartup)
+        // The context opens the windows whose display method is "Always" on its own
+        // first-idle pass. --show-status additionally forces the status window
+        // forward (a one-shot Idle handler avoids opening it twice).
+        if (showStatusRequested)
         {
             Application.Idle += ShowStatusFormOnce;
 
