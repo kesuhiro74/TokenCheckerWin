@@ -50,12 +50,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private readonly ContextMenuStrip _contextMenu;
     private readonly ToolStripMenuItem _refreshMenuItem;
-    private readonly ToolStripMenuItem _showStatusMenuItem;
-    private readonly ToolStripMenuItem _showCopilotMenuItem;
     private readonly ToolStripMenuItem _displayModeMenuItem;
     private readonly ToolStripMenuItem _modeNormalItem;
     private readonly ToolStripMenuItem _modeCompactItem;
     private readonly ToolStripMenuItem _modeMinimumItem;
+    private readonly ToolStripMenuItem _copilotDisplayMenuItem;
+    private readonly ToolStripMenuItem _copilotAlwaysItem;
+    private readonly ToolStripMenuItem _copilotHoverItem;
     private readonly ToolStripMenuItem _settingsMenuItem;
 
     private readonly StatusForm _statusForm;
@@ -102,6 +103,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _statusForm = new StatusForm();
         _statusForm.ApplySettings(_settings);
         _copilotWindow = new CopilotWindow();
+        _copilotWindow.ApplyAccent(_settings.CopilotAccentColor());
 
         // ----- Tray icons --------------------------------------------------
         _contextMenu = new ContextMenuStrip();
@@ -159,46 +161,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _copilotIcon.MouseMove += (_, _) => OnIconMouseMove(_copilot);
         _controlIcon.MouseUp += (_, e) => { if (e.Button == MouseButtons.Left) ShowSettings(); };
 
-        // ----- Context menu -------------------------------------------------
+        // ----- Context menu (5 items): 今すぐ更新 / Claude·Codex 表示モード /
+        // GitHub Copilot 表示モード / 設定 / 終了. Login, first-time-setup, and the
+        // window-show items live in the settings dialog instead.
         _refreshMenuItem = new ToolStripMenuItem("今すぐ更新", null, async (_, _) => await RefreshAsync().ConfigureAwait(true));
-        _showStatusMenuItem = new ToolStripMenuItem("Claude / Codex を表示", null, (_, _) => ShowStatusForm());
-        _showCopilotMenuItem = new ToolStripMenuItem("GitHub Copilot を表示", null, (_, _) => ShowCopilotWindow());
 
         _modeNormalItem = new ToolStripMenuItem("通常モード", null, (_, _) => SetDisplayMode(DisplayMode.Normal));
         _modeCompactItem = new ToolStripMenuItem("コンパクトモード", null, (_, _) => SetDisplayMode(DisplayMode.Compact));
         _modeMinimumItem = new ToolStripMenuItem("ミニマムモード", null, (_, _) => SetDisplayMode(DisplayMode.Minimum));
-        _displayModeMenuItem = new ToolStripMenuItem("ステータス表示モード");
+        _displayModeMenuItem = new ToolStripMenuItem("Claude/Codexステータス表示モード");
         _displayModeMenuItem.DropDownItems.Add(_modeNormalItem);
         _displayModeMenuItem.DropDownItems.Add(_modeCompactItem);
         _displayModeMenuItem.DropDownItems.Add(_modeMinimumItem);
-        SyncDisplayModeMenuChecks();
+
+        _copilotAlwaysItem = new ToolStripMenuItem("常時表示", null, (_, _) => SetCopilotDisplayMode(WindowDisplayMode.Always));
+        _copilotHoverItem = new ToolStripMenuItem("ホバー表示", null, (_, _) => SetCopilotDisplayMode(WindowDisplayMode.HoverPreview));
+        _copilotDisplayMenuItem = new ToolStripMenuItem("GitHubCopilot表示モード");
+        _copilotDisplayMenuItem.DropDownItems.Add(_copilotAlwaysItem);
+        _copilotDisplayMenuItem.DropDownItems.Add(_copilotHoverItem);
 
         _settingsMenuItem = new ToolStripMenuItem("設定", null, (_, _) => ShowSettings());
-
-        var claudeLoginItem = new ToolStripMenuItem("Claude Code にログイン", null,
-            (_, _) => RunAuthCommand(_authService.LaunchClaudeLogin));
-        var claudeLogoutItem = new ToolStripMenuItem("Claude Code からログアウト", null,
-            (_, _) => RunAuthCommand(_authService.LaunchClaudeLogout));
-        var codexLoginItem = new ToolStripMenuItem("Codex にログイン", null,
-            (_, _) => RunAuthCommand(_authService.LaunchCodexLogin));
-        var codexLogoutItem = new ToolStripMenuItem("Codex からログアウト", null,
-            (_, _) => RunAuthCommand(_authService.LaunchCodexLogout));
-        var refreshAuthItem = new ToolStripMenuItem("認証状態を再確認", null,
-            async (_, _) => await RefreshAsync().ConfigureAwait(true));
-
         var exitMenuItem = new ToolStripMenuItem("終了", null, (_, _) => ExitThread());
+
         _contextMenu.Items.Add(_refreshMenuItem);
-        _contextMenu.Items.Add(_showStatusMenuItem);
-        _contextMenu.Items.Add(_showCopilotMenuItem);
         _contextMenu.Items.Add(_displayModeMenuItem);
+        _contextMenu.Items.Add(_copilotDisplayMenuItem);
         _contextMenu.Items.Add(_settingsMenuItem);
-        _contextMenu.Items.Add(new ToolStripSeparator());
-        _contextMenu.Items.Add(claudeLoginItem);
-        _contextMenu.Items.Add(claudeLogoutItem);
-        _contextMenu.Items.Add(codexLoginItem);
-        _contextMenu.Items.Add(codexLogoutItem);
-        _contextMenu.Items.Add(refreshAuthItem);
-        _contextMenu.Items.Add(new ToolStripSeparator());
         _contextMenu.Items.Add(exitMenuItem);
         _contextMenu.Opening += (_, _) => SyncContextMenuState();
 
@@ -614,16 +602,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         ShowPopup(_status, activate: true);
     }
 
-    private void ShowCopilotWindow()
-    {
-        if (_disposed || !_copilot.Enabled)
-        {
-            return;
-        }
-
-        ShowPopup(_copilot, activate: true);
-    }
-
     private Point GetStatusFormLocation()
     {
         if (_settings.StatusFormLocation is not null)
@@ -712,6 +690,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             // services have providers, then reconcile window visibility and icons.
             _aggregator = BuildAggregator(_settings);
             _statusForm.ApplySettings(_settings);
+            _copilotWindow.ApplyAccent(_settings.CopilotAccentColor());
             ApplyWindowModes();
             // Filter the cached snapshot so a just-disabled service's stale value
             // does not flash in the tray icon before the next refresh.
@@ -747,7 +726,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _statusForm.ApplySettings(_settings);
         SyncDisplayModeMenuChecks();
         _settingsStore.Save(_settings);
-        _ = RefreshAsync();
+        // Re-render the status window layout (above) and the tray from the cached
+        // snapshot — no provider re-fetch needed for a content-mode change.
+        UpdateTrayIcons(FilterForDisplay(_lastSnapshot), loading: _lastSnapshot is null);
     }
 
     private void SyncDisplayModeMenuChecks()
@@ -757,11 +738,48 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _modeMinimumItem.Checked = _settings.DisplayMode == DisplayMode.Minimum;
     }
 
+    // GitHub Copilot window display method (常時表示 / ホバー表示). Saves and applies
+    // immediately: Always shows the window (and unifies away any pin); HoverPreview
+    // hides it unless pinned (then it appears on tray-icon hover). The tray icons
+    // are refreshed from the cached snapshot.
+    private void SetCopilotDisplayMode(WindowDisplayMode mode)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (_settings.CopilotDisplayMode != mode)
+        {
+            _settings.CopilotDisplayMode = mode;
+            _settings.Normalize();
+            if (mode == WindowDisplayMode.Always)
+            {
+                // Always == always-visible; drop any pin so the state is unified.
+                _copilot.Pinned = false;
+            }
+
+            ApplyWindowModes();
+            UpdateTrayIcons(FilterForDisplay(_lastSnapshot), loading: _lastSnapshot is null);
+            _settingsStore.Save(_settings);
+        }
+
+        SyncCopilotDisplayMenuChecks();
+    }
+
+    private void SyncCopilotDisplayMenuChecks()
+    {
+        _copilotAlwaysItem.Checked = _settings.CopilotDisplayMode == WindowDisplayMode.Always;
+        _copilotHoverItem.Checked = _settings.CopilotDisplayMode == WindowDisplayMode.HoverPreview;
+    }
+
     private void SyncContextMenuState()
     {
-        _showStatusMenuItem.Enabled = _settings.ClaudeCodexWindowEnabled;
-        _showCopilotMenuItem.Enabled = _settings.CopilotWindowEnabled;
+        // The display-mode submenus are only meaningful when their window is on.
         _displayModeMenuItem.Enabled = _settings.ClaudeCodexWindowEnabled;
+        _copilotDisplayMenuItem.Enabled = _settings.CopilotWindowEnabled;
+        SyncDisplayModeMenuChecks();
+        SyncCopilotDisplayMenuChecks();
     }
 
     private void ApplyRefreshInterval()
@@ -822,7 +840,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (cpOn)
         {
             var percent = loading || snapshot is null ? null : CopilotPercent(snapshot);
-            SetIcon(_copilot, TrayIconRenderer.CreateCopilotIcon(percent, loading));
+            SetIcon(_copilot, TrayIconRenderer.CreateCopilotIcon(percent, loading, _settings.CopilotAccentColor()));
             _copilotIcon.Text = loading ? "GitHub Copilot 更新中" : TrimTooltip(BuildCopilotTooltip(snapshot));
         }
 
@@ -965,28 +983,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static string TrimTooltip(string value)
         => value.Length <= 127 ? value : value[..127];
-
-    private void RunAuthCommand(Func<AuthLaunchResult> command)
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        AuthLaunchResult result;
-        try
-        {
-            result = command();
-        }
-        catch
-        {
-            result = new AuthLaunchResult(false, "コマンドの実行に失敗しました。");
-        }
-
-        var owner = _statusForm.Visible ? _statusForm : _copilotWindow.Visible ? (IWin32Window)_copilotWindow : null;
-        var icon = result.Ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
-        MessageBox.Show(owner, result.Message, "TokenCheckerWin", MessageBoxButtons.OK, icon);
-    }
 
     // Build the aggregator from the per-window/per-service gates so a disabled
     // window never triggers its provider's fetch.

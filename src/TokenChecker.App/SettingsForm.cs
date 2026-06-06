@@ -20,6 +20,9 @@ internal sealed class SettingsForm : Form
     private readonly ComboBox _copilotPlan = new();
     private readonly NumericUpDown _copilotCustomCredits = new();
     private readonly ComboBox _copilotDisplayMode = new();
+    private readonly ComboBox _copilotAccent = new();
+    private readonly Button _copilotSetupBtn = new();
+    private readonly Button _copilotTestBtn = new();
 
     private readonly TrayApplicationContext? _host;
     private readonly Label _claudeStatusLabel;
@@ -40,7 +43,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(404, 632);
+        Size = new Size(404, 706);
         Font = new Font("Segoe UI", 9F);
 
         // ----- 共通設定 -----------------------------------------------------
@@ -179,7 +182,7 @@ internal sealed class SettingsForm : Form
         {
             Text = "GitHub Copilot 設定",
             Location = new Point(12, 392),
-            Size = new Size(368, 150)
+            Size = new Size(368, 224)
         };
 
         _copilotWindowEnabled.Text = "GitHub Copilot ウィンドウを表示";
@@ -213,6 +216,28 @@ internal sealed class SettingsForm : Form
         _copilotDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.Always));
         _copilotDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.HoverPreview));
 
+        var accentLabel = new Label { Text = "配色", AutoSize = true, Location = new Point(14, 152) };
+        _copilotAccent.DropDownStyle = ComboBoxStyle.DropDownList;
+        _copilotAccent.Location = new Point(110, 148);
+        _copilotAccent.Size = new Size(180, 24);
+        _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Green));
+        _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Blue));
+        _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Sky));
+        _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Purple));
+        _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Slate));
+
+        // First-time setup wizard + connection test. Always enabled (the user can
+        // set up the token before enabling the window).
+        _copilotSetupBtn.Text = "初回設定";
+        _copilotSetupBtn.Location = new Point(14, 184);
+        _copilotSetupBtn.Size = new Size(110, 28);
+        _copilotSetupBtn.Click += (_, _) => OpenCopilotSetup();
+
+        _copilotTestBtn.Text = "接続テスト";
+        _copilotTestBtn.Location = new Point(132, 184);
+        _copilotTestBtn.Size = new Size(110, 28);
+        _copilotTestBtn.Click += async (_, _) => await RunCopilotTestAsync().ConfigureAwait(true);
+
         gbCopilot.Controls.Add(_copilotWindowEnabled);
         gbCopilot.Controls.Add(planLabel);
         gbCopilot.Controls.Add(_copilotPlan);
@@ -220,20 +245,24 @@ internal sealed class SettingsForm : Form
         gbCopilot.Controls.Add(_copilotCustomCredits);
         gbCopilot.Controls.Add(copilotMethodLabel);
         gbCopilot.Controls.Add(_copilotDisplayMode);
+        gbCopilot.Controls.Add(accentLabel);
+        gbCopilot.Controls.Add(_copilotAccent);
+        gbCopilot.Controls.Add(_copilotSetupBtn);
+        gbCopilot.Controls.Add(_copilotTestBtn);
 
         // ----- OK / Cancel --------------------------------------------------
         var okButton = new Button
         {
             Text = "OK",
             DialogResult = DialogResult.OK,
-            Location = new Point(224, 552),
+            Location = new Point(224, 626),
             Size = new Size(76, 28)
         };
         var cancelButton = new Button
         {
             Text = "キャンセル",
             DialogResult = DialogResult.Cancel,
-            Location = new Point(306, 552),
+            Location = new Point(306, 626),
             Size = new Size(76, 28)
         };
 
@@ -278,6 +307,7 @@ internal sealed class SettingsForm : Form
         settings.CopilotDisplayMode = (_copilotDisplayMode.SelectedItem as WindowDisplayModeOption)?.Mode ?? current.CopilotDisplayMode;
         settings.CopilotPlan = (_copilotPlan.SelectedItem as CopilotPlanOption)?.Plan ?? current.CopilotPlan;
         settings.CopilotCustomCredits = (int)_copilotCustomCredits.Value;
+        settings.CopilotAccent = (_copilotAccent.SelectedItem as CopilotAccentOption)?.Accent ?? current.CopilotAccent;
 
         settings.Normalize();
         return settings;
@@ -298,6 +328,7 @@ internal sealed class SettingsForm : Form
         _copilotDisplayMode.SelectedIndex = IndexOf(_copilotDisplayMode, o => (o as WindowDisplayModeOption)?.Mode == settings.CopilotDisplayMode);
         _copilotPlan.SelectedIndex = IndexOf(_copilotPlan, o => (o as CopilotPlanOption)?.Plan == settings.CopilotPlan);
         _copilotCustomCredits.Value = Math.Clamp(settings.CopilotCustomCredits, 0, 1_000_000);
+        _copilotAccent.SelectedIndex = IndexOf(_copilotAccent, o => (o as CopilotAccentOption)?.Accent == settings.CopilotAccent);
 
         UpdateEnabledStates();
     }
@@ -327,8 +358,49 @@ internal sealed class SettingsForm : Form
         var cp = _copilotWindowEnabled.Checked;
         _copilotPlan.Enabled = cp;
         _copilotDisplayMode.Enabled = cp;
+        _copilotAccent.Enabled = cp;
         _copilotCustomCredits.Enabled = cp
             && (_copilotPlan.SelectedItem as CopilotPlanOption)?.Plan == CopilotPlan.Custom;
+    }
+
+    // The allowance reflects the CURRENT (possibly unsaved) plan/custom selection so
+    // the setup wizard's connection test shows the right usage ratio.
+    private int? CurrentCopilotAllowance()
+    {
+        var plan = (_copilotPlan.SelectedItem as CopilotPlanOption)?.Plan ?? CopilotPlan.None;
+        return plan switch
+        {
+            CopilotPlan.Pro => AppSettings.ProCredits,
+            CopilotPlan.ProPlus => AppSettings.ProPlusCredits,
+            CopilotPlan.Max => AppSettings.MaxCredits,
+            CopilotPlan.Custom => (int)_copilotCustomCredits.Value > 0 ? (int)_copilotCustomCredits.Value : null,
+            _ => null
+        };
+    }
+
+    private void OpenCopilotSetup()
+    {
+        using var wizard = new GitHubCopilotSetupForm(CurrentCopilotAllowance());
+        wizard.ShowDialog(this);
+    }
+
+    private async Task RunCopilotTestAsync()
+    {
+        // Disable while running to prevent double execution; the message is a safe
+        // canned string + usage numbers only (no token/login/URL/path/email).
+        _copilotTestBtn.Enabled = false;
+        try
+        {
+            var message = await GitHubCopilotSetupForm.RunConnectionTestAsync(CurrentCopilotAllowance()).ConfigureAwait(true);
+            MessageBox.Show(this, message, "接続テスト", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                _copilotTestBtn.Enabled = true;
+            }
+        }
     }
 
     private void RunAuth(Func<AuthLaunchResult>? command)
@@ -465,6 +537,20 @@ internal sealed class SettingsForm : Form
                 CopilotPlan.Max => $"Max（{AppSettings.MaxCredits:N0}）",
                 CopilotPlan.Custom => "Custom（手入力）",
                 _ => Plan.ToString()
+            };
+    }
+
+    private sealed record CopilotAccentOption(CopilotAccent Accent)
+    {
+        public override string ToString()
+            => Accent switch
+            {
+                CopilotAccent.Green => "グリーン（既定）",
+                CopilotAccent.Blue => "ブルー",
+                CopilotAccent.Sky => "スカイ",
+                CopilotAccent.Purple => "パープル",
+                CopilotAccent.Slate => "スレート",
+                _ => Accent.ToString()
             };
     }
 }

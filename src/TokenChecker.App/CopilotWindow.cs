@@ -24,6 +24,10 @@ internal sealed class CopilotWindow : Form
     private const int FormWidth = CardWidth + FormPadding * 2;
 
     private readonly CopilotCard _card;
+    // Polls the cursor while the window is visible so the hover detail-swap works
+    // even when the window appears under a stationary cursor or stays inactive
+    // (HoverPreview), where MouseEnter/MouseLeave do not fire reliably.
+    private readonly System.Windows.Forms.Timer _hoverPoll = new() { Interval = 120 };
     private bool _hovered;
     private bool _focused;
 
@@ -60,6 +64,7 @@ internal sealed class CopilotWindow : Form
         MouseEnter += OnPointerChanged;
         MouseLeave += OnPointerChanged;
         AttachHandlers(this);
+        _hoverPoll.Tick += (_, _) => RefreshHover();
     }
 
     // Raised when the user dismisses the popup with Esc.
@@ -91,6 +96,10 @@ internal sealed class CopilotWindow : Form
         => _card.Update(planTitle, current, fallback, allowance, insights);
 
     public void SetLoading() => _card.SetLoading();
+
+    // Applies the configured accent color to the card's numbers + bar (the
+    // <80% "good" color; severity still escalates to amber/red at 80/95).
+    public void ApplyAccent(Color accent) => _card.SetAccent(accent);
 
     // Drop any inner focus so an explicitly-activated window (the click trigger)
     // still opens in the compact resting state. Esc/keyboard still work at the
@@ -126,8 +135,23 @@ internal sealed class CopilotWindow : Form
     protected override void OnVisibleChanged(EventArgs e)
     {
         base.OnVisibleChanged(e);
-        if (!Visible)
+        if (Disposing || IsDisposed)
         {
+            // During teardown the form's handle destruction flips Visible; don't
+            // touch the (already-disposed) timer or card here — Dispose handles it.
+            return;
+        }
+
+        if (Visible)
+        {
+            // Drive hover detection by polling while shown (see _hoverPoll): in
+            // HoverPreview the window is shown inactive and often appears under the
+            // cursor, so MouseEnter never fires and the event-only path misses it.
+            _hoverPoll.Start();
+        }
+        else
+        {
+            _hoverPoll.Stop();
             // Reset to the compact resting state so the next open is consistent.
             _hovered = false;
             _focused = false;
@@ -219,6 +243,17 @@ internal sealed class CopilotWindow : Form
         InteractionChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _hoverPoll.Stop();
+            _hoverPoll.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+
     // ----- CopilotCard -----------------------------------------------------
     private sealed class CopilotCard : Panel
     {
@@ -243,6 +278,10 @@ internal sealed class CopilotWindow : Form
         private string _detailValue = "—";
         private string _suffix = string.Empty;
         private Color _valueColor = UsageTheme.MutedText;
+        // Configurable base color for the numbers + bar in the <80% "good" state.
+        // Severity still overrides it at 80/95 (amber/red) via UsageTheme.
+        private Color _accent = UsageTheme.Good;
+        private double _lastPercent;
 
         public CopilotCard()
         {
@@ -283,7 +322,7 @@ internal sealed class CopilotWindow : Form
                 AutoSize = false,
                 Size = new Size(90, 16),
                 Location = new Point(CardWidth - 14 - 90, 14),
-                Font = new Font("Segoe UI", 8F),
+                Font = new Font("Segoe UI", 7.5F),
                 BackColor = Color.Transparent,
                 ForeColor = UsageTheme.MutedText,
                 TextAlign = ContentAlignment.MiddleRight,
@@ -466,10 +505,11 @@ internal sealed class CopilotWindow : Form
                 var percent = Math.Min(100d, u / (double)cap * 100d);
                 var remaining = Math.Max(0L, cap - u);
                 _hasPercent = true;
+                _lastPercent = percent;
                 _compactValue = $"{Math.Round(percent):0}%";
                 _detailValue = $"{u:N0} / {cap:N0}";
                 _suffix = "使用済み";
-                _valueColor = UsageTheme.AccentColor(percent);
+                _valueColor = UsageTheme.AccentColor(percent, _accent);
                 _bar.AccentColor = _valueColor;
                 _bar.SetValue(percent);
                 _resetSub.Text = $"残 {remaining:N0} · {FormatReset(window)}";
@@ -484,6 +524,13 @@ internal sealed class CopilotWindow : Form
                 _valueColor = used is null ? UsageTheme.MutedText : UsageTheme.PrimaryText;
                 _bar.SetValue(null);
                 _resetSub.Text = "当月集計 · 設定でプランを選ぶと上限・残量を表示";
+            }
+
+            // When the token is unset, point the user at the first-time setup (no
+            // token input here — only env GITHUB_TOKEN is read).
+            if (status == ProviderStatus.NotLoggedIn)
+            {
+                _resetSub.Text = "設定画面の「初回設定」から手順を確認してください";
             }
 
             ApplyMainLineText();
@@ -555,10 +602,20 @@ internal sealed class CopilotWindow : Form
         private void ApplyBadge(string text)
         {
             _badge.Text = text;
-            var width = TextRenderer.MeasureText(text, _badge.Font, Size.Empty, TextFormatFlags.NoPadding).Width + 6;
-            width = Math.Clamp(width, 40, CardWidth - 28 - 80);
+            // Measure WITH the Label's default padding (no NoPadding flag) so the box
+            // matches what the Label actually renders — a NoPadding measure undersizes
+            // it and the text clips. Size both axes and center in the title row so a
+            // tall (DPI-scaled) glyph never gets cut off vertically either.
+            var measured = TextRenderer.MeasureText(text, _badge.Font);
+            var width = Math.Clamp(measured.Width + 2, 40, CardWidth - 28 - 70);
+            // Height tracks the text so nothing clips vertically. Center it in the
+            // title row, but never let it float ABOVE the row: at very high DPI the
+            // measured text can exceed the 22px row, so floor y at the row top and
+            // let the (right-aligned) badge extend down into the empty right margin.
+            var height = Math.Max(18, measured.Height + 2);
             var x = CardWidth - 14 - width;
-            _badge.Bounds = new Rectangle(x, 14, width, 16);
+            var y = Math.Max(12, 12 + (22 - height) / 2);
+            _badge.Bounds = new Rectangle(x, y, width, height);
             _title.Width = Math.Max(40, x - 14 - 8);
         }
 
@@ -583,7 +640,7 @@ internal sealed class CopilotWindow : Form
             switch (status)
             {
                 case ProviderStatus.NotLoggedIn:
-                    return "環境変数 GITHUB_TOKEN に PAT(Plan:Read) を設定してください";
+                    return "GITHUB_TOKEN が未設定です";
                 case ProviderStatus.Unauthorized:
                     return current?.Message?.Contains("(403)", StringComparison.Ordinal) == true
                         ? "GITHUB_TOKEN の Plan(Read) 権限・個人課金・Enhanced Billing 対象を確認してください"
@@ -638,8 +695,27 @@ internal sealed class CopilotWindow : Form
             }
         }
 
+        // Decorative glass tint is fixed (slate); the configurable accent rides the
+        // numbers + bar instead (see _accent / SetAccent), not this backdrop.
+        private readonly Color _brand = UsageTheme.CopilotBrand;
+
+        // Applies the configured accent to the numbers + bar. Recomputes the live
+        // color immediately so a settings change shows without waiting for the next
+        // refresh; severity (80/95) still overrides it.
+        public void SetAccent(Color accent)
+        {
+            _accent = accent;
+            if (_hasPercent)
+            {
+                _valueColor = UsageTheme.AccentColor(_lastPercent, _accent);
+                _bar.AccentColor = _valueColor;
+                _bar.Invalidate();
+                ApplyMainLineText();
+            }
+        }
+
         protected override void OnPaint(PaintEventArgs e)
-            => UsageTheme.PaintGlassCard(e.Graphics, Width, Height, UsageTheme.CopilotBrand);
+            => UsageTheme.PaintGlassCard(e.Graphics, Width, Height, _brand);
     }
 
     // Renders a large value plus a smaller, lighter suffix on a shared baseline,
@@ -657,7 +733,7 @@ internal sealed class CopilotWindow : Form
         public MainUsageControl(float valuePointSize)
         {
             _valueSize = valuePointSize;
-            _suffixSize = valuePointSize * 0.55f;
+            _suffixSize = valuePointSize * 0.46f;
             SetStyle(
                 ControlStyles.AllPaintingInWmPaint
                 | ControlStyles.OptimizedDoubleBuffer

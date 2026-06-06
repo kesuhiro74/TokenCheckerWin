@@ -32,6 +32,20 @@ internal enum WindowDisplayMode
     HoverPreview = 1
 }
 
+// Accent color for the GitHub Copilot card's numbers + bar (and the tray %-bar):
+// it sets the normal (<80%) "good" color, while the shared 80/95 severity
+// escalation (amber/red) still applies. Green is the default (the original look).
+// Values are serialized by NAME (JsonStringEnumConverter), so older settings.json
+// that stored "Blue"/"Sky"/"Slate" still parse correctly after this reordering.
+internal enum CopilotAccent
+{
+    Green = 0,
+    Blue = 1,
+    Sky = 2,
+    Purple = 3,
+    Slate = 4
+}
+
 internal sealed class AppSettings
 {
     // GitHub Copilot is keyed in snapshots by this exact provider name. (It is no
@@ -85,6 +99,8 @@ internal sealed class AppSettings
 
     public FormLocation? CopilotWindowLocation { get; set; }
 
+    public CopilotAccent CopilotAccent { get; set; } = CopilotAccent.Green;
+
     public bool IsServiceVisible(string serviceName)
         => VisibleServices?.Any(service => string.Equals(service, serviceName, StringComparison.OrdinalIgnoreCase)) == true;
 
@@ -121,6 +137,20 @@ internal sealed class AppSettings
                 ? $"Custom {CopilotCustomCredits:N0} credits"
                 : "Custom",
             _ => "GitHub Copilot"
+        };
+
+    // Resolves the selected accent to the base color for the Copilot numbers + bar
+    // (and tray %-bar) in the normal (<80%) range. Severity still escalates to
+    // amber/red at 80/95 via UsageTheme; this only sets the "good" color. Green maps
+    // to UsageTheme.Good (the original look).
+    public Color CopilotAccentColor()
+        => CopilotAccent switch
+        {
+            CopilotAccent.Blue => Color.FromArgb(52, 110, 210),
+            CopilotAccent.Sky => Color.FromArgb(40, 150, 214),
+            CopilotAccent.Purple => Color.FromArgb(139, 92, 214),
+            CopilotAccent.Slate => UsageTheme.CopilotBrand,
+            _ => UsageTheme.Good
         };
 
     public void Normalize()
@@ -160,6 +190,11 @@ internal sealed class AppSettings
             CopilotPlan = CopilotPlan.None;
         }
 
+        if (!Enum.IsDefined(CopilotAccent))
+        {
+            CopilotAccent = CopilotAccent.Green;
+        }
+
         CopilotCustomCredits = Math.Max(0, CopilotCustomCredits);
 
         // CompactMode is a derived back-compat write only (see SettingsStore.Load
@@ -182,7 +217,8 @@ internal sealed class AppSettings
             CopilotDisplayMode = CopilotDisplayMode,
             CopilotPlan = CopilotPlan,
             CopilotCustomCredits = CopilotCustomCredits,
-            CopilotWindowLocation = CopilotWindowLocation
+            CopilotWindowLocation = CopilotWindowLocation,
+            CopilotAccent = CopilotAccent
         };
 }
 

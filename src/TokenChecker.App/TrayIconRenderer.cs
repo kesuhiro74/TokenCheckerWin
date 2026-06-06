@@ -62,12 +62,18 @@ internal static class TrayIconRenderer
     // % bar that uses as much of the icon area as possible (a rectangle), filling
     // bottom→top to `percent` with the shared 80/95 severity escalation. A null
     // percent (no plan/allowance or no data) or loading shows an empty track.
-    public static Icon CreateCopilotIcon(double? percent, bool loading, int size = 32)
+    public static Icon CreateCopilotIcon(double? percent, bool loading, Color? accentBase = null, int size = 32)
     {
+        // Normal (<80%) fill: a lightened version of the configured accent so it
+        // stays vivid on the small, dark tray track. Null falls back to the
+        // original green. Severity (80/95) still overrides it inside the draw.
+        var normalFill = accentBase is Color accent
+            ? UsageTheme.Lighten(accent, 0.25f)
+            : CopilotNormalFill;
         using var bitmap = new Bitmap(size, size);
         using (var graphics = Graphics.FromImage(bitmap))
         {
-            DrawCopilotBar(graphics, size, percent, loading);
+            DrawCopilotBar(graphics, size, percent, loading, normalFill);
         }
 
         var handle = bitmap.GetHicon();
@@ -82,7 +88,7 @@ internal static class TrayIconRenderer
         }
     }
 
-    private static void DrawCopilotBar(Graphics graphics, int size, double? percent, bool loading)
+    private static void DrawCopilotBar(Graphics graphics, int size, double? percent, bool loading, Color normalFill)
     {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.Clear(Color.Transparent);
@@ -92,7 +98,10 @@ internal static class TrayIconRenderer
         var topPad = size * 0.07f;
         var barHeight = size - topPad * 2f;
         var rect = new RectangleF(left, topPad, barWidth, barHeight);
-        var radius = barWidth * 0.45f;
+        // Sharper than a full pill: a small corner radius so the bar reads as a
+        // crisp rounded rectangle. Clamped (proportional to size) so it neither
+        // collapses at tiny tray sizes nor over-rounds at high DPI.
+        var radius = Math.Max(1.5f, Math.Min(barWidth * 0.22f, size * 0.12f));
 
         using (var trackPath = UsageTheme.CreateRoundedRectPath(rect, radius))
         using (var trackBrush = new SolidBrush(InnerTrack))
@@ -110,7 +119,7 @@ internal static class TrayIconRenderer
                 var previous = graphics.Clip;
                 graphics.SetClip(clip, CombineMode.Replace);
                 var fillRect = new RectangleF(rect.X, rect.Bottom - fillHeight, barWidth, fillHeight);
-                using (var fillBrush = new SolidBrush(CopilotBarColor(clamped)))
+                using (var fillBrush = new SolidBrush(CopilotBarColor(clamped, normalFill)))
                 {
                     graphics.FillRectangle(fillBrush, fillRect);
                 }
@@ -119,17 +128,18 @@ internal static class TrayIconRenderer
             }
         }
 
-        using var outline = new Pen(CopilotBarOutline, Math.Max(1f, size * 0.045f));
+        // Slightly clearer outline so the (now sharper) bar edges read crisply.
+        using var outline = new Pen(CopilotBarOutline, Math.Max(1.2f, size * 0.055f));
         using var outlinePath = UsageTheme.CreateRoundedRectPath(rect, radius);
         graphics.DrawPath(outline, outlinePath);
     }
 
-    private static Color CopilotBarColor(double percent)
+    private static Color CopilotBarColor(double percent, Color normalFill)
         => percent switch
         {
             >= UsageTheme.CriticalPercent => DangerColor,
             >= UsageTheme.WarningPercent => WarningColor,
-            _ => CopilotNormalFill
+            _ => normalFill
         };
 
     public static OverallState DetermineState(UsageSnapshot snapshot, out double? claudePercent, out double? codexPercent)

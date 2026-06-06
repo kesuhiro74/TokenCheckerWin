@@ -1,6 +1,6 @@
 # 設計仕様: GitHub Copilot AI Credits プロバイダ（専用ウィンドウ＋専用トレイ）
 
-> ⚠ **現行仕様は「現行仕様サマリ（active）」と「§0 実装時の改訂」が正。** 本文 §1〜§14 のうち **UI に関する旧記述は廃止**です。特に **§5「UI 設計（通常モードの CopilotCard）」全体**、**§2/§13 の「トレイアイコン対象外」**、**§3 の `VisibleServices` による Copilot 表示ゲート**、**「通常モードに専用カードを追加」前提**は **旧案・不採用**。Core プロバイダ／パーサ（§4）、Poc（§8）、プライバシー（§9）、`decimal` 集計（§4.3）、検証手順（§11）は引き続き有効。README と本サマリを一致させること。
+> ⚠ **現行仕様は「現行仕様サマリ（active）」と「§0 実装時の改訂」が正。** 本文 §1〜§14 のうち **UI に関する旧記述は廃止**です。特に **§5「UI 設計（通常モードの CopilotCard）」全体**、**§2/§13 の「トレイアイコン対象外」**、**§3／§7 の `VisibleServices` による Copilot 表示ゲート**、**§5.1 等の「`NotifyIcon` は1つ」前提**、**「通常モードに専用カードを追加」前提**、**旧 `CopilotWindowTrigger`／`TrayIconMode`／`CopilotWindowFadeSeconds`／`ShowOnStartup`** は **旧案・不採用**（現行はウィンドウごとの ON/OFF・Always/HoverPreview・有効ウィンドウごとの専用トレイアイコン・両窓OFF時のみコントロールアイコン・`CopilotWindowEnabled`/`ClaudeCodexWindowEnabled` ゲート）。Core プロバイダ／パーサ（§4）、Poc（§8）、プライバシー（§9）、`decimal` 集計（§4.3）、検証手順（§11）は引き続き有効。README と本サマリを一致させること。
 
 - 作成日(UTC): 2026-06-03
 - 対象ブランチ: `feature/github-copilot-ai-credits`（`main`/タグ/過去リリースは変更しない）
@@ -15,10 +15,13 @@
 - **ウィンドウごとに ON/OFF**: `AppSettings.ClaudeCodexWindowEnabled` / `CopilotWindowEnabled`。OFF のウィンドウは表示しない。
 - **ウィンドウごとに表示方法**: `WindowDisplayMode { Always, HoverPreview }`（`ClaudeCodexDisplayMode` / `CopilotDisplayMode`）。HoverPreview＝専用トレイアイコンのホバーでフェードイン・ウィンドウ外で即非表示・アイコン→ウィンドウ移動は維持・**クリックでピン留め**（常時表示扱い、再クリックで解除）。旧 3 トリガー（Click/MouseOver/ClickThenFade）と `CopilotWindowFadeSeconds`・`TrayIconMode`・`ShowOnStartup` は**廃止**。
 - **トレイアイコンは有効ウィンドウごとに専用**: `_statusIcon`（Claude/Codex リング）／`_copilotIcon`（Copilot 縦%バー）。「1アイコン either/or（`TrayIconMode`）」は**撤回**。
-- **両窓 OFF 時はコントロール用アイコン**を1つだけ表示（`_controlIcon`）。ウィンドウは出さず、左クリック＝設定／右クリック＝メニュー（今すぐ更新・設定・終了）。常に最低1アイコンは可視。
+- **両窓 OFF 時はコントロール用アイコン**を1つだけ表示（`_controlIcon`）。ウィンドウは出さず、左クリック＝設定／右クリック＝共有メニュー。常に最低1アイコンは可視。
+- **右クリックメニューは5項目固定**: `今すぐ更新` / `Claude/Codexステータス表示モード`▶(通常/コンパクト/ミニマム) / `GitHubCopilot表示モード`▶(常時表示/ホバー表示) / `設定` / `終了`。現在値にチェック・切替は即時保存＋反映。ログイン/初回設定/接続テスト等は設定ダイアログ側。
+- **Copilot 配色**: `CopilotAccent`（Green(既定)/Blue/Sky/Purple/Slate）を設定で選択し、**数値・カードバー・トレイ縦%バーの通常色(80%未満)**に反映（`UsageTheme.AccentColor(value, baseColor)` 経由・トレイは `Lighten(accent,0.25)`）。**80/95 の橙/赤エスカレーションは色設定に関わらず維持**（severity が上書き）。装飾グラスのスレートピルは固定（不変）。第4弾までの「配色＝装飾のみ」は第5弾で**置換**。
 - **取得ゲート**: Copilot provider は `CopilotProviderEnabled`(=`CopilotWindowEnabled`)、Claude/Codex provider は `ClaudeProviderEnabled`/`CodexProviderEnabled`(=`ClaudeCodexWindowEnabled` ＋ `VisibleServices` の個別サービス表示)。OFF のものは provider を生成せず取得しない。
 - **OFF サービスの stale 値除去**: 表示用 snapshot/fallback（`BuildFallbackSnapshot`）・トレイアイコン（`DetermineState` 入力）・ツールチップは `IsServiceEnabledForDisplay` でフィルタし、無効化済みサービスの古い警告/危険状態を出さない。`last_usage.json` 自体は改変しない（表示段階でフィルタ）。
 - **旧 settings.json 移行**（`SettingsStore.Load`・一度きり）: `ShowOnStartup=false`→`ClaudeCodexDisplayMode=HoverPreview`、`CopilotWindowTrigger`(任意値)→`CopilotDisplayMode=HoverPreview`、`VisibleServices` の `"GitHub Copilot"` または `TrayIconMode="Copilot"`→`CopilotWindowEnabled=true`、`VisibleServices` は Claude/Codex のみへ正規化。`CopilotWindowFadeSeconds` は無視（廃止）。
+- **初回設定**: 認証は **PAT + `GITHUB_TOKEN` 環境変数方式**（アプリ内ログイン/OAuth/Device Flow は未実装）。設定の `初回設定` ウィザード（`GitHubCopilotSetupForm`）の構成は **「GitHub のトークン作成ページを開く」**（押下で下部テキスト領域に**トークン作成手順**を表示: Token name 例 `TokenChecker` / Expiration 推奨 `90 days` / Permissions に `Plan` を追加し `Read-only` を確認 / `Generate token`）＋ **「環境変数の設定方法を表示」**＋ **「接続テスト」**＋ **「閉じる」**。**`権限の説明を開く` ボタンや `PermissionsDocUrl` は存在しない**（権限の説明は作成手順テキストに統合）。**token はアプリ内入力させない・保存しない・表示/ログ/結果に出さない**（接続テストは使用量数値＋安全な定型文のみ）。`GITHUB_TOKEN` 未設定時は CopilotWindow が「初回設定」へ誘導。
 - **不変**: 桁は整数（共有モデル非侵襲）、80/95 閾値は `UsageTheme` に集約、保存は `settings.json`/`last_usage.json`/`copilot_usage.json` の3点のみ（数値・日付のみ・トークン非保存）。Copilot カードは値スワップが固定ボックス＝無ガタ。タイトルはプラン名。
 
 詳細な実装手順・経緯はプランファイル `14-copilot-hazy-panda.md`、変更履歴は §0 を参照。
@@ -27,7 +30,9 @@
 
 ## 0. 実装時の改訂（専用ウィンドウ＋専用トレイ・2026-06-05）
 
-実装着手時にユーザー指示で **UI を §5「通常モードの専用カード」から大幅変更**した。Core（§4）・設定の骨子（§6）・配線方針（§7・可視性ゲート）・Poc（§8）・プライバシー不変条件（§9）はそのまま有効。差分は以下。
+実装着手時にユーザー指示で **UI を §5「通常モードの専用カード」から大幅変更**した。Core（§4）・設定の骨子（§6）・Poc（§8）・プライバシー不変条件（§9）はそのまま有効。差分は以下。
+
+> ⚠ **この第1弾の以下3点は、後述『第2弾』でさらに置換済み**（最新は冒頭「現行仕様サマリ」が正）: ①「ウィンドウ表示トリガー（`CopilotWindowTrigger`：Click/MouseOver/ClickThenFade）＋`CopilotWindowFadeSeconds`」→ **Always / HoverPreview の2種類**に置換・両設定とも廃止。②「トレイは1アイコン（`TrayIconMode` で either/or）」→ **有効ウィンドウごとの専用アイコン＋両窓OFF時のコントロールアイコン**に置換。③「provider ゲート＝`VisibleServices` に "GitHub Copilot" or `TrayIconMode==Copilot`」→ **`CopilotWindowEnabled`（Claude/Codex は `ClaudeCodexWindowEnabled`＋個別表示）** に置換。以下の §0 第1弾本文は経緯保存のため残置。
 
 - **桁**: 整数表示で確定（ユーザー選択）。`RateLimitWindow.Used`(long, 丸め済み)のまま、共有モデル非侵襲（§2/§10 不変条件を完全遵守）。詳細は `{used:N0} / {allowance:N0} 使用済み`。
 - **専用ウィンドウ**: `CopilotWindow`（新 Form。Claude/Codex のステータス窓とは独立）。通常は `66% 使用済み` を大きく表示、**ウィンドウ全体ホバー or キーボードフォーカス**で `4,627 / 7,000 使用済み` に切替。メイン行は固定サイズ Label の `.Text` 差し替えのみ＝バー割合・リセット表記・ウィンドウサイズ不変・無ガタ。`StatusForm` の通常モードに Copilot カードは追加しない（§5 を置換）。
@@ -48,6 +53,30 @@
 - **トレイは窓ごとの専用アイコン**（status リング / copilot 縦%バー）。**両窓OFF時のみ control アイコン**を1つ出し、設定・終了へ必ず到達できる（ウィンドウは出さない）。旧「1アイコン either/or」は撤回。
 - **設定画面を3区分**（共通 / Claude·Codex / GitHub Copilot）に再構成。Claude/Codex の個別サービス表示トグルは残置。
 - 旧 `VisibleServices` の `"GitHub Copilot"` は `SettingsStore.Load` で `CopilotWindowEnabled` に一度きり移行。
+
+### 第3弾（2026-06-06・初回設定ウィザード）
+
+- **認証方式は PAT + `GITHUB_TOKEN` 環境変数のまま**（アプリ内ログイン／OAuth／Device Flow は**未実装**）。必要権限は **fine-grained PAT の User permissions: Plan = read**。
+- **新規 `GitHubCopilotSetupForm`**（1画面ウィザード）: 説明（「この画面では token を入力しない／GitHub で作成し env `GITHUB_TOKEN` に設定」）＋ボタン「GitHub のトークン作成ページを開く」（定数 URL・押下時に下部テキスト領域へ **fine-grained PAT 作成手順**を表示: Token name 例 `TokenChecker` / Expiration 推奨 `90 days` / Permissions に `Plan` を追加し `Read-only` / `Generate token` / コピーした token を env `GITHUB_TOKEN` へ）／「環境変数の設定方法を表示」（PowerShell 例＋`<your-token>` 置換・再起動・非保存の注記）／「接続テスト」／「閉じる」。`SettingsForm` の GitHub Copilot 設定に **`初回設定`／`接続テスト`** ボタンを追加。`権限の説明を開く` ボタンは作成手順の表示に統合して削除。
+- **接続テスト**は既存 `GitHubCopilotUsageProvider` を再利用（`RunConnectionTestAsync(int? allowance)` に集約）。**token はアプリ内入力させない・保存しない・画面/ログ/診断/結果に出さない**。結果は**使用量の数値と安全な定型文のみ**（`ProviderStatus` ＋ マスク済み Message の `(403)` 判定のみ使用、生 Message は非表示）。テスト中はボタンを無効化し二重実行防止。
+- **`GITHUB_TOKEN` 未設定時**: CopilotWindow は `GITHUB_TOKEN が未設定です` ＋サブテキスト `設定画面の「初回設定」から手順を確認してください` を表示（**token 入力欄は作らない**）。
+
+### 第4弾（2026-06-06・トレイメニュー再構成／アイコン／配色）
+
+- **右クリックメニューを5項目に固定**: `今すぐ更新` / `Claude/Codexステータス表示モード`▶(通常/コンパクト/ミニマム＝`DisplayMode`、現在値にチェック) / `GitHubCopilot表示モード`▶(常時表示/ホバー表示＝`CopilotDisplayMode`、現在値にチェック) / `設定` / `終了`。**ログイン/ログアウト・認証再確認・初回設定・接続テスト・旧「○○を表示」「表示モード」は撤去**（設定ダイアログ側へ集約）。3つの NotifyIcon（status/copilot/control）すべてに同じ `ContextMenuStrip` を共有。両窓OFFでも control アイコンから到達可能。
+- **表示モード切替の即時反映**: `SetDisplayMode`（コンテンツ）/`SetCopilotDisplayMode`（Always/HoverPreview）とも `settings.json` 保存＋`ApplySettings`/`ApplyWindowModes`＋トレイ再描画（キャッシュ snapshot から・再取得なし）。`常時表示` は対象窓を表示しピンを解除して統一、`ホバー表示` はピン以外は非表示でアイコンホバー表示。各サブメニューは対象ウィンドウ OFF 時は無効表示。
+- **Copilot トレイアイコンの角**: `TrayIconRenderer.DrawCopilotBar` の角丸半径を pill（`barWidth*0.45`）から `Math.Max(1.5, Math.Min(barWidth*0.22, size*0.12))` に縮小（角を出す）。輪郭線を `Math.Max(1.2, size*0.055)` に明確化。小サイズで潰れず DPI でも比例。**80%/95% の色変化は不変**。
+- **Copilot 配色設定**: `enum CopilotAccent { Slate, Blue, Sky }` ＋ `AppSettings.CopilotAccentColor()`。設定ダイアログの「配色」コンボで選択し、`CopilotWindow.ApplyAccent` でカードのブランド色（`PaintGlassCard` の左アクセントピル＋淡い tint）に反映。**装飾色のみ**で 80/95 severity（数字・バー＝`UsageTheme`）には不干渉。トレイの縦%バーは severity 配色のまま（角のみ変更）。〔**第5弾で「配色＝本体色」に置換**。下記参照。〕
+
+### 第5弾（2026-06-06・Copilot カード5点修正）
+
+実機フィードバックによる5点（いずれも App 側の表示/設定のみ。Core プロバイダ/パーサ・共有モデル・`GITHUB_TOKEN` 経路・`copilot_usage.json` スキーマ・`UsageTheme` の 80/95 閾値定義は不変）。
+
+- **#1 バッジ見切れ＋小型化**: `_badge` フォント `8F→7.5F`。`CopilotCard.ApplyBadge` を「Label 実描画に合わせたパディング込み実測（`TextRenderer.MeasureText(text,font)`・`NoPadding` を付けない）」で幅・高さとも採寸しタイトル行へ縦配置。高DPI 対策で `y=Math.Max(12, 12+(22-height)/2)`（行頭を下限化＝浮き上がり防止）、高さは文字追従（縦切れ防止・右余白へ下方展開）。
+- **#2 「使用済み」縮小**: `MainUsageControl` のサフィックス比 `0.55→0.46`（ベースライン揃え・固定ボックス無ガタは維持）。
+- **#3 100%到達予測の起点**: `CopilotUsageTracker.PredictFull` を **UTC1日0時 → ローカル暦の当月1日0時**起点に変更（`nowLocal.Offset`・`resetLocal=monthStartLocal.AddMonths(1)`・`fullLocal` を直接返却）。算出時点の利用割合からの線形外挿（`月初 + 経過日数×cap/usedNow`）。※実リセットは UTC1日=JST9:00 のため起点は約9h 早いが、**ユーザー明示要件「ローカル暦の当月1日0時を起点」を優先**（影響は月初9hのみ・到達日は僅かに“遅め”側・軽微）。
+- **#4 配色＝本体色の設定化**（第4弾の「装飾のみ」を**置換**）: `enum CopilotAccent { Green=0(既定),Blue,Sky,Purple,Slate }` に再定義（`JsonStringEnumConverter` は名前保存ゆえ旧 `Blue/Sky/Slate` も解釈可）。`CopilotAccentColor()` は**本体ベース色**を返す。`UsageTheme.AccentColor(double?)` は `AccentColor(value, Good)` へ委譲し、新オーバーロード `AccentColor(value, baseColor)`（`>=95 Bad / >=80 Warning / else baseColor`）で**数値・カードバー（`CopilotWindow.SetAccent`）・トレイ縦%バー（`CreateCopilotIcon(…, accentBase)`＝`Lighten(accent,0.25)`）**の 80%未満色を変更。**80/95 エスカレーションは色設定に関わらず維持**。装飾グラスのスレートピル（`_brand`）は固定。Claude/Codex 側（`AccentColor(value)`）は不変。**旧 settings の `Slate` 等は本バージョンから数値・バーがその色になる**（以前は緑固定。緑へ戻すには `グリーン（既定）`）。設定コンボは Green/Blue/Sky/Purple/Slate。
+- **#5 HoverPreview のホバー切替**: `CopilotWindow` に **Visible 中のみ動く 120ms ポーリング**（`_hoverPoll`→`RefreshHover`）を追加。HoverPreview は非アクティブ表示＋カーソル直下出現で `MouseEnter/Leave` が飛ばず、イベント駆動の %↔詳細値スワップが漏れるのを補完。`OnVisibleChanged` で表示時 Start／非表示時 Stop（teardown 中は `Disposing||IsDisposed` ガードで Timer/`_card` 非タッチ）、`Dispose(bool)` で停止破棄。Always/HoverPreview とも同一挙動・差分時のみ反映で無ガタ。Context 側 leave ポーリングとは独立。
 
 ---
 
@@ -267,7 +296,9 @@ rowCredits (decimal) =
 
 ---
 
-## 7. プロバイダ配線（App）— 表示 ON 時のみ実行（レビュー反映）
+## 7. プロバイダ配線（App）— 表示 ON 時のみ実行（レビュー反映）【旧案・現行はウィンドウ on/off ゲート】
+
+> この §7 の「`VisibleServices` に "GitHub Copilot" がある時だけ provider を組み込む」配線は**旧案**。現行は **`CopilotWindowEnabled`**（Claude/Codex は **`ClaudeCodexWindowEnabled` ＋個別サービス表示**）で provider をゲートし、`NotifyIcon` は**有効ウィンドウごとに専用**（両窓OFF時のみコントロール用1つ）。下記本文は経緯保存のため残置。
 
 GitHub Copilot は**個人トークンで外部 API を叩く**ため、表示 OFF（`VisibleServices` に `"GitHub Copilot"` 無し）の間は provider を**そもそも生成・実行しない**。`UsageAggregator` は不変の provider list を持つだけ（`IDisposable` ではない・provider は static `HttpClient` のみで可変状態なし）なので、設定変更時に**作り直す**のが安全。
 

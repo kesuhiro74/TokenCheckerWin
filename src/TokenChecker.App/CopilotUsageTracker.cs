@@ -189,9 +189,13 @@ internal sealed class CopilotUsageTracker
             return (CopilotPrediction.Insufficient, null);
         }
 
-        var monthStartUtc = new DateTimeOffset(nowUtc.Year, nowUtc.Month, 1, 0, 0, 0, TimeSpan.Zero);
-        var resetUtc = monthStartUtc.AddMonths(1);
-        var elapsedDays = (nowUtc - monthStartUtc).TotalDays;
+        // Anchor the average pace to the LOCAL calendar 1st-of-month at 00:00 (the
+        // user's "その月の1日"), and project from the usage ratio at this moment:
+        // the date of 100% = monthStart + elapsedDays * (cap / usedNow).
+        var nowLocal = nowUtc.ToLocalTime();
+        var monthStartLocal = new DateTimeOffset(nowLocal.Year, nowLocal.Month, 1, 0, 0, 0, nowLocal.Offset);
+        var resetLocal = monthStartLocal.AddMonths(1);
+        var elapsedDays = (nowLocal - monthStartLocal).TotalDays;
         if (elapsedDays < MinElapsedDaysForPrediction)
         {
             return (CopilotPrediction.Insufficient, null);
@@ -209,14 +213,14 @@ internal sealed class CopilotUsageTracker
             return (CopilotPrediction.Insufficient, null);
         }
 
-        var fullUtc = nowUtc.AddDays(remaining / dailyBurn);
-        if (fullUtc >= resetUtc)
+        var fullLocal = nowLocal.AddDays(remaining / dailyBurn);
+        if (fullLocal >= resetLocal)
         {
             // Credits reset monthly, so a projected date past the reset would be
             // wrong — report "won't reach this month" instead of a next-month date.
             return (CopilotPrediction.NotThisMonth, null);
         }
 
-        return (CopilotPrediction.ReachesThisMonth, fullUtc.ToLocalTime());
+        return (CopilotPrediction.ReachesThisMonth, fullLocal);
     }
 }

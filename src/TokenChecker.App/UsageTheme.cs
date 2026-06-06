@@ -39,7 +39,12 @@ internal static class UsageTheme
 
     // Usage-severity color for numbers/bars: muted when there is no value, then
     // green -> amber (>=80) -> red (>=95).
-    public static Color AccentColor(double? value)
+    public static Color AccentColor(double? value) => AccentColor(value, Good);
+
+    // Like AccentColor but with a caller-chosen base color for the normal (<80%)
+    // range (e.g. a user-selected Copilot accent), while still escalating to the
+    // shared amber/red at the 80/95 thresholds. Muted when there is no value.
+    public static Color AccentColor(double? value, Color baseColor)
     {
         if (!UsageRingRenderer.TryClampPercent(value, out var percent))
         {
@@ -50,7 +55,7 @@ internal static class UsageTheme
         {
             >= CriticalPercent => Bad,
             >= WarningPercent => Warning,
-            _ => Good
+            _ => baseColor
         };
     }
 
