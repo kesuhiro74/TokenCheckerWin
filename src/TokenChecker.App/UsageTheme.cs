@@ -34,7 +34,7 @@ internal static class UsageTheme
         Color TrackEmpty, Color DetailToggle, Color DetailBackground,
         Color Good, Color Warning, Color Bad,
         Color CopilotBrand, Color ClaudeBrand, Color CodexBrand, Color PinnedBorder,
-        float GlassTopLighten, Color GlassGloss, Color GlassInner);
+        float GlassTopLighten, Color GlassGloss, Color GlassInner, float GlassBottomTint);
 
     private static readonly Palette Light = new(
         Surface: Color.FromArgb(244, 246, 250),
@@ -56,7 +56,8 @@ internal static class UsageTheme
         PinnedBorder: Color.FromArgb(150, 80, 96, 122),
         GlassTopLighten: 0.40f,
         GlassGloss: Color.FromArgb(120, 255, 255, 255),
-        GlassInner: Color.FromArgb(150, 255, 255, 255));
+        GlassInner: Color.FromArgb(150, 255, 255, 255),
+        GlassBottomTint: 0.11f);
 
     private static readonly Palette Dark = new(
         Surface: Color.FromArgb(28, 30, 36),
@@ -76,9 +77,14 @@ internal static class UsageTheme
         ClaudeBrand: Color.FromArgb(108, 156, 255),
         CodexBrand: Color.FromArgb(170, 130, 238),
         PinnedBorder: Color.FromArgb(150, 140, 156, 184),
-        GlassTopLighten: 0.10f,
-        GlassGloss: Color.FromArgb(30, 255, 255, 255),
-        GlassInner: Color.FromArgb(28, 255, 255, 255));
+        // Dark cards are flat: no top→bottom lighten, no brand tint at the bottom,
+        // and no gloss highlight, so the card reads as a single solid panel (the
+        // subtle gradient/sheen is light-mode only). A faint inner outline is kept
+        // purely for edge definition (it is a 1px line, not a gradient).
+        GlassTopLighten: 0.0f,
+        GlassGloss: Color.FromArgb(0, 255, 255, 255),
+        GlassInner: Color.FromArgb(28, 255, 255, 255),
+        GlassBottomTint: 0.0f);
 
     private static Palette _active = Light;
 
@@ -230,7 +236,7 @@ internal static class UsageTheme
         using var path = CreateRoundedRectPath(rect, radius);
 
         var top = Lighten(Card, _active.GlassTopLighten);
-        var bottom = Tint(Card, brand, 0.11f);
+        var bottom = Tint(Card, brand, _active.GlassBottomTint);
         using (var fill = new LinearGradientBrush(
             new RectangleF(0, 0, width, height), top, bottom, LinearGradientMode.Vertical))
         {
