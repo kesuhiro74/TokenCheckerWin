@@ -10,6 +10,12 @@
     <AssemblyTitle>TokenCheckerWin</AssemblyTitle>
     <Version>0.4.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- The windows use hand-coded pixel layouts + custom GDI+ drawing that do not
+         auto-scale, so under SystemAware (the WinForms default) the fonts grow at
+         >100% display scaling but the fixed-size boxes do not, clipping text. Render
+         DPI-unaware (always 96 DPI) and let Windows bitmap-scale the whole window so
+         the layout stays correct at any scale (slightly softer on high-DPI). -->
+    <ApplicationHighDpiMode>DpiUnaware</ApplicationHighDpiMode>
   </PropertyGroup>
 
   <ItemGroup>
