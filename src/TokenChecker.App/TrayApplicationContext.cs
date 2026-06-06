@@ -392,12 +392,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     // ----- Window show/hide + display methods ------------------------------
 
-    // Esc / window-close gesture. An Always ("常時表示") window stays visible — it is
-    // not dismissable by the user except by turning the window off in settings. A
-    // HoverPreview window un-pins and hides as before.
+    // Esc / window-close gesture. Only the Copilot window in Always mode stays visible
+    // (its "常時表示" must not be dismissed by Esc/close — turn the window off in
+    // settings to remove it). The Claude/Codex status window hides as before.
     private void DismissViaUserGesture(PopupSlot slot)
     {
-        if (slot.Mode == WindowDisplayMode.Always)
+        if (ReferenceEquals(slot, _copilot) && slot.Mode == WindowDisplayMode.Always)
         {
             return;
         }
@@ -415,9 +415,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         if (slot.Mode == WindowDisplayMode.Always)
         {
-            // Always = always visible: a click only shows / brings-to-front / activates.
-            // It must NEVER hide (that contradicts "常時表示"), so this is not a toggle.
-            ShowPopup(slot, activate: true);
+            // The Copilot window in Always mode must NEVER hide on click ("常時表示" =
+            // always visible) — a click only shows / brings it to front. The Claude/
+            // Codex status window keeps its traditional show/hide TOGGLE on click.
+            if (ReferenceEquals(slot, _copilot) || !slot.Form.Visible)
+            {
+                ShowPopup(slot, activate: true);
+            }
+            else
+            {
+                HidePopup(slot);
+            }
+
             return;
         }
 
