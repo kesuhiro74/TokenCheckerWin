@@ -29,8 +29,9 @@ internal sealed class CopilotWindow : Form
     private readonly CopilotCard _card;
     // Polls the cursor while the window is visible so the hover detail-swap works
     // even when the window appears under a stationary cursor or stays inactive
-    // (HoverPreview), where MouseEnter/MouseLeave do not fire reliably.
-    private readonly System.Windows.Forms.Timer _hoverPoll = new() { Interval = 120 };
+    // (HoverPreview), where MouseEnter/MouseLeave do not fire reliably. This is the
+    // PRIMARY driver; MouseMove/Enter/Leave just make it snappier.
+    private readonly System.Windows.Forms.Timer _hoverPoll = new() { Interval = 90 };
     private bool _hovered;
     private bool _focused;
 
@@ -66,11 +67,13 @@ internal sealed class CopilotWindow : Form
         MouseDown += OnDragMouseDown;
         MouseEnter += OnPointerChanged;
         MouseLeave += OnPointerChanged;
+        MouseMove += OnPointerChanged;
         AttachHandlers(this);
         _hoverPoll.Tick += (_, _) => RefreshHover();
         // When the window loses activation, drop the keyboard-focus detail state and
-        // re-evaluate hover immediately so the detail-swap can never stick on (the
-        // 120ms poll also covers this, just less promptly).
+        // re-evaluate hover from the CURRENT cursor position (do NOT blindly clear it)
+        // so the detail-swap neither sticks on nor drops while the cursor is still over
+        // the main area. Mouse hover and keyboard focus stay separate inputs.
         Deactivate += (_, _) =>
         {
             if (IsDisposed || !IsHandleCreated)
@@ -79,7 +82,7 @@ internal sealed class CopilotWindow : Form
             }
 
             _focused = false;
-            _hovered = _card.MainLineScreenBounds.Contains(Cursor.Position);
+            _hovered = IsCursorOverMainUsageArea();
             RaiseInteractionChanged();
         };
     }
@@ -167,11 +170,20 @@ internal sealed class CopilotWindow : Form
             // HoverPreview the window is shown inactive and often appears under the
             // cursor, so MouseEnter never fires and the event-only path misses it.
             _hoverPoll.Start();
+            // Re-check once layout has settled, in case the window appeared with the
+            // cursor already over the main area (no MouseEnter fires in that case).
+            // This runs on EVERY show — unlike OnShown, which only fires the first
+            // time, whereas a HoverPreview window is shown/hidden repeatedly.
+            if (IsHandleCreated)
+            {
+                BeginInvoke((Action)RefreshHover);
+            }
         }
         else
         {
             _hoverPoll.Stop();
-            // Reset to the compact resting state so the next open is consistent.
+            // The window is hidden: nothing can be hovered, so reset to the compact
+            // resting state for a consistent next open.
             _hovered = false;
             _focused = false;
             _card.SetDetailed(false);
@@ -216,6 +228,7 @@ internal sealed class CopilotWindow : Form
         {
             child.MouseEnter += OnPointerChanged;
             child.MouseLeave += OnPointerChanged;
+            child.MouseMove += OnPointerChanged;
             if (child is not (LinkLabel or TextBoxBase))
             {
                 child.MouseDown += OnDragMouseDown;
@@ -228,10 +241,9 @@ internal sealed class CopilotWindow : Form
     private void OnPointerChanged(object? sender, EventArgs e) => RefreshHover();
 
     // The hover detail-swap is scoped to the MAIN value area only: the detailed
-    // values appear only while the cursor is over "n% 使用済み", not anywhere else
-    // on the card. The cursor is tested against the main control's screen rect
-    // (driven by the poll + enter/leave), so it is robust in HoverPreview too and
-    // stays independent of the tray context's window show/hide leave-poll.
+    // values appear only while the cursor is over "n% 使用済み", not anywhere else on
+    // the card. Driven primarily by the poll (so it is robust in HoverPreview where
+    // MouseEnter is unreliable) plus MouseMove/Enter/Leave for immediacy.
     private void RefreshHover()
     {
         if (IsDisposed || !IsHandleCreated)
@@ -239,12 +251,33 @@ internal sealed class CopilotWindow : Form
             return;
         }
 
-        var inside = _card.MainLineScreenBounds.Contains(Cursor.Position);
+        var inside = IsCursorOverMainUsageArea();
         if (inside != _hovered)
         {
             _hovered = inside;
             RaiseInteractionChanged();
         }
+    }
+
+    // Single source of truth for the detail-swap hit-test: is the cursor over the
+    // main value area? Uses the fixed-layout control rect (NOT the text width),
+    // slightly inflated so the edges aren't fiddly. This is intentionally separate
+    // from the whole-window Form.Bounds test the tray context uses for show/hide.
+    private bool IsCursorOverMainUsageArea()
+    {
+        if (IsDisposed || !IsHandleCreated)
+        {
+            return false;
+        }
+
+        var rect = _card.MainUsageScreenRect;
+        if (rect.IsEmpty)
+        {
+            return false;
+        }
+
+        rect.Inflate(6, 4);
+        return rect.Contains(Cursor.Position);
     }
 
     private void SetFocused(bool value)
@@ -490,8 +523,8 @@ internal sealed class CopilotWindow : Form
 
         public bool HasPercent => _hasPercent;
 
-        // Screen-space rectangle of the main value area (for the hover detail-swap).
-        public Rectangle MainLineScreenBounds => _mainLine.RectangleToScreen(_mainLine.ClientRectangle);
+        // Screen-space rectangle of the main value area (for the detail-swap hit-test).
+        public Rectangle MainUsageScreenRect => _mainLine.RectangleToScreen(_mainLine.ClientRectangle);
 
         public void SetDetailed(bool detailed)
         {

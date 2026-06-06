@@ -129,36 +129,28 @@ internal sealed class TrayApplicationContext : ApplicationContext
             saveLocation: SaveCopilotWindowLocation);
         _slots = [_status, _copilot];
 
-        // Wired after the slots exist (the handlers reference them). Closing or Esc
-        // un-pins and hides rather than disposing the form.
+        // Wired after the slots exist (the handlers reference them). Esc/close
+        // un-pins and hides rather than disposing the form — EXCEPT an Always
+        // ("常時表示") window, which stays visible (see DismissViaUserGesture). The
+        // FormClosing always cancels (we never destroy the window here).
         _statusForm.FormClosing += (_, args) =>
         {
             if (args.CloseReason == CloseReason.UserClosing)
             {
                 args.Cancel = true;
-                _status.Pinned = false;
-                HidePopup(_status);
+                DismissViaUserGesture(_status);
             }
         };
-        _statusForm.HideRequested += (_, _) =>
-        {
-            _status.Pinned = false;
-            HidePopup(_status);
-        };
+        _statusForm.HideRequested += (_, _) => DismissViaUserGesture(_status);
         _copilotWindow.FormClosing += (_, args) =>
         {
             if (args.CloseReason == CloseReason.UserClosing)
             {
                 args.Cancel = true;
-                _copilot.Pinned = false;
-                HidePopup(_copilot);
+                DismissViaUserGesture(_copilot);
             }
         };
-        _copilotWindow.HideRequested += (_, _) =>
-        {
-            _copilot.Pinned = false;
-            HidePopup(_copilot);
-        };
+        _copilotWindow.HideRequested += (_, _) => DismissViaUserGesture(_copilot);
 
         _statusIcon.MouseUp += (_, e) => { if (e.Button == MouseButtons.Left) OnIconClick(_status); };
         _statusIcon.MouseMove += (_, _) => OnIconMouseMove(_status);
@@ -400,6 +392,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     // ----- Window show/hide + display methods ------------------------------
 
+    // Esc / window-close gesture. An Always ("常時表示") window stays visible — it is
+    // not dismissable by the user except by turning the window off in settings. A
+    // HoverPreview window un-pins and hides as before.
+    private void DismissViaUserGesture(PopupSlot slot)
+    {
+        if (slot.Mode == WindowDisplayMode.Always)
+        {
+            return;
+        }
+
+        slot.Pinned = false;
+        HidePopup(slot);
+    }
+
     private void OnIconClick(PopupSlot slot)
     {
         if (_disposed || !slot.Enabled)
@@ -409,15 +415,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         if (slot.Mode == WindowDisplayMode.Always)
         {
-            if (slot.Form.Visible)
-            {
-                HidePopup(slot);
-            }
-            else
-            {
-                ShowPopup(slot, activate: true);
-            }
-
+            // Always = always visible: a click only shows / brings-to-front / activates.
+            // It must NEVER hide (that contradicts "常時表示"), so this is not a toggle.
+            ShowPopup(slot, activate: true);
             return;
         }
 
@@ -514,10 +514,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _copilotWindow.SetPinned(bordered);
     }
 
-    // Click-outside-to-dismiss for a stuck Copilot window. Only fires when the
-    // window was activated (shown via a tray click / interacted with), so a never-
-    // touched startup window is unaffected. Suppressed around the icon's own click
-    // and while the context menu is open so tray/menu actions don't conflict.
+    // Click-outside-to-dismiss for the Copilot window. The Deactivate event fires
+    // for BOTH modes once the window is activated, but dismissal is gated below to
+    // HoverPreview + pinned only — an Always ("常時表示") window is never dismissed
+    // here. Suppressed around any tray icon's own click and while the shared context
+    // menu is open so tray/menu actions don't conflict.
     private void OnCopilotDeactivated()
     {
         if (_disposed || _contextMenuOpen || Environment.TickCount < _suppressCopilotDeactivateUntil)
@@ -530,8 +531,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        var stuck = _copilot.Pinned || _copilot.Mode == WindowDisplayMode.Always;
-        if (!stuck)
+        // Outside-click dismissal applies ONLY to a HoverPreview window pinned via a
+        // click. An Always ("常時表示") window must NOT be dismissed by an outside
+        // click — that would defeat the always-visible setting.
+        var dismissable = _copilot.Mode == WindowDisplayMode.HoverPreview && _copilot.Pinned;
+        if (!dismissable)
         {
             return;
         }
@@ -641,7 +645,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             var cursor = Cursor.Position;
             // This tests the WHOLE window (Form.Bounds) for show/hide. It is separate
             // from the Copilot card's RefreshHover, which tests the main-value rect
-            // only (MainLineScreenBounds) to swap %/detail — the two must not be conflated.
+            // only (MainUsageScreenRect) to swap %/detail — the two must not be conflated.
             var overWindow = slot.Form.Bounds.Contains(cursor);
             // A motionless cursor still resting on the tray icon produces no further
             // MouseMove events: an unchanged position since the last icon hover means
