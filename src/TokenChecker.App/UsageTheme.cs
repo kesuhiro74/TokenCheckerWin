@@ -37,6 +37,11 @@ internal static class UsageTheme
     // from Claude (blue) and Codex (purple).
     public static readonly Color CopilotBrand = Color.FromArgb(80, 96, 122);
 
+    // Faint 1px outline drawn around the Copilot card when it is pinned / always-on
+    // (a quiet hint that it will stay open). Semi-transparent slate so it reads as a
+    // slightly more defined edge without competing with the card.
+    public static readonly Color PinnedBorder = Color.FromArgb(150, 80, 96, 122);
+
     // Usage-severity color for numbers/bars: muted when there is no value, then
     // green -> amber (>=80) -> red (>=95).
     public static Color AccentColor(double? value) => AccentColor(value, Good);
@@ -188,5 +193,85 @@ internal static class UsageTheme
         }
 
         return new Font("Segoe UI", 10.5F, FontStyle.Bold);
+    }
+
+    // ----- GitHub Copilot card font (Moralerspace, install-conditional) -----
+    // Moralerspace is NOT bundled with the app. It is used only when installed on
+    // the OS; otherwise the card falls back to the standard UI face (Segoe UI) so
+    // the app never depends on a font being present and never crashes. The resolved
+    // family name is cached (font lookup is not free, and fonts are created per
+    // paint in the value control).
+    private const string CopilotFallbackFamily = "Segoe UI";
+
+    private static readonly string[] MoralerspaceCandidates =
+    {
+        "Moralerspace",
+        "Moralerspace Neon", "Moralerspace Argon", "Moralerspace Xenon",
+        "Moralerspace Radon", "Moralerspace Krypton",
+        "Moralerspace Neon HW", "Moralerspace Argon HW", "Moralerspace Xenon HW",
+        "Moralerspace Radon HW", "Moralerspace Krypton HW"
+    };
+
+    private static string? _copilotFamily;
+    private static bool _copilotResolved;
+
+    // True when no Moralerspace family was found and the fallback face is in use.
+    public static bool CopilotFontFellBack { get; private set; }
+
+    // The Copilot-card font family actually in use (a Moralerspace* family if one is
+    // installed, otherwise the fallback). Resolved once and cached.
+    public static string CopilotFontFamily
+    {
+        get
+        {
+            if (!_copilotResolved)
+            {
+                _copilotResolved = true;
+                _copilotFamily = CopilotFallbackFamily;
+                CopilotFontFellBack = true;
+                foreach (var name in MoralerspaceCandidates)
+                {
+                    if (FontFamilyInstalled(name))
+                    {
+                        _copilotFamily = name;
+                        CopilotFontFellBack = false;
+                        break;
+                    }
+                }
+            }
+
+            return _copilotFamily!;
+        }
+    }
+
+    private static bool FontFamilyInstalled(string name)
+    {
+        try
+        {
+            using var family = new FontFamily(name);
+            return string.Equals(family.Name, name, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // FontFamily throws if the family is not installed.
+            return false;
+        }
+    }
+
+    // Creates a Copilot-card font in the resolved family, re-falling back to the UI
+    // face on any creation error so a font problem never takes the window down.
+    public static Font CreateCopilotFont(float size, FontStyle style = FontStyle.Regular)
+    {
+        try
+        {
+            return new Font(CopilotFontFamily, size, style);
+        }
+        catch
+        {
+            // The resolved family failed to instantiate at runtime (e.g. uninstalled
+            // mid-session): reflect that we are now on the fallback face.
+            CopilotFontFellBack = true;
+            return new Font(CopilotFallbackFamily, size, style);
+        }
     }
 }

@@ -1,3 +1,5 @@
+using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using TokenChecker.Core;
 
@@ -6,20 +8,21 @@ namespace TokenChecker.App;
 // Dedicated, borderless popup for the GitHub Copilot AI Credits card. Separate
 // from the Claude/Codex status window (the user asked for it as its own screen).
 //
-// Resting state shows the usage percentage only ("66% 使用済み"); hovering
-// anywhere on the window — or giving it keyboard focus — reveals the detailed
-// values ("4,627 / 7,000 使用済み"). The swap is a pure Label.Text change on a
-// FIXED-size label, so the bar ratio, reset line, and window size never move:
+// Resting state shows the usage percentage only ("66% 使用済み"); hovering the
+// MAIN value area (only) — or giving the card keyboard focus — reveals the
+// detailed values ("4,627 / 7,000 使用済み"). The swap is a pure text change on a
+// FIXED-size control, so the bar ratio, reset line, and window size never move:
 // no layout jitter. The diagnostics expander is a separate mechanism (it grows
 // the window deliberately, like the status cards).
 internal sealed class CopilotWindow : Form
 {
-    private const int FormPadding = 12;
+    // Outer margin between the card and the window edge (the drop-shadow gutter).
+    private const int FormPadding = 9;
     public const int CardWidth = 300;
-    // Taller than the original 152 to fit the two sub-info lines (projection +
-    // today's delta). This is a one-time base-size change, NOT hover jitter — the
-    // sub-lines are static and never move when the main line swaps on hover.
-    public const int CardBaseHeight = 186;
+    // Taller than 186 to fit the two-line header (icon + "GitHub Copilot" / plan
+    // name) on top of the sub-info lines. This is a one-time base-size change, NOT
+    // hover jitter — the sub-lines and header are static when the main line swaps.
+    public const int CardBaseHeight = 204;
     public const int CardDetailExtra = 88;
     private const int FormWidth = CardWidth + FormPadding * 2;
 
@@ -65,14 +68,26 @@ internal sealed class CopilotWindow : Form
         MouseLeave += OnPointerChanged;
         AttachHandlers(this);
         _hoverPoll.Tick += (_, _) => RefreshHover();
+        // When the window loses activation, drop the keyboard-focus detail state and
+        // re-evaluate hover immediately so the detail-swap can never stick on (the
+        // 120ms poll also covers this, just less promptly).
+        Deactivate += (_, _) =>
+        {
+            if (IsDisposed || !IsHandleCreated)
+            {
+                return;
+            }
+
+            _focused = false;
+            _hovered = _card.MainLineScreenBounds.Contains(Cursor.Position);
+            RaiseInteractionChanged();
+        };
     }
 
     // Raised when the user dismisses the popup with Esc.
     public event EventHandler? HideRequested;
 
-    // Raised whenever the hover/focus (interaction) state changes; the tray
-    // context uses it to pause the click-then-fade countdown while the user is
-    // reading the window.
+    // Raised whenever the hover/focus (interaction) state changes.
     public event EventHandler? InteractionChanged;
 
     public bool IsInteracting => _hovered || _focused;
@@ -97,9 +112,13 @@ internal sealed class CopilotWindow : Form
 
     public void SetLoading() => _card.SetLoading();
 
-    // Applies the configured accent color to the card's numbers + bar (the
-    // <80% "good" color; severity still escalates to amber/red at 80/95).
+    // Applies the configured accent color to the card's bar (and the tray bar is
+    // updated separately). The numbers stay a fixed near-black; only the bar follows
+    // the accent, still escalating to amber/red at 80/95.
     public void ApplyAccent(Color accent) => _card.SetAccent(accent);
+
+    // Shows/hides the faint 1px "pinned" outline (the window will stay open).
+    public void SetPinned(bool pinned) => _card.SetPinned(pinned);
 
     // Drop any inner focus so an explicitly-activated window (the click trigger)
     // still opens in the compact resting state. Esc/keyboard still work at the
@@ -188,9 +207,9 @@ internal sealed class CopilotWindow : Form
         }
     }
 
-    // Attach hover tracking to every descendant (so moving across child controls
-    // never reads as "left the window"), and the drag handler to everything
-    // except the genuinely interactive controls (the detail link and box).
+    // Attach hover tracking to every descendant (so events keep firing as the
+    // cursor moves), and the drag handler to everything except the genuinely
+    // interactive controls (the detail link and box).
     private void AttachHandlers(Control root)
     {
         foreach (Control child in root.Controls)
@@ -208,9 +227,11 @@ internal sealed class CopilotWindow : Form
 
     private void OnPointerChanged(object? sender, EventArgs e) => RefreshHover();
 
-    // Trust the cursor position against the whole window, not the per-child enter/
-    // leave events: moving from one child to another fires leave+enter but the
-    // cursor is still inside, so _hovered stays put and the text never flickers.
+    // The hover detail-swap is scoped to the MAIN value area only: the detailed
+    // values appear only while the cursor is over "n% 使用済み", not anywhere else
+    // on the card. The cursor is tested against the main control's screen rect
+    // (driven by the poll + enter/leave), so it is robust in HoverPreview too and
+    // stays independent of the tray context's window show/hide leave-poll.
     private void RefreshHover()
     {
         if (IsDisposed || !IsHandleCreated)
@@ -218,7 +239,7 @@ internal sealed class CopilotWindow : Form
             return;
         }
 
-        var inside = ClientRectangle.Contains(PointToClient(Cursor.Position));
+        var inside = _card.MainLineScreenBounds.Contains(Cursor.Position);
         if (inside != _hovered)
         {
             _hovered = inside;
@@ -259,7 +280,16 @@ internal sealed class CopilotWindow : Form
     {
         public event EventHandler? HeightChanged;
 
+        // Left edge of the content column. Wider than the original 14 so there is a
+        // clear gap between the glass card's left accent pill and the content.
+        private const int ContentLeft = 18;
+        private const int ContentRightPad = 14;
+        private const int ContentWidth = CardWidth - ContentLeft - ContentRightPad;
+        private const int IconSize = 16;
+        private const int TitleLeft = ContentLeft + IconSize + 8;
+
         private readonly Label _title;
+        private readonly Label _planSub;
         private readonly Label _badge;
         private readonly Label _statusMessage;
         private readonly MainUsageControl _mainLine;
@@ -273,13 +303,14 @@ internal sealed class CopilotWindow : Form
         private bool _detailExpanded;
         private bool _detailed;
         private bool _hasPercent;
-        // The main line is rendered as a big value + a smaller, lighter suffix.
+        private bool _pinned;
+        // The main line is rendered as a big value + a smaller suffix.
         private string _compactValue = "—";
         private string _detailValue = "—";
         private string _suffix = string.Empty;
         private Color _valueColor = UsageTheme.MutedText;
-        // Configurable base color for the numbers + bar in the <80% "good" state.
-        // Severity still overrides it at 80/95 (amber/red) via UsageTheme.
+        // Configurable accent for the BAR only (numbers stay near-black). Severity
+        // still overrides it at 80/95 (amber/red) via UsageTheme.
         private Color _accent = UsageTheme.Good;
         private double _lastPercent;
 
@@ -297,32 +328,44 @@ internal sealed class CopilotWindow : Form
                 true);
             TabStop = true;
 
-            const int contentWidth = CardWidth - 28;
-
-            // Title shows the selected plan (e.g. "Copilot Pro+"). Fixed width with
-            // ellipsis so a long custom title never collides with the badge.
+            // Header line 1: a fixed "GitHub Copilot" (the Octicon icon is painted to
+            // its left in OnPaint). Fixed width with ellipsis so it never collides
+            // with the badge.
             _title = new Label
             {
                 Text = "GitHub Copilot",
                 AutoSize = false,
-                Size = new Size(174, 22),
-                Font = UsageTheme.CreateTitleFont("Segoe UI", 11.5F, FontStyle.Bold),
+                Size = new Size(174, 20),
+                Font = UsageTheme.CreateCopilotFont(11.5F, FontStyle.Bold),
                 ForeColor = UsageTheme.PrimaryText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = true,
-                Location = new Point(14, 12)
+                Location = new Point(TitleLeft, 12)
             };
 
-            // Smaller and lighter than before so it reads as a quiet status chip.
-            // Sized to its text by ApplyBadge (so a long status never collides with
-            // the title); AutoEllipsis is a final safety net.
+            // Header line 2: the selected plan (e.g. "Copilot Pro+"), smaller/lighter.
+            _planSub = new Label
+            {
+                Text = string.Empty,
+                AutoSize = false,
+                Size = new Size(ContentWidth, 16),
+                Font = UsageTheme.CreateCopilotFont(9F),
+                ForeColor = UsageTheme.MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Location = new Point(ContentLeft, 34)
+            };
+
+            // Quiet status chip, sized to its text by ApplyBadge so a long status
+            // never collides with the title; AutoEllipsis is a final safety net.
             _badge = new Label
             {
                 AutoSize = false,
-                Size = new Size(90, 16),
-                Location = new Point(CardWidth - 14 - 90, 14),
-                Font = new Font("Segoe UI", 7.5F),
+                Size = new Size(90, 18),
+                Location = new Point(CardWidth - 14 - 90, 12),
+                Font = UsageTheme.CreateCopilotFont(8.5F),
                 BackColor = Color.Transparent,
                 ForeColor = UsageTheme.MutedText,
                 TextAlign = ContentAlignment.MiddleRight,
@@ -333,30 +376,29 @@ internal sealed class CopilotWindow : Form
             _statusMessage = new Label
             {
                 AutoSize = false,
-                Size = new Size(contentWidth, 16),
-                Location = new Point(14, 32),
+                Size = new Size(ContentWidth, 16),
+                Location = new Point(ContentLeft, 52),
                 ForeColor = UsageTheme.MutedText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = true,
-                Font = new Font("Segoe UI", 8.5F),
+                Font = UsageTheme.CreateCopilotFont(8.5F),
                 Visible = false
             };
 
             // The hover/focus swap target: a fixed-size custom control that draws a
-            // big value plus a smaller, lighter "使用済み" suffix on a shared
-            // baseline. Only the value text swaps on hover; the box never changes,
-            // so the layout cannot jitter.
+            // big value plus a smaller suffix on a shared baseline. Only the value
+            // text swaps on hover; the box never changes, so layout cannot jitter.
             _mainLine = new MainUsageControl(15F)
             {
-                Location = new Point(14, 50),
-                Size = new Size(contentWidth, 30)
+                Location = new Point(ContentLeft, 68),
+                Size = new Size(ContentWidth, 30)
             };
 
             _bar = new UsageBarControl
             {
-                Location = new Point(14, 88),
-                Size = new Size(contentWidth, 8),
+                Location = new Point(ContentLeft, 106),
+                Size = new Size(ContentWidth, 8),
                 BackColor = Color.Transparent,
                 UseGradient = true
             };
@@ -364,13 +406,13 @@ internal sealed class CopilotWindow : Form
             _resetSub = new Label
             {
                 AutoSize = false,
-                Size = new Size(contentWidth, 16),
-                Location = new Point(14, 100),
+                Size = new Size(ContentWidth, 16),
+                Location = new Point(ContentLeft, 118),
                 ForeColor = UsageTheme.MutedText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = true,
-                Font = new Font("Segoe UI", 8.5F),
+                Font = UsageTheme.CreateCopilotFont(8.5F),
                 Text = "—"
             };
 
@@ -379,26 +421,26 @@ internal sealed class CopilotWindow : Form
             _predictionSub = new Label
             {
                 AutoSize = false,
-                Size = new Size(contentWidth, 16),
-                Location = new Point(14, 118),
+                Size = new Size(ContentWidth, 16),
+                Location = new Point(ContentLeft, 136),
                 ForeColor = UsageTheme.MutedText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = true,
-                Font = new Font("Segoe UI", 8.5F),
+                Font = UsageTheme.CreateCopilotFont(8.5F),
                 Visible = false
             };
 
             _todaySub = new Label
             {
                 AutoSize = false,
-                Size = new Size(contentWidth, 16),
-                Location = new Point(14, 136),
+                Size = new Size(ContentWidth, 16),
+                Location = new Point(ContentLeft, 154),
                 ForeColor = UsageTheme.MutedText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = true,
-                Font = new Font("Segoe UI", 8.5F),
+                Font = UsageTheme.CreateCopilotFont(8.5F),
                 Visible = false
             };
 
@@ -411,8 +453,8 @@ internal sealed class CopilotWindow : Form
                 ActiveLinkColor = UsageTheme.PrimaryText,
                 VisitedLinkColor = UsageTheme.DetailToggle,
                 LinkBehavior = LinkBehavior.HoverUnderline,
-                Location = new Point(14, 160),
-                Font = new Font("Segoe UI", 8.5F),
+                Location = new Point(ContentLeft, 178),
+                Font = UsageTheme.CreateCopilotFont(8.5F),
                 Visible = false
             };
             _detailToggle.LinkClicked += (_, _) => ToggleDetail();
@@ -425,8 +467,8 @@ internal sealed class CopilotWindow : Form
                 BorderStyle = BorderStyle.FixedSingle,
                 BackColor = UsageTheme.DetailBackground,
                 ForeColor = UsageTheme.SecondaryText,
-                Location = new Point(14, 178),
-                Size = new Size(contentWidth, CardDetailExtra - 16),
+                Location = new Point(ContentLeft, 196),
+                Size = new Size(ContentWidth, CardDetailExtra - 16),
                 Visible = false,
                 TabStop = false,
                 WordWrap = true,
@@ -434,6 +476,7 @@ internal sealed class CopilotWindow : Form
             };
 
             Controls.Add(_title);
+            Controls.Add(_planSub);
             Controls.Add(_badge);
             Controls.Add(_statusMessage);
             Controls.Add(_mainLine);
@@ -447,6 +490,9 @@ internal sealed class CopilotWindow : Form
 
         public bool HasPercent => _hasPercent;
 
+        // Screen-space rectangle of the main value area (for the hover detail-swap).
+        public Rectangle MainLineScreenBounds => _mainLine.RectangleToScreen(_mainLine.ClientRectangle);
+
         public void SetDetailed(bool detailed)
         {
             if (detailed == _detailed)
@@ -456,6 +502,17 @@ internal sealed class CopilotWindow : Form
 
             _detailed = detailed;
             ApplyMainLineText();
+        }
+
+        public void SetPinned(bool pinned)
+        {
+            if (pinned == _pinned)
+            {
+                return;
+            }
+
+            _pinned = pinned;
+            Invalidate();
         }
 
         public void SetLoading()
@@ -479,7 +536,7 @@ internal sealed class CopilotWindow : Form
 
         public void Update(string planTitle, ServiceUsage? current, ServiceUsage? fallback, int? allowance, CopilotInsights? insights)
         {
-            _title.Text = planTitle;
+            _planSub.Text = planTitle;
 
             var status = current?.Status ?? ProviderStatus.Unknown;
             _badge.ForeColor = BadgeColor(status);
@@ -509,8 +566,10 @@ internal sealed class CopilotWindow : Form
                 _compactValue = $"{Math.Round(percent):0}%";
                 _detailValue = $"{u:N0} / {cap:N0}";
                 _suffix = "使用済み";
-                _valueColor = UsageTheme.AccentColor(percent, _accent);
-                _bar.AccentColor = _valueColor;
+                // The number is a fixed near-black; only the BAR carries the accent
+                // (and still escalates to amber/red at 80/95).
+                _valueColor = UsageTheme.PrimaryText;
+                _bar.AccentColor = UsageTheme.AccentColor(percent, _accent);
                 _bar.SetValue(percent);
                 _resetSub.Text = $"残 {remaining:N0} · {FormatReset(window)}";
             }
@@ -518,7 +577,6 @@ internal sealed class CopilotWindow : Form
             {
                 _hasPercent = false;
                 // No allowance to compare against: show the raw used credits only.
-                // The "当月集計" context and the plan hint move to the sub-line.
                 _compactValue = _detailValue = used is long u2 ? $"{u2:N0}" : "—";
                 _suffix = used is null ? string.Empty : "credits 使用";
                 _valueColor = used is null ? UsageTheme.MutedText : UsageTheme.PrimaryText;
@@ -555,9 +613,6 @@ internal sealed class CopilotWindow : Form
                 return;
             }
 
-            // The projection needs an allowance; with no plan the reset sub-line
-            // already prompts to pick one, so hide the projection rather than
-            // repeat "予測にはデータ不足".
             if (_hasPercent)
             {
                 _predictionSub.Visible = true;
@@ -603,20 +658,16 @@ internal sealed class CopilotWindow : Form
         {
             _badge.Text = text;
             // Measure WITH the Label's default padding (no NoPadding flag) so the box
-            // matches what the Label actually renders — a NoPadding measure undersizes
-            // it and the text clips. Size both axes and center in the title row so a
-            // tall (DPI-scaled) glyph never gets cut off vertically either.
+            // matches what the Label actually renders. Size both axes and align in the
+            // title row, flooring y at the row top so a tall (DPI-scaled) glyph is
+            // never cut off vertically nor floats above the row.
             var measured = TextRenderer.MeasureText(text, _badge.Font);
-            var width = Math.Clamp(measured.Width + 2, 40, CardWidth - 28 - 70);
-            // Height tracks the text so nothing clips vertically. Center it in the
-            // title row, but never let it float ABOVE the row: at very high DPI the
-            // measured text can exceed the 22px row, so floor y at the row top and
-            // let the (right-aligned) badge extend down into the empty right margin.
+            var width = Math.Clamp(measured.Width + 2, 40, CardWidth - ContentLeft - 70);
             var height = Math.Max(18, measured.Height + 2);
             var x = CardWidth - 14 - width;
-            var y = Math.Max(12, 12 + (22 - height) / 2);
+            var y = Math.Max(12, 12 + (20 - height) / 2);
             _badge.Bounds = new Rectangle(x, y, width, height);
-            _title.Width = Math.Max(40, x - 14 - 8);
+            _title.Width = Math.Max(40, x - TitleLeft - 8);
         }
 
         // Calendar-month reset is an estimate (the API gives no reset), so it is
@@ -696,31 +747,45 @@ internal sealed class CopilotWindow : Form
         }
 
         // Decorative glass tint is fixed (slate); the configurable accent rides the
-        // numbers + bar instead (see _accent / SetAccent), not this backdrop.
+        // bar instead (see _accent / SetAccent), not this backdrop.
         private readonly Color _brand = UsageTheme.CopilotBrand;
 
-        // Applies the configured accent to the numbers + bar. Recomputes the live
-        // color immediately so a settings change shows without waiting for the next
-        // refresh; severity (80/95) still overrides it.
+        // Applies the configured accent to the BAR (numbers stay near-black).
+        // Recomputes the live bar color immediately so a settings change shows
+        // without waiting for the next refresh; severity (80/95) still overrides it.
         public void SetAccent(Color accent)
         {
             _accent = accent;
             if (_hasPercent)
             {
-                _valueColor = UsageTheme.AccentColor(_lastPercent, _accent);
-                _bar.AccentColor = _valueColor;
+                _bar.AccentColor = UsageTheme.AccentColor(_lastPercent, _accent);
                 _bar.Invalidate();
-                ApplyMainLineText();
             }
         }
 
         protected override void OnPaint(PaintEventArgs e)
-            => UsageTheme.PaintGlassCard(e.Graphics, Width, Height, _brand);
+        {
+            UsageTheme.PaintGlassCard(e.Graphics, Width, Height, _brand);
+            CopilotGlyph.Draw(e.Graphics, new RectangleF(ContentLeft, 13f, IconSize, IconSize), UsageTheme.CopilotBrand);
+
+            if (_pinned)
+            {
+                // A quiet, slightly more-defined edge (semi-transparent slate) on the
+                // same rounded rect as the card border — no extra inset so it doesn't
+                // read as a double border, and it stays clear of the drop shadow.
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using var path = UsageTheme.CreateRoundedRectPath(new RectangleF(0, 0, Width - 1, Height - 1), 13f);
+                using var pen = new Pen(UsageTheme.PinnedBorder, 1f);
+                e.Graphics.DrawPath(pen, path);
+            }
+        }
     }
 
-    // Renders a large value plus a smaller, lighter suffix on a shared baseline,
+    // Renders a large value plus a smaller, fixed-grey suffix on a shared baseline,
     // inside a fixed box — so the hover value-swap repaints text only and never
-    // changes layout (no jitter). e.g. "66%" (15pt bold) + "使用済み" (~55%, lighter).
+    // changes layout (no jitter). e.g. "66%" (15pt bold, near-black) + "使用済み"
+    // (~7.9pt, muted grey). The number color is fixed (not the accent); only the
+    // card bar carries the configurable accent.
     private sealed class MainUsageControl : Control
     {
         private const int Gap = 6;
@@ -733,7 +798,8 @@ internal sealed class CopilotWindow : Form
         public MainUsageControl(float valuePointSize)
         {
             _valueSize = valuePointSize;
-            _suffixSize = valuePointSize * 0.46f;
+            // One point larger than before, but still clearly smaller than the value.
+            _suffixSize = valuePointSize * 0.46f + 1f;
             SetStyle(
                 ControlStyles.AllPaintingInWmPaint
                 | ControlStyles.OptimizedDoubleBuffer
@@ -773,8 +839,8 @@ internal sealed class CopilotWindow : Form
         {
             base.OnPaint(e);
             var g = e.Graphics;
-            using var valueFont = new Font("Segoe UI", _valueSize, FontStyle.Bold);
-            using var suffixFont = new Font("Segoe UI", _suffixSize, FontStyle.Regular);
+            using var valueFont = UsageTheme.CreateCopilotFont(_valueSize, FontStyle.Bold);
+            using var suffixFont = UsageTheme.CreateCopilotFont(_suffixSize, FontStyle.Regular);
 
             const TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
 
@@ -788,8 +854,9 @@ internal sealed class CopilotWindow : Form
             {
                 var valueWidth = TextRenderer.MeasureText(g, _value, valueFont, new Size(int.MaxValue, int.MaxValue), flags).Width;
                 var suffixTop = baseline - AscentPx(g, suffixFont);
-                var suffixColor = UsageTheme.Lighten(_valueColor, 0.40f);
-                TextRenderer.DrawText(g, _suffix, suffixFont, new Point(valueWidth + Gap, (int)Math.Round(suffixTop)), suffixColor, flags);
+                // Fixed muted grey — a few steps lighter than the near-black number,
+                // and not affected by the accent/color setting.
+                TextRenderer.DrawText(g, _suffix, suffixFont, new Point(valueWidth + Gap, (int)Math.Round(suffixTop)), UsageTheme.MutedText, flags);
             }
         }
 
@@ -801,6 +868,343 @@ internal sealed class CopilotWindow : Form
             return lineSpacing <= 0
                 ? font.GetHeight(g)
                 : font.GetHeight(g) * family.GetCellAscent(font.Style) / lineSpacing;
+        }
+    }
+
+    // Octicons "copilot-16" glyph (MIT, https://github.com/primer/octicons), built
+    // once from its embedded SVG path data and filled scaled to a target rect. No
+    // external network access and no font file — just vector paths in code.
+    private static class CopilotGlyph
+    {
+        private const string Body = "M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z";
+        private const string Eyes = "M6.25 9.037a.75.75 0 0 1 .75.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 .75-.75Zm4.25.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 1.5 0Z";
+        private const float ViewBox = 16f;
+
+        private static GraphicsPath? _path;
+
+        private static GraphicsPath BuildPath()
+        {
+            if (_path is not null)
+            {
+                return _path;
+            }
+
+            // Winding (nonzero) so the counter-wound lens openings render as holes.
+            var p = new GraphicsPath(FillMode.Winding);
+            try
+            {
+                SvgPath.AddToPath(p, Body);
+                SvgPath.AddToPath(p, Eyes);
+            }
+            catch
+            {
+                // The path data is a hardcoded constant, but never let a parsing
+                // problem reach OnPaint and take the window down — just skip the icon.
+            }
+
+            _path = p;
+            return p;
+        }
+
+        public static void Draw(Graphics g, RectangleF dest, Color color)
+        {
+            var path = BuildPath();
+            var prevSmoothing = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            var state = g.Save();
+            try
+            {
+                g.TranslateTransform(dest.X, dest.Y);
+                g.ScaleTransform(dest.Width / ViewBox, dest.Height / ViewBox);
+                using var brush = new SolidBrush(color);
+                g.FillPath(brush, path);
+            }
+            finally
+            {
+                g.Restore(state);
+                g.SmoothingMode = prevSmoothing;
+            }
+        }
+    }
+
+    // Minimal SVG path-data -> GraphicsPath converter, scoped to the commands the
+    // Octicons copilot glyph uses (M/m L/l H/h V/v C/c A/a Z/z). Arcs are converted
+    // via the SVG endpoint->center parameterization (rotation assumed 0, which holds
+    // for Octicons) and added with GraphicsPath.AddArc.
+    private static class SvgPath
+    {
+        public static void AddToPath(GraphicsPath path, string d)
+        {
+            var t = new Tokenizer(d);
+            char cmd = '\0';
+            PointF cur = default, start = default;
+            var open = false;
+
+            while (!t.AtEnd)
+            {
+                if (t.NextIsCommand)
+                {
+                    cmd = t.ReadCommand();
+                }
+
+                switch (cmd)
+                {
+                    case 'M':
+                        cur = new PointF(t.ReadNumber(), t.ReadNumber());
+                        if (open) { path.CloseFigure(); }
+                        path.StartFigure();
+                        open = true;
+                        start = cur;
+                        cmd = 'L';
+                        break;
+                    case 'm':
+                        cur = new PointF(cur.X + t.ReadNumber(), cur.Y + t.ReadNumber());
+                        if (open) { path.CloseFigure(); }
+                        path.StartFigure();
+                        open = true;
+                        start = cur;
+                        cmd = 'l';
+                        break;
+                    case 'L':
+                        cur = AddLine(path, cur, new PointF(t.ReadNumber(), t.ReadNumber()));
+                        break;
+                    case 'l':
+                        cur = AddLine(path, cur, new PointF(cur.X + t.ReadNumber(), cur.Y + t.ReadNumber()));
+                        break;
+                    case 'H':
+                        cur = AddLine(path, cur, new PointF(t.ReadNumber(), cur.Y));
+                        break;
+                    case 'h':
+                        cur = AddLine(path, cur, new PointF(cur.X + t.ReadNumber(), cur.Y));
+                        break;
+                    case 'V':
+                        cur = AddLine(path, cur, new PointF(cur.X, t.ReadNumber()));
+                        break;
+                    case 'v':
+                        cur = AddLine(path, cur, new PointF(cur.X, cur.Y + t.ReadNumber()));
+                        break;
+                    case 'C':
+                    {
+                        var c1 = new PointF(t.ReadNumber(), t.ReadNumber());
+                        var c2 = new PointF(t.ReadNumber(), t.ReadNumber());
+                        var e = new PointF(t.ReadNumber(), t.ReadNumber());
+                        path.AddBezier(cur, c1, c2, e);
+                        cur = e;
+                        break;
+                    }
+                    case 'c':
+                    {
+                        var c1 = new PointF(cur.X + t.ReadNumber(), cur.Y + t.ReadNumber());
+                        var c2 = new PointF(cur.X + t.ReadNumber(), cur.Y + t.ReadNumber());
+                        var e = new PointF(cur.X + t.ReadNumber(), cur.Y + t.ReadNumber());
+                        path.AddBezier(cur, c1, c2, e);
+                        cur = e;
+                        break;
+                    }
+                    case 'A':
+                    {
+                        var rx = t.ReadNumber();
+                        var ry = t.ReadNumber();
+                        var rot = t.ReadNumber();
+                        var laf = t.ReadFlag();
+                        var sf = t.ReadFlag();
+                        var e = new PointF(t.ReadNumber(), t.ReadNumber());
+                        cur = AddArc(path, cur, rx, ry, rot, laf, sf, e);
+                        break;
+                    }
+                    case 'a':
+                    {
+                        var rx = t.ReadNumber();
+                        var ry = t.ReadNumber();
+                        var rot = t.ReadNumber();
+                        var laf = t.ReadFlag();
+                        var sf = t.ReadFlag();
+                        var e = new PointF(cur.X + t.ReadNumber(), cur.Y + t.ReadNumber());
+                        cur = AddArc(path, cur, rx, ry, rot, laf, sf, e);
+                        break;
+                    }
+                    case 'Z':
+                    case 'z':
+                        path.CloseFigure();
+                        open = false;
+                        cur = start;
+                        cmd = '\0';
+                        break;
+                    default:
+                        return; // Unsupported command — stop safely.
+                }
+            }
+        }
+
+        private static PointF AddLine(GraphicsPath path, PointF from, PointF to)
+        {
+            if (from != to)
+            {
+                path.AddLine(from, to);
+            }
+
+            return to;
+        }
+
+        private static PointF AddArc(GraphicsPath path, PointF p0, float rx, float ry, float rotDeg, bool largeArc, bool sweep, PointF p1)
+        {
+            rx = Math.Abs(rx);
+            ry = Math.Abs(ry);
+            if (rx < 1e-4f || ry < 1e-4f || p0 == p1)
+            {
+                return AddLine(path, p0, p1);
+            }
+
+            // Octicons arcs have no x-axis rotation; treat phi = 0.
+            double x1p = (p0.X - p1.X) / 2.0;
+            double y1p = (p0.Y - p1.Y) / 2.0;
+
+            // Scale up radii if they are too small to span the endpoints.
+            double lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
+            if (lambda > 1.0)
+            {
+                var s = Math.Sqrt(lambda);
+                rx = (float)(rx * s);
+                ry = (float)(ry * s);
+            }
+
+            double rx2 = (double)rx * rx;
+            double ry2 = (double)ry * ry;
+            double num = rx2 * ry2 - rx2 * y1p * y1p - ry2 * x1p * x1p;
+            double den = rx2 * y1p * y1p + ry2 * x1p * x1p;
+            double co = den <= 0 ? 0 : Math.Sqrt(Math.Max(0.0, num / den));
+            if (largeArc == sweep)
+            {
+                co = -co;
+            }
+
+            double cxp = co * (rx * y1p) / ry;
+            double cyp = co * -(ry * x1p) / rx;
+            double cx = cxp + (p0.X + p1.X) / 2.0;
+            double cy = cyp + (p0.Y + p1.Y) / 2.0;
+
+            double startAngle = Angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+            double delta = Angle((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+            if (!sweep && delta > 0)
+            {
+                delta -= 2 * Math.PI;
+            }
+            else if (sweep && delta < 0)
+            {
+                delta += 2 * Math.PI;
+            }
+
+            path.AddArc(
+                (float)(cx - rx), (float)(cy - ry), (float)(2 * rx), (float)(2 * ry),
+                (float)(startAngle * 180.0 / Math.PI), (float)(delta * 180.0 / Math.PI));
+            return p1;
+        }
+
+        private static double Angle(double ux, double uy, double vx, double vy)
+        {
+            double dot = ux * vx + uy * vy;
+            double len = Math.Sqrt((ux * ux + uy * uy) * (vx * vx + vy * vy));
+            double a = len <= 0 ? 0 : Math.Acos(Math.Clamp(dot / len, -1.0, 1.0));
+            return ux * vy - uy * vx < 0 ? -a : a;
+        }
+
+        private sealed class Tokenizer
+        {
+            private readonly string _s;
+            private int _i;
+
+            public Tokenizer(string s) => _s = s;
+
+            private void SkipSep()
+            {
+                while (_i < _s.Length)
+                {
+                    var c = _s[_i];
+                    if (c is ' ' or ',' or '\t' or '\n' or '\r')
+                    {
+                        _i++;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+
+            public bool AtEnd
+            {
+                get
+                {
+                    SkipSep();
+                    return _i >= _s.Length;
+                }
+            }
+
+            public bool NextIsCommand
+            {
+                get
+                {
+                    SkipSep();
+                    return _i < _s.Length && char.IsLetter(_s[_i]);
+                }
+            }
+
+            public char ReadCommand()
+            {
+                SkipSep();
+                return _i < _s.Length ? _s[_i++] : '\0';
+            }
+
+            public float ReadNumber()
+            {
+                SkipSep();
+                var startIndex = _i;
+                if (_i < _s.Length && (_s[_i] == '+' || _s[_i] == '-'))
+                {
+                    _i++;
+                }
+
+                while (_i < _s.Length && char.IsDigit(_s[_i]))
+                {
+                    _i++;
+                }
+
+                if (_i < _s.Length && _s[_i] == '.')
+                {
+                    _i++;
+                    while (_i < _s.Length && char.IsDigit(_s[_i]))
+                    {
+                        _i++;
+                    }
+                }
+
+                if (_i < _s.Length && (_s[_i] == 'e' || _s[_i] == 'E'))
+                {
+                    _i++;
+                    if (_i < _s.Length && (_s[_i] == '+' || _s[_i] == '-'))
+                    {
+                        _i++;
+                    }
+
+                    while (_i < _s.Length && char.IsDigit(_s[_i]))
+                    {
+                        _i++;
+                    }
+                }
+
+                // Total parse: a malformed/empty span yields 0 rather than throwing,
+                // so the glyph builder can never crash the paint pipeline.
+                return float.TryParse(_s.AsSpan(startIndex, _i - startIndex), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+                    ? value
+                    : 0f;
+            }
+
+            // Arc flags are a single '0' or '1', which may be packed with no separator.
+            public bool ReadFlag()
+            {
+                SkipSep();
+                return _i < _s.Length && _s[_i++] == '1';
+            }
         }
     }
 }

@@ -73,6 +73,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _fadeInTimer = new();
     private readonly System.Windows.Forms.Timer _hoverLeaveTimer = new();
     private Form? _fadeTarget;
+    // Outside-click dismissal for a pinned/persistent Copilot window: briefly
+    // suppress the Deactivate-driven hide around the icon's own click and while the
+    // shared context menu is open, so those interactions don't fight the dismissal.
+    private int _suppressCopilotDeactivateUntil;
+    private bool _contextMenuOpen;
 
     private readonly Dictionary<string, ServiceUsage> _lastSuccessfulServices = new(StringComparer.OrdinalIgnoreCase);
     private readonly CopilotUsageTracker _copilotTracker = new();
@@ -161,6 +166,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _copilotIcon.MouseMove += (_, _) => OnIconMouseMove(_copilot);
         _controlIcon.MouseUp += (_, e) => { if (e.Button == MouseButtons.Left) ShowSettings(); };
 
+        // Outside-click dismissal for a stuck Copilot window (Always-shown or pinned
+        // via click): the window is activated when shown by a click, so clicking
+        // outside it deactivates it -> hide + unpin.
+        _copilotWindow.Deactivate += (_, _) => OnCopilotDeactivated();
+        // Interacting with ANY tray icon (left toggle OR right-click to open the SHARED
+        // context menu) deactivates the Copilot window. Suppress the dismissal on each
+        // icon's MouseDown — the earliest signal, ahead of both the Deactivate and the
+        // menu's Opening — so tray/menu actions never hide a pinned window. A plain
+        // click elsewhere (desktop / another app) is NOT suppressed, so it still hides.
+        void SuppressCopilotDismiss(object? _, MouseEventArgs __) => _suppressCopilotDeactivateUntil = Environment.TickCount + 500;
+        _statusIcon.MouseDown += SuppressCopilotDismiss;
+        _copilotIcon.MouseDown += SuppressCopilotDismiss;
+        _controlIcon.MouseDown += SuppressCopilotDismiss;
+
         // ----- Context menu (5 items): 今すぐ更新 / Claude·Codex 表示モード /
         // GitHub Copilot 表示モード / 設定 / 終了. Login, first-time-setup, and the
         // window-show items live in the settings dialog instead.
@@ -188,7 +207,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _contextMenu.Items.Add(_copilotDisplayMenuItem);
         _contextMenu.Items.Add(_settingsMenuItem);
         _contextMenu.Items.Add(exitMenuItem);
-        _contextMenu.Opening += (_, _) => SyncContextMenuState();
+        _contextMenu.Opening += (_, _) => { _contextMenuOpen = true; SyncContextMenuState(); };
+        _contextMenu.Closed += (_, _) => _contextMenuOpen = false;
 
         _fadeInTimer.Interval = 30;
         _fadeInTimer.Tick += (_, _) => FadeInStep();
@@ -458,7 +478,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
             StopFadeIn(slot.Form);
             slot.Form.Opacity = 1d;
             slot.Activate();
+            if (ReferenceEquals(slot, _copilot))
+            {
+                // Re-base the outside-click suppression to the actual activation moment:
+                // the click -> show -> Activate path can take longer than the MouseDown
+                // window, so a stray Deactivate right after showing must not dismiss it.
+                _suppressCopilotDeactivateUntil = Environment.TickCount + 400;
+            }
         }
+
+        UpdateCopilotPinnedAppearance();
     }
 
     private void HidePopup(PopupSlot slot)
@@ -471,6 +500,44 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         slot.Form.Opacity = 1d;
+        UpdateCopilotPinnedAppearance();
+    }
+
+    // The faint 1px "pinned" outline is shown only while the Copilot window is in a
+    // persistent state: Always-shown, or HoverPreview pinned via a tray click. A
+    // plain hover glance shows no outline.
+    private void UpdateCopilotPinnedAppearance()
+    {
+        var bordered = _copilot.Enabled
+            && _copilot.Form.Visible
+            && (_copilot.Mode == WindowDisplayMode.Always || _copilot.Pinned);
+        _copilotWindow.SetPinned(bordered);
+    }
+
+    // Click-outside-to-dismiss for a stuck Copilot window. Only fires when the
+    // window was activated (shown via a tray click / interacted with), so a never-
+    // touched startup window is unaffected. Suppressed around the icon's own click
+    // and while the context menu is open so tray/menu actions don't conflict.
+    private void OnCopilotDeactivated()
+    {
+        if (_disposed || _contextMenuOpen || Environment.TickCount < _suppressCopilotDeactivateUntil)
+        {
+            return;
+        }
+
+        if (!_copilot.Form.Visible)
+        {
+            return;
+        }
+
+        var stuck = _copilot.Pinned || _copilot.Mode == WindowDisplayMode.Always;
+        if (!stuck)
+        {
+            return;
+        }
+
+        _copilot.Pinned = false;
+        HidePopup(_copilot);
     }
 
     // Reconcile each window's visibility with its enabled + display method.
@@ -572,6 +639,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             }
 
             var cursor = Cursor.Position;
+            // This tests the WHOLE window (Form.Bounds) for show/hide. It is separate
+            // from the Copilot card's RefreshHover, which tests the main-value rect
+            // only (MainLineScreenBounds) to swap %/detail — the two must not be conflated.
             var overWindow = slot.Form.Bounds.Contains(cursor);
             // A motionless cursor still resting on the tray icon produces no further
             // MouseMove events: an unchanged position since the last icon hover means

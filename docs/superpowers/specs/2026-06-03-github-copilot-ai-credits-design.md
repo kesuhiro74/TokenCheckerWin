@@ -17,12 +17,13 @@
 - **トレイアイコンは有効ウィンドウごとに専用**: `_statusIcon`（Claude/Codex リング）／`_copilotIcon`（Copilot 縦%バー）。「1アイコン either/or（`TrayIconMode`）」は**撤回**。
 - **両窓 OFF 時はコントロール用アイコン**を1つだけ表示（`_controlIcon`）。ウィンドウは出さず、左クリック＝設定／右クリック＝共有メニュー。常に最低1アイコンは可視。
 - **右クリックメニューは5項目固定**: `今すぐ更新` / `Claude/Codexステータス表示モード`▶(通常/コンパクト/ミニマム) / `GitHubCopilot表示モード`▶(常時表示/ホバー表示) / `設定` / `終了`。現在値にチェック・切替は即時保存＋反映。ログイン/初回設定/接続テスト等は設定ダイアログ側。
-- **Copilot 配色**: `CopilotAccent`（Green(既定)/Blue/Sky/Purple/Slate）を設定で選択し、**数値・カードバー・トレイ縦%バーの通常色(80%未満)**に反映（`UsageTheme.AccentColor(value, baseColor)` 経由・トレイは `Lighten(accent,0.25)`）。**80/95 の橙/赤エスカレーションは色設定に関わらず維持**（severity が上書き）。装飾グラスのスレートピルは固定（不変）。第4弾までの「配色＝装飾のみ」は第5弾で**置換**。
+- **Copilot 配色**: `CopilotAccent`（Green(既定)/Blue/Sky/Purple/Slate）は**バーのみ**に反映＝**カードの%バー＋トレイ縦%バー**の通常色(80%未満)（`UsageTheme.AccentColor(value, baseColor)` 経由・トレイは `Lighten(accent,0.25)`）。**`n%` の文字色は黒系固定（`PrimaryText`）・`使用済み` は薄いグレー固定（`MutedText`）で配色設定の影響を受けない**。**80/95 の橙/赤エスカレーションはバー側で維持**（severity が上書き）。装飾グラスのスレートピルは固定。配色の対象は第4弾「装飾のみ」→第5弾「数値も」→**第6弾でバーのみ＋数値黒・`使用済み`薄グレー固定**に更新。
+- **Copilot カード上部**: Octicons Copilot アイコン＋`GitHub Copilot`（1行目）＋**プラン名サブ行**（2行目・小さめ薄め）。**「タイトルそのものをプラン名にする」旧仕様は廃止**。主要表示フォントは `Moralerspace`（インストール時のみ使用・同梱せず・無ければ Segoe UI へフォールバック）。
 - **取得ゲート**: Copilot provider は `CopilotProviderEnabled`(=`CopilotWindowEnabled`)、Claude/Codex provider は `ClaudeProviderEnabled`/`CodexProviderEnabled`(=`ClaudeCodexWindowEnabled` ＋ `VisibleServices` の個別サービス表示)。OFF のものは provider を生成せず取得しない。
 - **OFF サービスの stale 値除去**: 表示用 snapshot/fallback（`BuildFallbackSnapshot`）・トレイアイコン（`DetermineState` 入力）・ツールチップは `IsServiceEnabledForDisplay` でフィルタし、無効化済みサービスの古い警告/危険状態を出さない。`last_usage.json` 自体は改変しない（表示段階でフィルタ）。
 - **旧 settings.json 移行**（`SettingsStore.Load`・一度きり）: `ShowOnStartup=false`→`ClaudeCodexDisplayMode=HoverPreview`、`CopilotWindowTrigger`(任意値)→`CopilotDisplayMode=HoverPreview`、`VisibleServices` の `"GitHub Copilot"` または `TrayIconMode="Copilot"`→`CopilotWindowEnabled=true`、`VisibleServices` は Claude/Codex のみへ正規化。`CopilotWindowFadeSeconds` は無視（廃止）。
 - **初回設定**: 認証は **PAT + `GITHUB_TOKEN` 環境変数方式**（アプリ内ログイン/OAuth/Device Flow は未実装）。設定の `初回設定` ウィザード（`GitHubCopilotSetupForm`）の構成は **「GitHub のトークン作成ページを開く」**（押下で下部テキスト領域に**トークン作成手順**を表示: Token name 例 `TokenChecker` / Expiration 推奨 `90 days` / Permissions に `Plan` を追加し `Read-only` を確認 / `Generate token`）＋ **「環境変数の設定方法を表示」**＋ **「接続テスト」**＋ **「閉じる」**。**`権限の説明を開く` ボタンや `PermissionsDocUrl` は存在しない**（権限の説明は作成手順テキストに統合）。**token はアプリ内入力させない・保存しない・表示/ログ/結果に出さない**（接続テストは使用量数値＋安全な定型文のみ）。`GITHUB_TOKEN` 未設定時は CopilotWindow が「初回設定」へ誘導。
-- **不変**: 桁は整数（共有モデル非侵襲）、80/95 閾値は `UsageTheme` に集約、保存は `settings.json`/`last_usage.json`/`copilot_usage.json` の3点のみ（数値・日付のみ・トークン非保存）。Copilot カードは値スワップが固定ボックス＝無ガタ。タイトルはプラン名。
+- **不変**: 桁は整数（共有モデル非侵襲）、80/95 閾値は `UsageTheme` に集約、保存は `settings.json`/`last_usage.json`/`copilot_usage.json` の3点のみ（数値・日付のみ・トークン非保存）。Copilot カードは値スワップが固定ボックス＝無ガタ（ホバー詳細はメイン表示エリアのみで切替）。ピン留め/常時表示の Copilot 窓は外周1px枠＋外クリックで非表示（トレイ/共有メニュー操作とは非競合）。
 
 詳細な実装手順・経緯はプランファイル `14-copilot-hazy-panda.md`、変更履歴は §0 を参照。
 
@@ -77,6 +78,20 @@
 - **#3 100%到達予測の起点**: `CopilotUsageTracker.PredictFull` を **UTC1日0時 → ローカル暦の当月1日0時**起点に変更（`nowLocal.Offset`・`resetLocal=monthStartLocal.AddMonths(1)`・`fullLocal` を直接返却）。算出時点の利用割合からの線形外挿（`月初 + 経過日数×cap/usedNow`）。※実リセットは UTC1日=JST9:00 のため起点は約9h 早いが、**ユーザー明示要件「ローカル暦の当月1日0時を起点」を優先**（影響は月初9hのみ・到達日は僅かに“遅め”側・軽微）。
 - **#4 配色＝本体色の設定化**（第4弾の「装飾のみ」を**置換**）: `enum CopilotAccent { Green=0(既定),Blue,Sky,Purple,Slate }` に再定義（`JsonStringEnumConverter` は名前保存ゆえ旧 `Blue/Sky/Slate` も解釈可）。`CopilotAccentColor()` は**本体ベース色**を返す。`UsageTheme.AccentColor(double?)` は `AccentColor(value, Good)` へ委譲し、新オーバーロード `AccentColor(value, baseColor)`（`>=95 Bad / >=80 Warning / else baseColor`）で**数値・カードバー（`CopilotWindow.SetAccent`）・トレイ縦%バー（`CreateCopilotIcon(…, accentBase)`＝`Lighten(accent,0.25)`）**の 80%未満色を変更。**80/95 エスカレーションは色設定に関わらず維持**。装飾グラスのスレートピル（`_brand`）は固定。Claude/Codex 側（`AccentColor(value)`）は不変。**旧 settings の `Slate` 等は本バージョンから数値・バーがその色になる**（以前は緑固定。緑へ戻すには `グリーン（既定）`）。設定コンボは Green/Blue/Sky/Purple/Slate。
 - **#5 HoverPreview のホバー切替**: `CopilotWindow` に **Visible 中のみ動く 120ms ポーリング**（`_hoverPoll`→`RefreshHover`）を追加。HoverPreview は非アクティブ表示＋カーソル直下出現で `MouseEnter/Leave` が飛ばず、イベント駆動の %↔詳細値スワップが漏れるのを補完。`OnVisibleChanged` で表示時 Start／非表示時 Stop（teardown 中は `Disposing||IsDisposed` ガードで Timer/`_card` 非タッチ）、`Dispose(bool)` で停止破棄。Always/HoverPreview とも同一挙動・差分時のみ反映で無ガタ。Context 側 leave ポーリングとは独立。
+
+### 第6弾（2026-06-06・Copilot ウィンドウ UI 調整 9点）
+
+App 側の表示/トレイ配線のみ。Core プロバイダ/パーサ・共有モデル・`GITHUB_TOKEN` 経路・`copilot_usage.json` スキーマ・初回設定ウィザード・`UsageTheme` の 80/95 閾値定義は不変。
+
+- **#1 フォント = Moralerspace（同梱せず・install-conditional）**: `UsageTheme.CreateCopilotFont`/`CopilotFontFamily`/`CopilotFontFellBack` を追加。候補（`Moralerspace`→各 variant）を一度だけ解決しキャッシュ、無ければ `Segoe UI` へフォールバック（例外時も再フォールバック＝クラッシュしない）。Copilot カードの主要表示（タイトル/プラン名/数値/`使用済み`/バッジ/サブ情報/詳細トグル）を経由。`_detailBox` は Consolas 据え置き。
+- **#2 `正常取得`/`使用済み` を +1pt**: バッジ `7.5F→8.5F`、サフィックス `valueSize*0.46f → +1f`（≈6.9→7.9pt）。`n%`(15pt)より明確に小・見切れ優先。
+- **#3 ホバー判定＝メイン表示エリアのみ**: `RefreshHover` を `_card.MainLineScreenBounds`（`_mainLine` の画面矩形）包含判定に変更。120ms ポーリング＋Enter/Leave 維持。Context 側 `HoverLeaveCheck`（`Form.Bounds` で表示/非表示）とは独立。
+- **#4 ピン留め/常時表示時の外周1px枠**: `CopilotCard._pinned`＋`SetPinned`、`OnPaint` でカード角丸縁に `UsageTheme.PinnedBorder`（半透明スレート）1px。Context が `UpdateCopilotPinnedAppearance`（`bordered = Enabled && Visible && (Always || Pinned)`）を show/hide/pin/mode 変更で反映。ホバー・グランス（未ピン）は枠なし。
+- **#5 外クリック非表示**: `Form.Deactivate` 方式（グローバルフック不使用）。クリック表示/ピンで窓がアクティブ化→外側クリックで Deactivate→`OnCopilotDeactivated` が stuck（`Pinned||Always`）かつ表示中なら `HidePopup`＋`Pinned=false`。`_copilotIcon.MouseDown` と `_contextMenu.Opening/Closed` で抑制（トレイ/メニュー操作と非競合）。**起動時 Always（未クリック・非アクティブ）は本経路では消えない**（初回操作後に有効）。
+- **#6 配色＝バーのみ**: `n%` を `UsageTheme.PrimaryText`（黒系固定）、`使用済み` を `UsageTheme.MutedText`（薄グレー固定・`MainUsageControl` 内）。配色は**カードバー＋トレイ%バー**のみ（`_bar.AccentColor = AccentColor(percent,_accent)`、トレイ据え置き）。`SetAccent` はバー色のみ再計算。80/95 エスカレーションはバーで維持（第5弾の「数値も配色」を更新）。
+- **#7 外周余白**: `FormPadding 12→9`（窓サイズ 318×222）。
+- **#8 左仕切りからの余白**: `ContentLeft 14→18`（`contentWidth=268`）。左ピル（x8〜12）→内容(18) を 6px に。タイトル/数値/バー/サブの開始位置を 18 に統一、バッジ右アンカー据え置き。
+- **#9 上部刷新**: タイトルを固定「GitHub Copilot」＋新 `_planSub`（プラン名・小さめ薄め）。アイコンは private static `CopilotGlyph`（Octicons `copilot-16` の `d` を埋め込み）＋最小 SVG パスパーサ `SvgPath`（`M/L/H/V/C/A/Z`・弧は endpoint→center で `AddArc`、`FillMode.Winding`）で一度だけ `GraphicsPath` 化しカード `OnPaint` で 16px スレート塗り（外部通信・フォントファイル追加なし）。2行ヘッダ化で `CardBaseHeight 186→204`。
 
 ---
 
