@@ -33,7 +33,6 @@ internal sealed class CopilotWindow : Form
     // PRIMARY driver; MouseMove/Enter/Leave just make it snappier.
     private readonly System.Windows.Forms.Timer _hoverPoll = new() { Interval = 90 };
     private bool _hovered;
-    private bool _focused;
 
     public CopilotWindow()
     {
@@ -55,10 +54,6 @@ internal sealed class CopilotWindow : Form
             Size = new Size(CardWidth, CardBaseHeight)
         };
         _card.HeightChanged += (_, _) => RelayoutForCardHeight();
-        // The card panel is the single Tab stop; focusing it (e.g. by tabbing
-        // after the window is activated) reveals the detailed values too.
-        _card.GotFocus += (_, _) => SetFocused(true);
-        _card.LostFocus += (_, _) => SetFocused(false);
         Controls.Add(_card);
 
         RelayoutForCardHeight();
@@ -70,10 +65,8 @@ internal sealed class CopilotWindow : Form
         MouseMove += OnPointerChanged;
         AttachHandlers(this);
         _hoverPoll.Tick += (_, _) => RefreshHover();
-        // When the window loses activation, drop the keyboard-focus detail state and
-        // re-evaluate hover from the CURRENT cursor position (do NOT blindly clear it)
-        // so the detail-swap neither sticks on nor drops while the cursor is still over
-        // the main area. Mouse hover and keyboard focus stay separate inputs.
+        // When the window loses activation, re-evaluate hover from the CURRENT cursor
+        // position so the detail-swap never sticks on after the cursor has left.
         Deactivate += (_, _) =>
         {
             if (IsDisposed || !IsHandleCreated)
@@ -81,7 +74,6 @@ internal sealed class CopilotWindow : Form
                 return;
             }
 
-            _focused = false;
             _hovered = IsCursorOverMainUsageArea();
             RaiseInteractionChanged();
         };
@@ -90,10 +82,13 @@ internal sealed class CopilotWindow : Form
     // Raised when the user dismisses the popup with Esc.
     public event EventHandler? HideRequested;
 
-    // Raised whenever the hover/focus (interaction) state changes.
+    // Raised whenever the hover (interaction) state changes.
     public event EventHandler? InteractionChanged;
 
-    public bool IsInteracting => _hovered || _focused;
+    // The detail-swap is driven purely by the mouse hovering the main value area —
+    // NOT by keyboard focus. (Focus used to reveal detail too, but the window can be
+    // activated/focused on first launch, which then wrongly opened in detail mode.)
+    public bool IsInteracting => _hovered;
 
     // Glance-friendly: showing the window must not steal focus from whatever the
     // user is doing, and must leave it in the compact resting state.
@@ -185,7 +180,6 @@ internal sealed class CopilotWindow : Form
             // The window is hidden: nothing can be hovered, so reset to the compact
             // resting state for a consistent next open.
             _hovered = false;
-            _focused = false;
             _card.SetDetailed(false);
         }
     }
@@ -278,17 +272,6 @@ internal sealed class CopilotWindow : Form
 
         rect.Inflate(6, 4);
         return rect.Contains(Cursor.Position);
-    }
-
-    private void SetFocused(bool value)
-    {
-        if (value == _focused)
-        {
-            return;
-        }
-
-        _focused = value;
-        RaiseInteractionChanged();
     }
 
     private void RaiseInteractionChanged()
