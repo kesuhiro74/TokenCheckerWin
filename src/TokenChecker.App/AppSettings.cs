@@ -46,6 +46,16 @@ internal enum CopilotAccent
     Slate = 4
 }
 
+// App color theme for the windows. System follows the Windows app color mode
+// (light/dark) at startup; Light/Dark force a mode. Applied at startup only (a
+// change takes effect on the next launch).
+internal enum ThemeMode
+{
+    System = 0,
+    Light = 1,
+    Dark = 2
+}
+
 internal sealed class AppSettings
 {
     // GitHub Copilot is keyed in snapshots by this exact provider name. (It is no
@@ -65,6 +75,9 @@ internal sealed class AppSettings
     public int RefreshIntervalSeconds { get; set; } = 60;
 
     public bool AutoStartEnabled { get; set; }
+
+    // App color theme. Applied at startup only (a change needs an app restart).
+    public ThemeMode Theme { get; set; } = ThemeMode.System;
 
     // Kept for backward compatibility with settings.json written by older builds
     // that only knew about a compact-mode boolean. Normalize() reconciles this
@@ -99,7 +112,10 @@ internal sealed class AppSettings
 
     public FormLocation? CopilotWindowLocation { get; set; }
 
-    public CopilotAccent CopilotAccent { get; set; } = CopilotAccent.Green;
+    // Default accent for the Copilot window (numbers stay near-black; this colors
+    // the bar, the left divider pill, and the pinned outline). Blue by default; an
+    // explicitly-saved older value (e.g. "Green") is preserved.
+    public CopilotAccent CopilotAccent { get; set; } = CopilotAccent.Blue;
 
     public bool IsServiceVisible(string serviceName)
         => VisibleServices?.Any(service => string.Equals(service, serviceName, StringComparison.OrdinalIgnoreCase)) == true;
@@ -192,7 +208,12 @@ internal sealed class AppSettings
 
         if (!Enum.IsDefined(CopilotAccent))
         {
-            CopilotAccent = CopilotAccent.Green;
+            CopilotAccent = CopilotAccent.Blue;
+        }
+
+        if (!Enum.IsDefined(Theme))
+        {
+            Theme = ThemeMode.System;
         }
 
         CopilotCustomCredits = Math.Max(0, CopilotCustomCredits);
@@ -207,6 +228,7 @@ internal sealed class AppSettings
         {
             RefreshIntervalSeconds = RefreshIntervalSeconds,
             AutoStartEnabled = AutoStartEnabled,
+            Theme = Theme,
             CompactMode = CompactMode,
             DisplayMode = DisplayMode,
             VisibleServices = VisibleServices.ToArray(),

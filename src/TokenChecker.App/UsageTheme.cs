@@ -17,30 +17,103 @@ internal static class UsageTheme
     public const double WarningPercent = 80d;
     public const double CriticalPercent = 95d;
 
-    // Neutral light palette (mirrors the status popup's surface/cards).
-    public static readonly Color Surface = Color.FromArgb(244, 246, 250);
-    public static readonly Color Card = Color.FromArgb(252, 253, 255);
-    public static readonly Color CardBorder = Color.FromArgb(224, 228, 235);
-    public static readonly Color PrimaryText = Color.FromArgb(30, 34, 44);
-    public static readonly Color SecondaryText = Color.FromArgb(70, 76, 92);
-    public static readonly Color MutedText = Color.FromArgb(120, 126, 140);
-    public static readonly Color TrackEmpty = Color.FromArgb(228, 232, 238);
-    public static readonly Color DetailToggle = Color.FromArgb(75, 105, 195);
-    public static readonly Color DetailBackground = Color.FromArgb(247, 248, 252);
+    // Shared corner radius for the popup cards and the rounded window regions, so
+    // the painted card corners and the window's clip stay in sync. Kept small to
+    // match a standard Windows 11 window: at DpiUnaware + 150% display scale this
+    // app-space 5px renders at ~8px physical, i.e. Win11's native window radius.
+    public const float CardCornerRadius = 5f;
 
-    // Severity palette (0-79% / 80-94% / >=95%).
-    public static readonly Color Good = Color.FromArgb(34, 165, 90);
-    public static readonly Color Warning = Color.FromArgb(214, 154, 35);
-    public static readonly Color Bad = Color.FromArgb(214, 70, 70);
+    // ----- Theme palettes (light / dark) -----------------------------------
+    // Surface/chrome colors flip between light and dark; the severity (Good/Warning/
+    // Bad) and brand colors are tuned per mode for contrast. The active palette is
+    // chosen ONCE at startup (Apply, called from Program before any window is built);
+    // there is NO live switching. Call sites (UsageTheme.Surface, ...) are unchanged.
+    private sealed record Palette(
+        Color Surface, Color Card, Color CardBorder,
+        Color PrimaryText, Color SecondaryText, Color MutedText, Color SubtleText,
+        Color TrackEmpty, Color DetailToggle, Color DetailBackground,
+        Color Good, Color Warning, Color Bad,
+        Color CopilotBrand, Color ClaudeBrand, Color CodexBrand, Color PinnedBorder,
+        float GlassTopLighten, Color GlassGloss, Color GlassInner);
 
-    // GitHub Copilot brand: a deep slate that reads as GitHub and stays distinct
-    // from Claude (blue) and Codex (purple).
-    public static readonly Color CopilotBrand = Color.FromArgb(80, 96, 122);
+    private static readonly Palette Light = new(
+        Surface: Color.FromArgb(244, 246, 250),
+        Card: Color.FromArgb(252, 253, 255),
+        CardBorder: Color.FromArgb(224, 228, 235),
+        PrimaryText: Color.FromArgb(30, 34, 44),
+        SecondaryText: Color.FromArgb(70, 76, 92),
+        MutedText: Color.FromArgb(120, 126, 140),
+        SubtleText: Color.FromArgb(160, 166, 180),
+        TrackEmpty: Color.FromArgb(228, 232, 238),
+        DetailToggle: Color.FromArgb(75, 105, 195),
+        DetailBackground: Color.FromArgb(247, 248, 252),
+        Good: Color.FromArgb(34, 165, 90),
+        Warning: Color.FromArgb(214, 154, 35),
+        Bad: Color.FromArgb(214, 70, 70),
+        CopilotBrand: Color.FromArgb(80, 96, 122),
+        ClaudeBrand: Color.FromArgb(74, 124, 232),
+        CodexBrand: Color.FromArgb(139, 92, 214),
+        PinnedBorder: Color.FromArgb(150, 80, 96, 122),
+        GlassTopLighten: 0.40f,
+        GlassGloss: Color.FromArgb(120, 255, 255, 255),
+        GlassInner: Color.FromArgb(150, 255, 255, 255));
 
-    // Faint 1px outline drawn around the Copilot card when it is pinned / always-on
-    // (a quiet hint that it will stay open). Semi-transparent slate so it reads as a
-    // slightly more defined edge without competing with the card.
-    public static readonly Color PinnedBorder = Color.FromArgb(150, 80, 96, 122);
+    private static readonly Palette Dark = new(
+        Surface: Color.FromArgb(28, 30, 36),
+        Card: Color.FromArgb(38, 41, 49),
+        CardBorder: Color.FromArgb(58, 62, 72),
+        PrimaryText: Color.FromArgb(236, 238, 243),
+        SecondaryText: Color.FromArgb(188, 193, 203),
+        MutedText: Color.FromArgb(142, 148, 162),
+        SubtleText: Color.FromArgb(110, 116, 130),
+        TrackEmpty: Color.FromArgb(56, 60, 70),
+        DetailToggle: Color.FromArgb(120, 150, 235),
+        DetailBackground: Color.FromArgb(32, 35, 42),
+        Good: Color.FromArgb(74, 190, 120),
+        Warning: Color.FromArgb(228, 176, 72),
+        Bad: Color.FromArgb(232, 96, 96),
+        CopilotBrand: Color.FromArgb(140, 156, 184),
+        ClaudeBrand: Color.FromArgb(108, 156, 255),
+        CodexBrand: Color.FromArgb(170, 130, 238),
+        PinnedBorder: Color.FromArgb(150, 140, 156, 184),
+        GlassTopLighten: 0.10f,
+        GlassGloss: Color.FromArgb(30, 255, 255, 255),
+        GlassInner: Color.FromArgb(28, 255, 255, 255));
+
+    private static Palette _active = Light;
+
+    // True when the dark palette is active. Resolved once at startup.
+    public static bool IsDark => ReferenceEquals(_active, Dark);
+
+    // Selects the light or dark palette. Call ONCE at startup, before any window is
+    // constructed (see Program.Main). There is no live re-theming.
+    public static void Apply(bool dark) => _active = dark ? Dark : Light;
+
+    public static Color Surface => _active.Surface;
+    public static Color Card => _active.Card;
+    public static Color CardBorder => _active.CardBorder;
+    public static Color PrimaryText => _active.PrimaryText;
+    public static Color SecondaryText => _active.SecondaryText;
+    public static Color MutedText => _active.MutedText;
+    public static Color SubtleText => _active.SubtleText;
+    public static Color TrackEmpty => _active.TrackEmpty;
+    public static Color DetailToggle => _active.DetailToggle;
+    public static Color DetailBackground => _active.DetailBackground;
+
+    // Severity palette (0-79% / 80-94% / >=95%) — colors adapt per theme; the 80/95
+    // THRESHOLDS (WarningPercent/CriticalPercent) are unchanged.
+    public static Color Good => _active.Good;
+    public static Color Warning => _active.Warning;
+    public static Color Bad => _active.Bad;
+
+    // Service brand colors (kept distinct: Claude blue / Codex purple / Copilot slate),
+    // tuned per theme for contrast.
+    public static Color CopilotBrand => _active.CopilotBrand;
+    public static Color ClaudeBrand => _active.ClaudeBrand;
+    public static Color CodexBrand => _active.CodexBrand;
+
+    // Faint 1px outline drawn around the Copilot card when it is pinned / always-on.
+    public static Color PinnedBorder => _active.PinnedBorder;
 
     // Usage-severity color for numbers/bars: muted when there is no value, then
     // green -> amber (>=80) -> red (>=95).
@@ -105,6 +178,17 @@ internal static class UsageTheme
     public static Color Lighten(Color color, float amount)
         => Tint(color, Color.White, amount);
 
+    // Blend a color toward black by `amount` (0..1) — preserves alpha.
+    public static Color Darken(Color color, float amount)
+    {
+        amount = Math.Clamp(amount, 0f, 1f);
+        return Color.FromArgb(
+            color.A,
+            (int)Math.Round(color.R * (1f - amount)),
+            (int)Math.Round(color.G * (1f - amount)),
+            (int)Math.Round(color.B * (1f - amount)));
+    }
+
     public static GraphicsPath CreateRoundedRectPath(RectangleF rect, float radius)
     {
         var diameter = Math.Min(radius * 2f, Math.Min(rect.Width, rect.Height));
@@ -121,17 +205,31 @@ internal static class UsageTheme
     // Frosted-glass card backdrop: a faint brand-tinted vertical gradient, a soft
     // top highlight, a brand accent pill down the left edge, and a delicate double
     // border. Brand color is decorative only — usage severity rides the numbers
-    // and bars, not this background.
+    // and bars, not this background. Default overload uses the shared card radius
+    // and paints the left pill in the brand color.
     public static void PaintGlassCard(Graphics g, int width, int height, Color brand)
+        => PaintGlassCard(g, width, height, brand, CardCornerRadius, brand);
+
+    // Overload letting the caller pick the corner radius (e.g. the Copilot window
+    // rounds tighter than the status window) and the left accent pill color
+    // independently of the decorative brand tint (the Copilot window colors the
+    // pill with the user-selected accent while keeping a neutral slate tint).
+    public static void PaintGlassCard(Graphics g, int width, int height, Color brand, float radius, Color accentPill)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Card);
+        // Clear with the window background (Surface), NOT Card: the rounded glass is
+        // painted only inside the rounded path below, so the four corner triangles
+        // outside it keep this color. Surface matches the window behind an inset card,
+        // so those corners blend away and the card reads as a clean rounded box (with
+        // Card the corners showed as square nubs poking past the rounded border). For
+        // a card that fills its window the corners are clipped by the window region,
+        // so this is neutral there.
+        g.Clear(Surface);
 
-        const float radius = 13f;
         var rect = new RectangleF(0, 0, width - 1, height - 1);
         using var path = CreateRoundedRectPath(rect, radius);
 
-        var top = Lighten(Card, 0.40f);
+        var top = Lighten(Card, _active.GlassTopLighten);
         var bottom = Tint(Card, brand, 0.11f);
         using (var fill = new LinearGradientBrush(
             new RectangleF(0, 0, width, height), top, bottom, LinearGradientMode.Vertical))
@@ -142,11 +240,14 @@ internal static class UsageTheme
         var prevClip = g.Clip;
         g.SetClip(path, CombineMode.Replace);
 
+        // Top gloss: a faint light highlight. On dark it is much weaker (low alpha)
+        // so it reads as a subtle sheen, not a white band.
+        var gloss0 = _active.GlassGloss;
         var glossHeight = Math.Max(8f, height * 0.45f);
         using (var gloss = new LinearGradientBrush(
             new RectangleF(0, 0, width, glossHeight),
-            Color.FromArgb(120, 255, 255, 255),
-            Color.FromArgb(0, 255, 255, 255),
+            gloss0,
+            Color.FromArgb(0, gloss0.R, gloss0.G, gloss0.B),
             LinearGradientMode.Vertical))
         {
             g.FillRectangle(gloss, new RectangleF(0, 0, width, glossHeight));
@@ -154,7 +255,7 @@ internal static class UsageTheme
 
         var accentRect = new RectangleF(8f, 13f, 4f, height - 26f);
         using (var accentPath = CreateRoundedRectPath(accentRect, 2f))
-        using (var accentBrush = new SolidBrush(brand))
+        using (var accentBrush = new SolidBrush(accentPill))
         {
             g.FillPath(accentBrush, accentPath);
         }
@@ -163,7 +264,7 @@ internal static class UsageTheme
 
         var innerRect = new RectangleF(1f, 1f, width - 3f, height - 3f);
         using (var innerPath = CreateRoundedRectPath(innerRect, radius - 1f))
-        using (var innerPen = new Pen(Color.FromArgb(150, 255, 255, 255)))
+        using (var innerPen = new Pen(_active.GlassInner))
         {
             g.DrawPath(innerPen, innerPath);
         }

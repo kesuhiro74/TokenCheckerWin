@@ -9,26 +9,26 @@ namespace TokenChecker.App;
 
 internal sealed class StatusForm : Form
 {
-    // Light palette inspired by, but not copied from, the sample screenshot.
-    private static readonly Color Surface = Color.FromArgb(244, 246, 250);
-    private static readonly Color Card = Color.FromArgb(252, 253, 255);
-    private static readonly Color CardBorder = Color.FromArgb(224, 228, 235);
-    private static readonly Color PrimaryText = Color.FromArgb(30, 34, 44);
-    private static readonly Color SecondaryText = Color.FromArgb(70, 76, 92);
-    private static readonly Color MutedText = Color.FromArgb(120, 126, 140);
-    private static readonly Color SubtleText = Color.FromArgb(160, 166, 180);
-    private static readonly Color Good = Color.FromArgb(34, 165, 90);
-    private static readonly Color Warning = Color.FromArgb(214, 154, 35);
-    private static readonly Color Bad = Color.FromArgb(214, 70, 70);
-    private static readonly Color TrackEmpty = Color.FromArgb(228, 232, 238);
-    private static readonly Color DetailToggle = Color.FromArgb(75, 105, 195);
-    private static readonly Color DetailBackground = Color.FromArgb(247, 248, 252);
-    private static readonly Color Separator = Color.FromArgb(232, 235, 240);
+    // Surface/chrome and brand colors come from the shared, theme-aware palette
+    // (UsageTheme), so the status window follows the light/dark theme. These thin
+    // forwarders keep the rest of this file's color references unchanged.
+    private static Color Surface => UsageTheme.Surface;
+    private static Color Card => UsageTheme.Card;
+    private static Color CardBorder => UsageTheme.CardBorder;
+    private static Color PrimaryText => UsageTheme.PrimaryText;
+    private static Color SecondaryText => UsageTheme.SecondaryText;
+    private static Color MutedText => UsageTheme.MutedText;
+    private static Color SubtleText => UsageTheme.SubtleText;
+    private static Color Good => UsageTheme.Good;
+    private static Color Warning => UsageTheme.Warning;
+    private static Color Bad => UsageTheme.Bad;
+    private static Color TrackEmpty => UsageTheme.TrackEmpty;
+    private static Color DetailToggle => UsageTheme.DetailToggle;
+    private static Color DetailBackground => UsageTheme.DetailBackground;
 
-    // Service brand colors, echoing the tray icon (Claude=blue / Codex=purple)
-    // but deepened so they stay legible on the light surface.
-    private static readonly Color ClaudeBrand = Color.FromArgb(74, 124, 232);
-    private static readonly Color CodexBrand = Color.FromArgb(139, 92, 214);
+    // Service brand colors (Claude=blue / Codex=purple), theme-tuned in UsageTheme.
+    private static Color ClaudeBrand => UsageTheme.ClaudeBrand;
+    private static Color CodexBrand => UsageTheme.CodexBrand;
 
     // Card title typefaces, each echoing the service's own wordmark:
     // Claude Code uses an elegant serif (Georgia ~ the Claude serif wordmark),
@@ -53,18 +53,16 @@ internal sealed class StatusForm : Form
 
     // Compact mode dimensions — the window hugs the cards with a thin margin and
     // its width follows how many services are shown (no wasted space on the right
-    // when only one service is visible).
-    private const int CompactFormPadding = 6;
+    // when only one service is visible). Halved from 6 for a tighter compact gutter.
+    private const int CompactFormPadding = 3;
     private const int CompactPanelWidth = 200;
     private const int CompactPanelHeight = 96;
     private const int CompactPanelGap = 8;
-    private const float CompactWindowRadius = 12f;
 
     // Minimum mode dimensions — the popup hugs the card with no outer padding.
     // Wide enough that a serif service name ("Claude") isn't clipped.
     private const int MinimumFormWidth = 232;
     private const int MinimumPanelHeight = 46;
-    private const float MinimumStripRadius = 8f;
 
     private const int FooterHeight = 22;
 
@@ -310,7 +308,6 @@ internal sealed class StatusForm : Form
         _updatedAt.Location = new Point(FormPadding, y);
         var contentHeight = y + FooterHeight + FormPadding;
         ClientSize = new Size(NormalFormWidth, contentHeight);
-        ClearRegion();
     }
 
     private void LayoutCompact()
@@ -339,41 +336,25 @@ internal sealed class StatusForm : Form
             : CompactPanelWidth;
         var contentHeight = (visibleCount > 0 ? CompactPanelHeight : 0) + pad * 2;
         ClientSize = new Size(contentWidth + pad * 2, contentHeight);
-        ApplyRoundedRegion(CompactWindowRadius);
     }
 
     private void LayoutMinimum()
     {
-        // No outer padding: the rounded card fills the whole popup window.
+        // No outer padding: the card fills the whole popup window (it paints square;
+        // the window's rounded corners come from DWM — see OnHandleCreated).
         _minimumPanel.Location = new Point(0, 0);
         _minimumPanel.Size = new Size(MinimumFormWidth, MinimumPanelHeight);
         ClientSize = new Size(MinimumFormWidth, MinimumPanelHeight);
-        ApplyRoundedRegion(MinimumStripRadius);
     }
 
-    // In minimum mode the borderless popup is clipped to a rounded rectangle so
-    // it reads as a single rounded card with no surrounding padding. Other
-    // modes keep a normal rectangular window (cleared below).
-    private void ApplyRoundedRegion(float radius)
+    // Rounded corners for the borderless popup come from the Win11 DWM compositor
+    // (anti-aliased, DPI-correct), not a hard GDI Region — a Region stair-steps a
+    // small radius into a square-looking corner. Inset cards keep their own rounded
+    // glass; a window-filling card (minimum mode) paints square and DWM rounds it.
+    protected override void OnHandleCreated(EventArgs e)
     {
-        var rect = new RectangleF(0, 0, ClientSize.Width, ClientSize.Height);
-        using var path = CreateRoundedRectPath(rect, radius);
-        var region = new Region(path);
-        var previous = Region;
-        Region = region;
-        previous?.Dispose();
-    }
-
-    private void ClearRegion()
-    {
-        if (Region is null)
-        {
-            return;
-        }
-
-        var previous = Region;
-        Region = null;
-        previous.Dispose();
+        base.OnHandleCreated(e);
+        WindowEffects.UseRoundedCorners(Handle, small: true);
     }
 
     private static Color StatusColor(ProviderStatus status)
@@ -440,83 +421,10 @@ internal sealed class StatusForm : Form
     // panels: a faint brand-tinted vertical gradient, a soft top highlight, a
     // brand accent pill down the left edge, and a delicate double border. Brand
     // color is decorative only — usage severity stays on the numbers/bars/ring.
+    // Delegates to the shared, theme-aware glass painter so the status cards follow
+    // the light/dark theme (and there is a single implementation, gloss included).
     private static void PaintGlassCard(Graphics g, int width, int height, Color brand)
-    {
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Card);
-
-        const float radius = 13f;
-        var rect = new RectangleF(0, 0, width - 1, height - 1);
-        using var path = CreateRoundedRectPath(rect, radius);
-
-        var top = Lighten(Card, 0.40f);
-        var bottom = Tint(Card, brand, 0.11f);
-        using (var fill = new LinearGradientBrush(
-            new RectangleF(0, 0, width, height), top, bottom, LinearGradientMode.Vertical))
-        {
-            g.FillPath(fill, path);
-        }
-
-        var prevClip = g.Clip;
-        g.SetClip(path, CombineMode.Replace);
-
-        var glossHeight = Math.Max(8f, height * 0.45f);
-        using (var gloss = new LinearGradientBrush(
-            new RectangleF(0, 0, width, glossHeight),
-            Color.FromArgb(120, 255, 255, 255),
-            Color.FromArgb(0, 255, 255, 255),
-            LinearGradientMode.Vertical))
-        {
-            g.FillRectangle(gloss, new RectangleF(0, 0, width, glossHeight));
-        }
-
-        var accentRect = new RectangleF(8f, 13f, 4f, height - 26f);
-        using (var accentPath = CreateRoundedRectPath(accentRect, 2f))
-        using (var accentBrush = new SolidBrush(brand))
-        {
-            g.FillPath(accentBrush, accentPath);
-        }
-
-        g.Clip = prevClip;
-
-        var innerRect = new RectangleF(1f, 1f, width - 3f, height - 3f);
-        using (var innerPath = CreateRoundedRectPath(innerRect, radius - 1f))
-        using (var innerPen = new Pen(Color.FromArgb(150, 255, 255, 255)))
-        {
-            g.DrawPath(innerPen, innerPath);
-        }
-
-        using var border = new Pen(CardBorder);
-        g.DrawPath(border, path);
-    }
-
-    // Blend a base color toward an accent color by `amount` (0..1). Used to mix
-    // a faint brand tint into the otherwise near-white card gradient.
-    private static Color Tint(Color baseColor, Color accent, float amount)
-    {
-        amount = Math.Clamp(amount, 0f, 1f);
-        return Color.FromArgb(
-            (int)Math.Round(baseColor.R + (accent.R - baseColor.R) * amount),
-            (int)Math.Round(baseColor.G + (accent.G - baseColor.G) * amount),
-            (int)Math.Round(baseColor.B + (accent.B - baseColor.B) * amount));
-    }
-
-    // Blend a color toward white by `amount` (0..1).
-    private static Color Lighten(Color color, float amount)
-        => Tint(color, Color.White, amount);
-
-    private static GraphicsPath CreateRoundedRectPath(RectangleF rect, float radius)
-    {
-        var diameter = Math.Min(radius * 2f, Math.Min(rect.Width, rect.Height));
-        var d = Math.Max(0.1f, diameter);
-        var path = new GraphicsPath();
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
-    }
+        => UsageTheme.PaintGlassCard(g, width, height, brand);
 
     // ----- ServiceCard (normal mode) ---------------------------------------
     private sealed class ServiceCard : Panel
@@ -1063,14 +971,14 @@ internal sealed class StatusForm : Form
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            // The strip fills the window edge-to-edge and paints SQUARE; the window's
+            // rounded corners come from DWM (see StatusForm.OnHandleCreated), so a
+            // rounded path here would just float a second border inside the DWM curve.
             base.OnPaint(e);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            var rect = new RectangleF(0, 0, Width - 1, Height - 1);
-            using var path = CreateRoundedRectPath(rect, MinimumStripRadius);
             using var bg = new SolidBrush(Card);
-            e.Graphics.FillPath(bg, path);
+            e.Graphics.FillRectangle(bg, 0, 0, Width, Height);
             using var pen = new Pen(CardBorder);
-            e.Graphics.DrawPath(pen, path);
+            e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
         }
     }
 

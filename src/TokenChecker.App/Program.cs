@@ -18,6 +18,15 @@ internal static class Program
             return;
         }
 
+        // Resolve and apply the color theme BEFORE Initialize() (which also applies
+        // the DpiUnaware override). The custom-drawn windows read UsageTheme's active
+        // palette; the standard-control settings dialog is themed by SetColorMode.
+        // Applied at startup only — a theme change in settings takes effect on the
+        // next launch.
+        var dark = WindowsTheme.ResolveDark(new SettingsStore().Load().Theme);
+        UsageTheme.Apply(dark);
+        Application.SetColorMode(dark ? SystemColorMode.Dark : SystemColorMode.Classic);
+
         ApplicationConfiguration.Initialize();
         var context = new TrayApplicationContext();
 

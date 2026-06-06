@@ -16,8 +16,10 @@ namespace TokenChecker.App;
 // the window deliberately, like the status cards).
 internal sealed class CopilotWindow : Form
 {
-    // Outer margin between the card and the window edge (the drop-shadow gutter).
-    private const int FormPadding = 9;
+    // No outer gutter: the card fills the window edge-to-edge. The rounded corners
+    // are applied by the DWM compositor (see OnHandleCreated), so there is no GDI
+    // Region and the card itself paints square.
+    private const int FormPadding = 0;
     public const int CardWidth = 300;
     // Taller than 186 to fit the two-line header (icon + "GitHub Copilot" / plan
     // name) on top of the sub-info lines. This is a one-time base-size change, NOT
@@ -27,6 +29,10 @@ internal sealed class CopilotWindow : Form
     private const int FormWidth = CardWidth + FormPadding * 2;
 
     private readonly CopilotCard _card;
+    // Window-level mirror of the accent + pinned state, used to drive the DWM border
+    // (the pinned outline). The card keeps its own copy for the bar/divider.
+    private Color _accent = UsageTheme.Good;
+    private bool _pinned;
     // Polls the cursor while the window is visible so the hover detail-swap works
     // even when the window appears under a stationary cursor or stays inactive
     // (HoverPreview), where MouseEnter/MouseLeave do not fire reliably. This is the
@@ -110,13 +116,33 @@ internal sealed class CopilotWindow : Form
 
     public void SetLoading() => _card.SetLoading();
 
-    // Applies the configured accent color to the card's bar (and the tray bar is
-    // updated separately). The numbers stay a fixed near-black; only the bar follows
-    // the accent, still escalating to amber/red at 80/95.
-    public void ApplyAccent(Color accent) => _card.SetAccent(accent);
+    // Applies the configured accent color to the card (bar + left divider pill) and,
+    // when pinned, the window's DWM border. The numbers stay a fixed near-black; the
+    // bar still escalates to amber/red at 80/95.
+    public void ApplyAccent(Color accent)
+    {
+        _accent = accent;
+        _card.SetAccent(accent);
+        UpdatePinnedBorder();
+    }
 
-    // Shows/hides the faint 1px "pinned" outline (the window will stay open).
-    public void SetPinned(bool pinned) => _card.SetPinned(pinned);
+    // Shows/hides the pinned outline. The outline is the window's DWM border (in the
+    // accent color), not a GDI line: a self-painted line on the outermost pixels is
+    // hidden by the DWM-rounded edge, whereas the DWM border tracks the rounded edge
+    // and corners exactly.
+    public void SetPinned(bool pinned)
+    {
+        _pinned = pinned;
+        UpdatePinnedBorder();
+    }
+
+    private void UpdatePinnedBorder()
+    {
+        if (IsHandleCreated)
+        {
+            WindowEffects.SetBorderColor(Handle, _pinned ? _accent : (Color?)null);
+        }
+    }
 
     // Drop any inner focus so an explicitly-activated window (the click trigger)
     // still opens in the compact resting state. Esc/keyboard still work at the
@@ -197,6 +223,18 @@ internal sealed class CopilotWindow : Form
         {
             ResumeLayout(true);
         }
+    }
+
+    // The card fills the window and paints square; the rounded corners come from the
+    // Win11 DWM compositor (anti-aliased, DPI-correct) rather than a hard GDI Region
+    // that stair-steps a small radius into a square-looking corner.
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        WindowEffects.UseRoundedCorners(Handle, small: true);
+        // Re-apply the pinned border now the handle exists (it may have been set
+        // while the window was hidden, before the handle was created).
+        UpdatePinnedBorder();
     }
 
     private void BeginWindowDrag()
@@ -319,7 +357,6 @@ internal sealed class CopilotWindow : Form
         private bool _detailExpanded;
         private bool _detailed;
         private bool _hasPercent;
-        private bool _pinned;
         // The main line is rendered as a big value + a smaller suffix.
         private string _compactValue = "—";
         private string _detailValue = "—";
@@ -518,17 +555,6 @@ internal sealed class CopilotWindow : Form
 
             _detailed = detailed;
             ApplyMainLineText();
-        }
-
-        public void SetPinned(bool pinned)
-        {
-            if (pinned == _pinned)
-            {
-                return;
-            }
-
-            _pinned = pinned;
-            Invalidate();
         }
 
         public void SetLoading()
@@ -763,12 +789,14 @@ internal sealed class CopilotWindow : Form
         }
 
         // Decorative glass tint is fixed (slate); the configurable accent rides the
-        // bar instead (see _accent / SetAccent), not this backdrop.
+        // bar, the left divider pill, and the pinned outline (see _accent / SetAccent),
+        // not this neutral backdrop tint.
         private readonly Color _brand = UsageTheme.CopilotBrand;
 
-        // Applies the configured accent to the BAR (numbers stay near-black).
-        // Recomputes the live bar color immediately so a settings change shows
-        // without waiting for the next refresh; severity (80/95) still overrides it.
+        // Applies the configured accent to the BAR, the left divider pill, and the
+        // pinned outline (numbers stay near-black). Recomputes the live bar color and
+        // repaints the glass immediately so a settings change shows without waiting
+        // for the next refresh; severity (80/95) still overrides the bar color.
         public void SetAccent(Color accent)
         {
             _accent = accent;
@@ -777,23 +805,23 @@ internal sealed class CopilotWindow : Form
                 _bar.AccentColor = UsageTheme.AccentColor(_lastPercent, _accent);
                 _bar.Invalidate();
             }
+
+            // The divider pill and (when shown) the pinned outline are painted from
+            // _accent in OnPaint, so repaint the card to pick up the new color.
+            Invalidate();
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            UsageTheme.PaintGlassCard(e.Graphics, Width, Height, _brand);
+            // The card fills the window and paints SQUARE — the rounded corners come
+            // from the DWM compositor (see CopilotWindow.OnHandleCreated), which
+            // anti-aliases them. The left accent pill (the vertical divider line)
+            // follows the user-selected accent; the glass tint stays neutral slate.
+            // The pinned outline is the window's DWM border (see CopilotWindow.
+            // SetPinned), not painted here — a GDI line on the edge is hidden by the
+            // rounded edge.
+            UsageTheme.PaintGlassCard(e.Graphics, Width, Height, _brand, 0f, _accent);
             CopilotGlyph.Draw(e.Graphics, new RectangleF(ContentLeft, 13f, IconSize, IconSize), UsageTheme.CopilotBrand);
-
-            if (_pinned)
-            {
-                // A quiet, slightly more-defined edge (semi-transparent slate) on the
-                // same rounded rect as the card border — no extra inset so it doesn't
-                // read as a double border, and it stays clear of the drop shadow.
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using var path = UsageTheme.CreateRoundedRectPath(new RectangleF(0, 0, Width - 1, Height - 1), 13f);
-                using var pen = new Pen(UsageTheme.PinnedBorder, 1f);
-                e.Graphics.DrawPath(pen, path);
-            }
         }
     }
 

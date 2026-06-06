@@ -93,6 +93,18 @@ App 側の表示/トレイ配線のみ。Core プロバイダ/パーサ・共有
 - **#8 左仕切りからの余白**: `ContentLeft 14→18`（`contentWidth=268`）。左ピル（x8〜12）→内容(18) を 6px に。タイトル/数値/バー/サブの開始位置を 18 に統一、バッジ右アンカー据え置き。
 - **#9 上部刷新**: タイトルを固定「GitHub Copilot」＋新 `_planSub`（プラン名・小さめ薄め）。アイコンは private static `CopilotGlyph`（Octicons `copilot-16` の `d` を埋め込み）＋最小 SVG パスパーサ `SvgPath`（`M/L/H/V/C/A/Z`・弧は endpoint→center で `AddArc`、`FillMode.Winding`）で一度だけ `GraphicsPath` 化しカード `OnPaint` で 16px スレート塗り（外部通信・フォントファイル追加なし）。2行ヘッダ化で `CardBaseHeight 186→204`。
 
+### 第7弾（2026-06-06・テーマ: ライト/ダーク/システム連動）
+
+Windows の色モードに応じた表示切替を追加。**反映は起動時のみ**（実行中ライブ切替なし・設定変更/Windows 切替は次回起動で反映）。Core/token・`copilot_usage.json`・初回設定ロジック・80/95 閾値定義・トレイアイコン描画は不変。
+
+- **設定**: `AppSettings.ThemeMode { System(既定)/Light/Dark }`＋設定「共通設定」にコンボ＋「(再起動で反映)」注記。`Normalize`/`Clone` 反映。
+- **配色基盤**: `UsageTheme` をパレット化（`Palette` record の `Light`/`Dark`＋`_active`、`Apply(bool dark)`、`IsDark`）。色は `static readonly` → `static` プロパティ（`=> _active.X`）化（呼び出し記法不変）。`SubtleText`/`ClaudeBrand`/`CodexBrand`（旧 StatusForm 専用）を昇格。`PaintGlassCard` の白固定グロス/内側境界/上方向ライトンをパレット駆動（ダークは低 alpha＝白帯にならない）。ダークパレットは Surface/Card/各テキスト/Track/Detail を反転、Good/Warning/Bad・ブランドはダーク用に明度調整。
+- **検出/適用**: 新 `WindowsTheme`（registry `AppsUseLightTheme==0`、欠落時ライト）で System を解決。`Program.Main` の `Initialize()` 前に `UsageTheme.Apply(dark)`＋`Application.SetColorMode(dark?Dark:Classic)`（標準コントロール＝設定ダイアログをダーク化）。`DpiUnaware` と独立。
+- **窓**: `CopilotWindow` は `UsageTheme` 参照のみで自動追従。`StatusForm` は重複色フィールドを `UsageTheme` への前方委譲（プロパティ）に置換＋複製 `PaintGlassCard` を `UsageTheme.PaintGlassCard` へ統一（未使用 `Separator`・dead `Tint/Lighten` 削除）。`GitHubCopilotSetupForm` の出力 TextBox を `UsageTheme.DetailBackground`/`SecondaryText` に。
+- **設定ダイアログ**: ログイン状態色を `UsageTheme.StatusColor`（テーマ対応）に。ボタンは `FlatStyle.System`（ダーク見栄え）。`OnHandleCreated` でダーク時タイトルバー（`DwmSetWindowAttribute(20)`・Win11+/失敗無視）。レイアウトは共通設定 GroupBox を +40 して全体を下げ、ダイアログ高さ 706→746。
+- **トレイアイコン**: 現状維持（暗背景向けパレットのまま）。
+- **検証**: DrawToBitmap で CopilotWindow/StatusForm をライト/ダーク両方描画し目視（ダークで面暗・文字白・グロス非破綻・バー/リング/ブランド色が読める）。設定ダイアログのダーク化は実機目視。
+
 ---
 
 ## 1. 背景と目的

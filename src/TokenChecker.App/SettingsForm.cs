@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using TokenChecker.Core;
 
 namespace TokenChecker.App;
@@ -7,6 +8,7 @@ internal sealed class SettingsForm : Form
     // Common
     private readonly ComboBox _refreshInterval = new();
     private readonly CheckBox _autoStart = new();
+    private readonly ComboBox _theme = new();
 
     // Claude / Codex
     private readonly CheckBox _ccWindowEnabled = new();
@@ -43,7 +45,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(404, 706);
+        Size = new Size(404, 746);
         Font = new Font("Segoe UI", 9F);
 
         // ----- 共通設定 -----------------------------------------------------
@@ -51,7 +53,7 @@ internal sealed class SettingsForm : Form
         {
             Text = "共通設定",
             Location = new Point(12, 12),
-            Size = new Size(368, 92)
+            Size = new Size(368, 132)
         };
 
         var intervalLabel = new Label { Text = "更新間隔", AutoSize = true, Location = new Point(14, 28) };
@@ -67,15 +69,33 @@ internal sealed class SettingsForm : Form
         _autoStart.AutoSize = true;
         _autoStart.Location = new Point(14, 58);
 
+        var themeLabel = new Label { Text = "テーマ", AutoSize = true, Location = new Point(14, 90) };
+        _theme.DropDownStyle = ComboBoxStyle.DropDownList;
+        _theme.Location = new Point(110, 86);
+        _theme.Size = new Size(170, 24);
+        _theme.Items.Add(new ThemeOption(ThemeMode.System));
+        _theme.Items.Add(new ThemeOption(ThemeMode.Light));
+        _theme.Items.Add(new ThemeOption(ThemeMode.Dark));
+        var themeNote = new Label
+        {
+            Text = "（再起動で反映）",
+            AutoSize = true,
+            ForeColor = SystemColors.GrayText,
+            Location = new Point(110, 113)
+        };
+
         gbCommon.Controls.Add(intervalLabel);
         gbCommon.Controls.Add(_refreshInterval);
         gbCommon.Controls.Add(_autoStart);
+        gbCommon.Controls.Add(themeLabel);
+        gbCommon.Controls.Add(_theme);
+        gbCommon.Controls.Add(themeNote);
 
         // ----- Claude / Codex 設定 -----------------------------------------
         var gbClaudeCodex = new GroupBox
         {
             Text = "Claude / Codex 設定",
-            Location = new Point(12, 112),
+            Location = new Point(12, 152),
             Size = new Size(368, 272)
         };
 
@@ -181,7 +201,7 @@ internal sealed class SettingsForm : Form
         var gbCopilot = new GroupBox
         {
             Text = "GitHub Copilot 設定",
-            Location = new Point(12, 392),
+            Location = new Point(12, 432),
             Size = new Size(368, 224)
         };
 
@@ -220,8 +240,8 @@ internal sealed class SettingsForm : Form
         _copilotAccent.DropDownStyle = ComboBoxStyle.DropDownList;
         _copilotAccent.Location = new Point(110, 148);
         _copilotAccent.Size = new Size(180, 24);
-        _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Green));
         _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Blue));
+        _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Green));
         _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Sky));
         _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Purple));
         _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Slate));
@@ -255,14 +275,14 @@ internal sealed class SettingsForm : Form
         {
             Text = "OK",
             DialogResult = DialogResult.OK,
-            Location = new Point(224, 626),
+            Location = new Point(224, 666),
             Size = new Size(76, 28)
         };
         var cancelButton = new Button
         {
             Text = "キャンセル",
             DialogResult = DialogResult.Cancel,
-            Location = new Point(306, 626),
+            Location = new Point(306, 666),
             Size = new Size(76, 28)
         };
 
@@ -277,6 +297,47 @@ internal sealed class SettingsForm : Form
 
         LoadSettings(settings);
         RefreshAuthStatusLabels();
+
+        // Standard-style buttons render poorly under SetColorMode dark; the System
+        // (OS-drawn) style follows the dark theme cleanly.
+        ApplyButtonStyle(this);
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        // SetColorMode does not theme the (non-client) title bar; ask DWM for the
+        // dark frame so the dialog chrome matches the dark content. Win11+/no-op else.
+        if (UsageTheme.IsDark)
+        {
+            try
+            {
+                var dark = 1;
+                _ = DwmSetWindowAttribute(Handle, DwmwaUseImmersiveDarkMode, ref dark, sizeof(int));
+            }
+            catch
+            {
+                // Older Windows / unsupported — leave the default frame.
+            }
+        }
+    }
+
+    private const int DwmwaUseImmersiveDarkMode = 20;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    private static void ApplyButtonStyle(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child is Button button)
+            {
+                button.FlatStyle = FlatStyle.System;
+            }
+
+            ApplyButtonStyle(child);
+        }
     }
 
     public AppSettings ToSettings(AppSettings current)
@@ -285,6 +346,7 @@ internal sealed class SettingsForm : Form
 
         settings.RefreshIntervalSeconds = (_refreshInterval.SelectedItem as RefreshIntervalOption)?.Seconds ?? current.RefreshIntervalSeconds;
         settings.AutoStartEnabled = _autoStart.Checked;
+        settings.Theme = (_theme.SelectedItem as ThemeOption)?.Mode ?? current.Theme;
 
         settings.ClaudeCodexWindowEnabled = _ccWindowEnabled.Checked;
         settings.ClaudeCodexDisplayMode = (_ccDisplayMode.SelectedItem as WindowDisplayModeOption)?.Mode ?? current.ClaudeCodexDisplayMode;
@@ -317,6 +379,7 @@ internal sealed class SettingsForm : Form
     {
         _refreshInterval.SelectedIndex = IndexOf(_refreshInterval, o => (o as RefreshIntervalOption)?.Seconds == settings.RefreshIntervalSeconds);
         _autoStart.Checked = settings.AutoStartEnabled;
+        _theme.SelectedIndex = IndexOf(_theme, o => (o as ThemeOption)?.Mode == settings.Theme);
 
         _ccWindowEnabled.Checked = settings.ClaudeCodexWindowEnabled;
         _ccDisplayMode.SelectedIndex = IndexOf(_ccDisplayMode, o => (o as WindowDisplayModeOption)?.Mode == settings.ClaudeCodexDisplayMode);
@@ -480,14 +543,20 @@ internal sealed class SettingsForm : Form
             _ => "状態不明"
         };
 
-        label.ForeColor = status switch
-        {
-            ProviderStatus.Available => Color.FromArgb(31, 130, 73),
-            ProviderStatus.NotInstalled or ProviderStatus.NotLoggedIn => Color.FromArgb(165, 102, 21),
-            ProviderStatus.Unauthorized or ProviderStatus.RateLimited => Color.FromArgb(165, 102, 21),
-            ProviderStatus.Error => Color.FromArgb(175, 60, 60),
-            _ => SystemColors.ControlText
-        };
+        // Theme-aware severity color (green/amber/red), matching the windows and
+        // adapting to light/dark.
+        label.ForeColor = UsageTheme.StatusColor(status);
+    }
+
+    private sealed record ThemeOption(ThemeMode Mode)
+    {
+        public override string ToString()
+            => Mode switch
+            {
+                ThemeMode.Light => "ライト",
+                ThemeMode.Dark => "ダーク",
+                _ => "システム連動"
+            };
     }
 
     private sealed record RefreshIntervalOption(int Seconds)
@@ -545,8 +614,8 @@ internal sealed class SettingsForm : Form
         public override string ToString()
             => Accent switch
             {
-                CopilotAccent.Green => "グリーン（既定）",
-                CopilotAccent.Blue => "ブルー",
+                CopilotAccent.Blue => "ブルー（既定）",
+                CopilotAccent.Green => "グリーン",
                 CopilotAccent.Sky => "スカイ",
                 CopilotAccent.Purple => "パープル",
                 CopilotAccent.Slate => "スレート",

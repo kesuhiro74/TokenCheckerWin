@@ -73,10 +73,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _fadeInTimer = new();
     private readonly System.Windows.Forms.Timer _hoverLeaveTimer = new();
     private Form? _fadeTarget;
-    // Outside-click dismissal for a pinned/persistent Copilot window: briefly
-    // suppress the Deactivate-driven hide around the icon's own click and while the
-    // shared context menu is open, so those interactions don't fight the dismissal.
-    private int _suppressCopilotDeactivateUntil;
+    // Outside-click dismissal for a pinned HoverPreview window (either popup):
+    // briefly suppress the Deactivate-driven hide around an icon's own click and
+    // while the shared context menu is open, so those interactions don't fight it.
+    private int _suppressPopupDeactivateUntil;
     private bool _contextMenuOpen;
 
     private readonly Dictionary<string, ServiceUsage> _lastSuccessfulServices = new(StringComparer.OrdinalIgnoreCase);
@@ -158,19 +158,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _copilotIcon.MouseMove += (_, _) => OnIconMouseMove(_copilot);
         _controlIcon.MouseUp += (_, e) => { if (e.Button == MouseButtons.Left) ShowSettings(); };
 
-        // Outside-click dismissal for a stuck Copilot window (Always-shown or pinned
-        // via click): the window is activated when shown by a click, so clicking
-        // outside it deactivates it -> hide + unpin.
-        _copilotWindow.Deactivate += (_, _) => OnCopilotDeactivated();
+        // Outside-click dismissal for a window pinned via a HoverPreview tray click:
+        // the window is activated when shown by a click, so clicking outside it
+        // deactivates it -> hide + unpin. Both popups behave identically here.
+        _statusForm.Deactivate += (_, _) => OnPopupDeactivated(_status);
+        _copilotWindow.Deactivate += (_, _) => OnPopupDeactivated(_copilot);
         // Interacting with ANY tray icon (left toggle OR right-click to open the SHARED
-        // context menu) deactivates the Copilot window. Suppress the dismissal on each
-        // icon's MouseDown — the earliest signal, ahead of both the Deactivate and the
-        // menu's Opening — so tray/menu actions never hide a pinned window. A plain
-        // click elsewhere (desktop / another app) is NOT suppressed, so it still hides.
-        void SuppressCopilotDismiss(object? _, MouseEventArgs __) => _suppressCopilotDeactivateUntil = Environment.TickCount + 500;
-        _statusIcon.MouseDown += SuppressCopilotDismiss;
-        _copilotIcon.MouseDown += SuppressCopilotDismiss;
-        _controlIcon.MouseDown += SuppressCopilotDismiss;
+        // context menu) deactivates a popup. Suppress the dismissal on each icon's
+        // MouseDown — the earliest signal, ahead of both the Deactivate and the menu's
+        // Opening — so tray/menu actions never hide a pinned window. A plain click
+        // elsewhere (desktop / another app) is NOT suppressed, so it still hides.
+        void SuppressPopupDismiss(object? _, MouseEventArgs __) => _suppressPopupDeactivateUntil = Environment.TickCount + 500;
+        _statusIcon.MouseDown += SuppressPopupDismiss;
+        _copilotIcon.MouseDown += SuppressPopupDismiss;
+        _controlIcon.MouseDown += SuppressPopupDismiss;
 
         // ----- Context menu (5 items): 今すぐ更新 / Claude·Codex 表示モード /
         // GitHub Copilot 表示モード / 設定 / 終了. Login, first-time-setup, and the
@@ -487,13 +488,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
             StopFadeIn(slot.Form);
             slot.Form.Opacity = 1d;
             slot.Activate();
-            if (ReferenceEquals(slot, _copilot))
-            {
-                // Re-base the outside-click suppression to the actual activation moment:
-                // the click -> show -> Activate path can take longer than the MouseDown
-                // window, so a stray Deactivate right after showing must not dismiss it.
-                _suppressCopilotDeactivateUntil = Environment.TickCount + 400;
-            }
+            // Re-base the outside-click suppression to the actual activation moment:
+            // the click -> show -> Activate path can take longer than the MouseDown
+            // window, so a stray Deactivate right after showing must not dismiss it.
+            _suppressPopupDeactivateUntil = Environment.TickCount + 400;
         }
 
         UpdateCopilotPinnedAppearance();
@@ -523,19 +521,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _copilotWindow.SetPinned(bordered);
     }
 
-    // Click-outside-to-dismiss for the Copilot window. The Deactivate event fires
-    // for BOTH modes once the window is activated, but dismissal is gated below to
-    // HoverPreview + pinned only — an Always ("常時表示") window is never dismissed
-    // here. Suppressed around any tray icon's own click and while the shared context
-    // menu is open so tray/menu actions don't conflict.
-    private void OnCopilotDeactivated()
+    // Click-outside-to-dismiss for either popup. The Deactivate event fires once the
+    // window is activated, but dismissal is gated below to HoverPreview + pinned only
+    // — an Always ("常時表示") window is never dismissed here. Suppressed around any
+    // tray icon's own click and while the shared context menu is open so tray/menu
+    // actions don't conflict. Both the Claude/Codex and Copilot windows share this.
+    private void OnPopupDeactivated(PopupSlot slot)
     {
-        if (_disposed || _contextMenuOpen || Environment.TickCount < _suppressCopilotDeactivateUntil)
+        if (_disposed || _contextMenuOpen || Environment.TickCount < _suppressPopupDeactivateUntil)
         {
             return;
         }
 
-        if (!_copilot.Form.Visible)
+        if (!slot.Form.Visible)
         {
             return;
         }
@@ -543,14 +541,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // Outside-click dismissal applies ONLY to a HoverPreview window pinned via a
         // click. An Always ("常時表示") window must NOT be dismissed by an outside
         // click — that would defeat the always-visible setting.
-        var dismissable = _copilot.Mode == WindowDisplayMode.HoverPreview && _copilot.Pinned;
+        var dismissable = slot.Mode == WindowDisplayMode.HoverPreview && slot.Pinned;
         if (!dismissable)
         {
             return;
         }
 
-        _copilot.Pinned = false;
-        HidePopup(_copilot);
+        slot.Pinned = false;
+        HidePopup(slot);
     }
 
     // Reconcile each window's visibility with its enabled + display method.

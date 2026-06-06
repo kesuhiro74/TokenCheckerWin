@@ -99,7 +99,10 @@ internal sealed class GitHubCopilotSetupForm : Form
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
             BorderStyle = BorderStyle.FixedSingle,
-            BackColor = Color.FromArgb(247, 248, 252),
+            // Theme-aware so the explicit colors don't fight dark mode (an explicit
+            // light BackColor would otherwise show light text on light in dark mode).
+            BackColor = UsageTheme.DetailBackground,
+            ForeColor = UsageTheme.SecondaryText,
             Location = new Point(16, 286),
             Size = new Size(492, 130),
             TabStop = false,
