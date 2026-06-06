@@ -4,10 +4,9 @@ TokenCheckerWin は、Claude Code と OpenAI Codex と GitHub Copilot の AI Cre
 
 Claude Code / Codex の 5時間制限・週次制限を取得し、通常モード、コンパクトモード、ミニマムモードで見やすく表示します。取得に失敗した場合でも、前回成功した使用率を表示できます。
 
-## 画面イメージ
+## 画面例
 
-<img width="416" height="108" alt="image" src="https://github.com/user-attachments/assets/73a407f5-ba72-4790-8b86-102900c00d86" />
-
+<img width="416" height="108" alt="image" src="https://github.com/user-attachments/assets/73a407f5-ba72-4790-8b86-102900c00d86" /> 
 <img width="298" height="204" alt="image" src="https://github.com/user-attachments/assets/6e086651-341a-4536-b537-f5b01184f757" />
 <img width="296" height="202" alt="image" src="https://github.com/user-attachments/assets/73d3a0b0-8337-47ff-b8b6-cf3c6b01d89f" />
 
