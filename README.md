@@ -1,6 +1,6 @@
 # TokenCheckerWin
 
-TokenCheckerWin は、Claude Code と OpenAI Codex の使用率を Windows の通知領域から確認できる常駐アプリです。
+TokenCheckerWin は、Claude Code と OpenAI Codex と GitHub Copilot の AI Credits の使用率を Windows の通知領域から確認できる常駐アプリです。
 
 Claude Code / Codex の 5時間制限・週次制限を取得し、通常モード、コンパクトモード、ミニマムモードで見やすく表示します。取得に失敗した場合でも、前回成功した使用率を表示できます。
 
