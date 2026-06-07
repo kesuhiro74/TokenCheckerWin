@@ -47,7 +47,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(404, 746);
+        Size = new Size(404, 786);
         Font = new Font("Segoe UI", 9F);
 
         // ----- 共通設定 -----------------------------------------------------
