@@ -1,0 +1,25 @@
+#!/bin/sh
+# Pre-push gate: the xUnit suite must pass before any push.
+#
+# One-time setup per clone (makes git use this folder for hooks):
+#     git config core.hooksPath .githooks
+#
+# Note: if TokenChecker.exe is running it locks the build output; stop it first
+#     (Stop-Process -Name TokenChecker -Force) so the build/tests can run.
+
+root=$(git rev-parse --show-toplevel)
+echo "[pre-push] running: dotnet test (must pass before push) ..."
+
+dotnet test "$root/TokenCheckerWin.sln" -c Debug --nologo
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo "" >&2
+  echo "[pre-push] TESTS FAILED — push aborted." >&2
+  echo "[pre-push] Fix the code/tests so 'dotnet test' is green, then push again." >&2
+  echo "[pre-push] (To bypass in a genuine emergency: git push --no-verify)" >&2
+  exit 1
+fi
+
+echo "[pre-push] tests passed — proceeding with push."
+exit 0

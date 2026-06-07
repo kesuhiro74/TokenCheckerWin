@@ -46,7 +46,10 @@ internal sealed class SettingsStore
     // field being absent from the on-disk JSON (field-presence, not value) so a
     // runtime change never re-triggers a migration. The legacy fields no longer
     // exist on AppSettings, so they are read from the raw JSON here.
-    private static void ApplyLegacyMigrations(string json, AppSettings settings)
+    // `internal` (not private) only so the unit tests can drive every migration
+    // branch from a JSON string without touching the real settings.json — the
+    // behavior is unchanged.
+    internal static void ApplyLegacyMigrations(string json, AppSettings settings)
     {
         JsonDocument doc;
         try

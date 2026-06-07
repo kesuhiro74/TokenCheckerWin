@@ -57,6 +57,11 @@ internal sealed class CopilotUsageStore
         _path = Path.Combine(appData, "TokenCheckerWin", "copilot_usage.json");
     }
 
+    // Test seam: back the store with an explicit file path so unit tests never
+    // read or write the real copilot_usage.json. Schema and load/save behavior
+    // are unchanged — only the location differs.
+    internal CopilotUsageStore(string path) => _path = path;
+
     public CopilotUsageRecord? Load()
     {
         try
@@ -106,9 +111,15 @@ internal sealed class CopilotUsageTracker
     private readonly CopilotUsageStore _store;
     private CopilotUsageRecord _record;
 
-    public CopilotUsageTracker()
+    public CopilotUsageTracker() : this(new CopilotUsageStore())
     {
-        _store = new CopilotUsageStore();
+    }
+
+    // Test seam: inject a store backed by a temp file. No behavior change — the
+    // default constructor uses the real %APPDATA% store.
+    internal CopilotUsageTracker(CopilotUsageStore store)
+    {
+        _store = store;
         _record = _store.Load() ?? new CopilotUsageRecord();
     }
 

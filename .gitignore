@@ -11,3 +11,6 @@ artifacts/
 .codex/
 
 publish/
+
+# Generated artifacts (OGP images, test result reports, scratch output)
+outputs/

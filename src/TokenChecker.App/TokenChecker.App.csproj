@@ -21,4 +21,10 @@
   <ItemGroup>
     <ProjectReference Include="..\TokenChecker.Core\TokenChecker.Core.csproj" />
   </ItemGroup>
+
+  <!-- Expose internal types (AppSettings, UsageTheme, CopilotUsageTracker,
+       SettingsStore migrations) to the unit-test assembly only. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="TokenChecker.App.Tests" />
+  </ItemGroup>
 </Project>
