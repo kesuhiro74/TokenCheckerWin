@@ -909,9 +909,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         if (ccOn)
         {
+            // Only the enabled (visible) services get a bar — one shows a single bar.
+            var showClaude = _settings.IsServiceVisible("Claude");
+            var showCodex = _settings.IsServiceVisible("Codex");
             Icon icon = loading || snapshot is null
-                ? TrayIconRenderer.CreateIcon(null, null, TrayIconRenderer.OverallState.Loading)
-                : MakeStatusIcon(snapshot);
+                ? TrayIconRenderer.CreateStatusBarsIcon(null, null, showClaude, showCodex, loading: true)
+                : MakeStatusIcon(snapshot, showClaude, showCodex);
             SetIcon(_status, icon);
             _statusIcon.Text = loading ? "TokenCheckerWin 更新中" : TrimTooltip(BuildStatusTooltip(snapshot));
         }
@@ -932,10 +935,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _controlIcon.Visible = !ccOn && !cpOn;
     }
 
-    private static Icon MakeStatusIcon(UsageSnapshot snapshot)
+    private static Icon MakeStatusIcon(UsageSnapshot snapshot, bool showClaude, bool showCodex)
     {
-        var state = TrayIconRenderer.DetermineState(snapshot, out var claudePercent, out var codexPercent);
-        return TrayIconRenderer.CreateIcon(claudePercent, codexPercent, state);
+        // DetermineState computes each service's percent (max of its windows); the
+        // overall state is no longer needed because each bar self-escalates at 80/95.
+        _ = TrayIconRenderer.DetermineState(snapshot, out var claudePercent, out var codexPercent);
+        return TrayIconRenderer.CreateStatusBarsIcon(claudePercent, codexPercent, showClaude, showCodex, loading: false);
     }
 
     private static void SetIcon(PopupSlot slot, Icon icon)

@@ -35,6 +35,11 @@ internal static class TrayIconRenderer
     private static readonly Color CopilotNormalFill = Color.FromArgb(96, 198, 140);
     private static readonly Color CopilotBarOutline = Color.FromArgb(120, 128, 145);
 
+    // Claude/Codex vertical-bar fills (blue / purple), echoing the former ring's
+    // normal colors. Each bar still escalates to amber/red at 80/95 (UsageTheme).
+    private static readonly Color ClaudeBarFill = NormalOuter;
+    private static readonly Color CodexBarFill = NormalInner;
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr handle);
 
@@ -88,6 +93,74 @@ internal static class TrayIconRenderer
         }
     }
 
+    // Renders the Claude/Codex tray icon as up to two side-by-side vertical % bars
+    // (the same bar style as the Copilot icon): left = Claude (blue), right = Codex
+    // (purple). Only the enabled services get a bar — one enabled service shows a
+    // single wider, centered bar. Each bar fills bottom→top to its service's
+    // percent and escalates to amber/red at 80/95.
+    public static Icon CreateStatusBarsIcon(
+        double? claudePercent, double? codexPercent, bool showClaude, bool showCodex, bool loading, int size = 32)
+    {
+        using var bitmap = new Bitmap(size, size);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            DrawStatusBars(graphics, size, claudePercent, codexPercent, showClaude, showCodex, loading);
+        }
+
+        var handle = bitmap.GetHicon();
+        try
+        {
+            using var temp = Icon.FromHandle(handle);
+            return (Icon)temp.Clone();
+        }
+        finally
+        {
+            DestroyIcon(handle);
+        }
+    }
+
+    private static void DrawStatusBars(
+        Graphics graphics, int size, double? claudePercent, double? codexPercent, bool showClaude, bool showCodex, bool loading)
+    {
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.Clear(Color.Transparent);
+
+        var bars = new List<(double? Percent, Color Fill)>();
+        if (showClaude)
+        {
+            bars.Add((claudePercent, ClaudeBarFill));
+        }
+
+        if (showCodex)
+        {
+            bars.Add((codexPercent, CodexBarFill));
+        }
+
+        if (bars.Count == 0)
+        {
+            // Neither service selected — show a single empty placeholder bar so the
+            // tray slot is never blank.
+            bars.Add((null, ClaudeBarFill));
+        }
+
+        var topPad = size * 0.07f;
+        var barHeight = size - topPad * 2f;
+
+        // One bar reuses the Copilot bar's generous width; two bars are narrower
+        // with a gap. The group is centered horizontally either way.
+        var barWidth = bars.Count == 1 ? size * 0.46f : size * 0.30f;
+        var gap = bars.Count == 1 ? 0f : size * 0.12f;
+        var totalWidth = barWidth * bars.Count + gap * (bars.Count - 1);
+        var startLeft = (size - totalWidth) / 2f;
+        var radius = Math.Max(1.5f, Math.Min(barWidth * 0.22f, size * 0.12f));
+
+        for (var i = 0; i < bars.Count; i++)
+        {
+            var rect = new RectangleF(startLeft + i * (barWidth + gap), topPad, barWidth, barHeight);
+            DrawBar(graphics, rect, radius, size, bars[i].Percent, loading, bars[i].Fill);
+        }
+    }
+
     private static void DrawCopilotBar(Graphics graphics, int size, double? percent, bool loading, Color normalFill)
     {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -103,6 +176,14 @@ internal static class TrayIconRenderer
         // collapses at tiny tray sizes nor over-rounds at high DPI.
         var radius = Math.Max(1.5f, Math.Min(barWidth * 0.22f, size * 0.12f));
 
+        DrawBar(graphics, rect, radius, size, percent, loading, normalFill);
+    }
+
+    // Draws one vertical % bar (rounded track + bottom→top fill + outline) inside
+    // `rect`. Shared by the Copilot icon and the Claude/Codex status bars.
+    private static void DrawBar(
+        Graphics graphics, RectangleF rect, float radius, int size, double? percent, bool loading, Color normalFill)
+    {
         using (var trackPath = UsageTheme.CreateRoundedRectPath(rect, radius))
         using (var trackBrush = new SolidBrush(InnerTrack))
         {
@@ -111,14 +192,14 @@ internal static class TrayIconRenderer
 
         if (!loading && UsageRingRenderer.TryClampPercent(percent, out var clamped))
         {
-            var fillHeight = (float)(barHeight * (clamped / 100d));
+            var fillHeight = (float)(rect.Height * (clamped / 100d));
             if (fillHeight > 0.5f)
             {
                 // Clip the fill to the rounded track so its top/bottom follow the pill.
                 using var clip = UsageTheme.CreateRoundedRectPath(rect, radius);
                 var previous = graphics.Clip;
                 graphics.SetClip(clip, CombineMode.Replace);
-                var fillRect = new RectangleF(rect.X, rect.Bottom - fillHeight, barWidth, fillHeight);
+                var fillRect = new RectangleF(rect.X, rect.Bottom - fillHeight, rect.Width, fillHeight);
                 using (var fillBrush = new SolidBrush(CopilotBarColor(clamped, normalFill)))
                 {
                     graphics.FillRectangle(fillBrush, fillRect);

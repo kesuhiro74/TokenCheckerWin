@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 using TokenChecker.Core;
 
@@ -287,9 +288,19 @@ internal sealed class SettingsForm : Form
             Size = new Size(76, 28)
         };
 
+        // App version, shown quietly in the footer (left of the buttons).
+        var versionLabel = new Label
+        {
+            Text = $"TokenCheckerWin v{AppVersion()}",
+            AutoSize = true,
+            ForeColor = SystemColors.GrayText,
+            Location = new Point(16, 672)
+        };
+
         Controls.Add(gbCommon);
         Controls.Add(gbClaudeCodex);
         Controls.Add(gbCopilot);
+        Controls.Add(versionLabel);
         Controls.Add(okButton);
         Controls.Add(cancelButton);
 
@@ -327,6 +338,23 @@ internal sealed class SettingsForm : Form
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    // The app version for the footer label. Prefers the informational version
+    // (matches the csproj <Version>, e.g. "0.7.0"), stripping any "+build" suffix;
+    // falls back to the assembly version's Major.Minor.Build.
+    private static string AppVersion()
+    {
+        var assembly = typeof(SettingsForm).Assembly;
+        var info = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(info))
+        {
+            var plus = info.IndexOf('+');
+            return plus >= 0 ? info[..plus] : info;
+        }
+
+        var version = assembly.GetName().Version;
+        return version is null ? "?" : $"{version.Major}.{version.Minor}.{version.Build}";
+    }
 
     private static void ApplyButtonStyle(Control root)
     {
