@@ -860,7 +860,7 @@ internal sealed class StatusForm : Form
             var window = FindFiveHourWindow(fallback);
             _ring.SetValue(window?.UsedPercent);
             _reset.Text = window is null
-                ? $"{_displayName}: リセット時刻不明"
+                ? Strings.Tf("{0}: リセット時刻不明", _displayName)
                 : ResetTimeFormatter.Format(window);
         }
 

@@ -96,6 +96,7 @@ internal static class Strings
         ["更新中"] = "Updating",
         ["最終更新: 更新中"] = "Last updated: updating",
         ["最終更新: {0}"] = "Last updated: {0}",
+        ["{0}: リセット時刻不明"] = "{0}: reset time unknown",
 
         // ----- Tray menu & tooltips (TrayApplicationContext) -----
         ["今すぐ更新"] = "Refresh now",
@@ -111,5 +112,156 @@ internal static class Strings
         ["TokenCheckerWin 更新中"] = "TokenCheckerWin updating",
         ["GitHub Copilot 更新中"] = "GitHub Copilot updating",
         ["未取得"] = "No data",
+
+        // ----- Copilot window (CopilotWindow) -----
+        ["使用済み"] = "used",
+        ["残 {0} · {1}"] = "{0} left · {1}",
+        ["credits 使用"] = "credits used",
+        ["当月集計 · 設定でプランを選ぶと上限・残量を表示"] = "This month · pick a plan in settings to show the cap & remaining",
+        ["設定画面の「初回設定」から手順を確認してください"] = "See the steps under \"First-time setup\" in settings",
+        ["このペースだと {0} 頃に 100%"] = "At this pace, 100% around {0}",
+        ["このペースなら今月は上限に到達しない見込み"] = "At this pace it won't reach the cap this month",
+        ["すでに上限に到達しています"] = "Already at the cap",
+        ["予測にはデータ不足"] = "Not enough data to project",
+        ["本日9:00以降 +{0} credits（+{1}%）"] = "Since 9:00 today: +{0} credits (+{1}%)",
+        ["本日9:00以降 +{0} credits"] = "Since 9:00 today: +{0} credits",
+        ["本日9:00以降: 未計測"] = "Since 9:00 today: not measured",
+        ["当月集計（暦月近似）"] = "This month (calendar-month approx.)",
+        ["当月集計 · リセット目安 {0}/{1}（推定）"] = "This month · est. reset {0}/{1}",
+        ["GITHUB_TOKEN が未設定です"] = "GITHUB_TOKEN is not set",
+        ["GITHUB_TOKEN の Plan(Read) 権限・個人課金・Enhanced Billing 対象を確認してください"]
+            = "Check GITHUB_TOKEN's Plan (Read) permission, personal billing, and Enhanced Billing eligibility",
+        ["GITHUB_TOKEN が無効または期限切れです"] = "GITHUB_TOKEN is invalid or expired",
+        ["取得が一時的に制限されています。前回成功値を表示しています"] = "Temporarily rate-limited — showing the last successful values",
+        ["取得が一時的に制限されています"] = "Temporarily rate-limited",
+
+        // ----- First-time setup wizard (GitHubCopilotSetupForm) -----
+        ["GitHub Copilot 初回設定"] = "GitHub Copilot first-time setup",
+        ["「GitHub のトークン作成ページを開く」「環境変数の設定方法を表示」「接続テスト」の結果はここに表示されます。"]
+            = "Output from \"Open GitHub token page\", \"Show how to set the environment variable\", and \"Connection test\" appears here.",
+        ["GitHub のトークン作成ページを開く"] = "Open GitHub token page",
+        ["環境変数の設定方法を表示"] = "Show how to set the environment variable",
+        ["接続テスト"] = "Connection test",
+        ["閉じる"] = "Close",
+        ["接続テスト中..."] = "Testing connection...",
+        ["ブラウザを開けませんでした。GitHub の personal access token 作成ページを手動で開いてください。"]
+            = "Could not open the browser. Please open the GitHub personal access token page manually.",
+        ["GitHub Copilot AI Credits を取得できませんでした"] = "Could not read GitHub Copilot AI Credits",
+        ["正常取得しました。\r\n当月使用量: {0} / {1} credits\r\n使用率: {2}%"]
+            = "Fetched successfully.\r\nThis month: {0} / {1} credits\r\nUsage: {2}%",
+        ["正常取得しました。\r\n当月使用量: {0} credits"] = "Fetched successfully.\r\nThis month: {0} credits",
+        ["権限不足です。fine-grained PAT の User permissions: Plan = read を確認してください"]
+            = "Insufficient permission. Check the fine-grained PAT's User permissions: Plan = read.",
+        ["トークンが無効、期限切れ、または取り消されています"] = "The token is invalid, expired, or revoked.",
+        ["GitHub API のレート制限中です。しばらくしてから再試行してください"]
+            = "The GitHub API is rate-limited. Please try again later.",
+
+        ["GitHub Copilot AI Credits を取得するには、GitHub の fine-grained personal access token が必要です。\r\n\r\n"
+            + "この画面では token を入力しません。\r\n"
+            + "GitHub の画面で token を作成し、Windows のユーザー環境変数 GITHUB_TOKEN に設定します。\r\n\r\n"
+            + "必要な権限:\r\n"
+            + "  - User permissions: Plan = read\r\n\r\n"
+            + "TokenCheckerWin はトークンを保存しません。"]
+            = "To read GitHub Copilot AI Credits you need a GitHub fine-grained personal access token.\r\n\r\n"
+            + "You do NOT enter the token on this screen.\r\n"
+            + "Create the token on GitHub and set it in the Windows user environment variable GITHUB_TOKEN.\r\n\r\n"
+            + "Required permission:\r\n"
+            + "  - User permissions: Plan = read\r\n\r\n"
+            + "TokenCheckerWin does not store the token.",
+
+        ["GitHub の fine-grained personal access token 作成画面で、以下を設定してください。\r\n\r\n"
+            + "1. Token name\r\n"
+            + "   Token name に分かりやすい名前を入力してください。\r\n"
+            + "   例: TokenChecker\r\n\r\n"
+            + "2. Expiration\r\n"
+            + "   有効期限を設定してください。\r\n"
+            + "   推奨: 90 days\r\n"
+            + "   継続利用を優先する場合は No expiration でも利用できます。\r\n\r\n"
+            + "3. Permissions\r\n"
+            + "   Permissions の [+ Add permissions] を押してください。\r\n"
+            + "   一覧から [Plan] を選択してください。\r\n"
+            + "   権限が [Read-only] になっていることを確認してください。\r\n\r\n"
+            + "4. Generate token\r\n"
+            + "   画面下部の [Generate token] を押してください。\r\n\r\n"
+            + "5. 作成された token をコピー\r\n"
+            + "   表示された token をコピーしてください。\r\n"
+            + "   TokenCheckerWin には token を入力しません。\r\n"
+            + "   次に「環境変数の設定方法を表示」を押して、GITHUB_TOKEN に設定してください。"]
+            = "On GitHub's fine-grained personal access token page, set the following.\r\n\r\n"
+            + "1. Token name\r\n"
+            + "   Enter a recognizable token name.\r\n"
+            + "   e.g. TokenChecker\r\n\r\n"
+            + "2. Expiration\r\n"
+            + "   Set an expiration.\r\n"
+            + "   Recommended: 90 days\r\n"
+            + "   You may also use No expiration if you prefer uninterrupted use.\r\n\r\n"
+            + "3. Permissions\r\n"
+            + "   Click [+ Add permissions].\r\n"
+            + "   Select [Plan] from the list.\r\n"
+            + "   Make sure the permission is [Read-only].\r\n\r\n"
+            + "4. Generate token\r\n"
+            + "   Click [Generate token] at the bottom.\r\n\r\n"
+            + "5. Copy the created token\r\n"
+            + "   Copy the displayed token.\r\n"
+            + "   You do NOT enter the token into TokenCheckerWin.\r\n"
+            + "   Next, click \"Show how to set the environment variable\" and set GITHUB_TOKEN.",
+
+        ["Windows のユーザー環境変数 GITHUB_TOKEN を設定する手順:\r\n\r\n"
+            + "1. スタートメニューで「環境変数」と検索し、「環境変数を編集」を開く\r\n"
+            + "   （または「システムのプロパティ」→「環境変数」）。\r\n"
+            + "2. 「ユーザー環境変数」で「新規」をクリック。\r\n"
+            + "3. 変数名に GITHUB_TOKEN、変数値に作成した fine-grained PAT を入力して保存。\r\n\r\n"
+            + "PowerShell で設定する場合の例:\r\n\r\n"
+            + "    [Environment]::SetEnvironmentVariable(\"GITHUB_TOKEN\", \"<your-token>\", \"User\")\r\n\r\n"
+            + "  - <your-token> を GitHub で生成した token に置き換えてください。\r\n"
+            + "  - 設定後、TokenCheckerWin を再起動してください。\r\n"
+            + "  - 既に開いている PowerShell や起動中のアプリには反映されない場合があります。\r\n"
+            + "  - TokenCheckerWin は token を保存せず、環境変数から読み取るだけです。"]
+            = "Steps to set the Windows user environment variable GITHUB_TOKEN:\r\n\r\n"
+            + "1. In the Start menu, search \"environment variables\" and open \"Edit environment variables for your account\"\r\n"
+            + "   (or System Properties -> Environment Variables).\r\n"
+            + "2. Under \"User variables\", click \"New\".\r\n"
+            + "3. Enter GITHUB_TOKEN as the name and your fine-grained PAT as the value, then save.\r\n\r\n"
+            + "Example using PowerShell:\r\n\r\n"
+            + "    [Environment]::SetEnvironmentVariable(\"GITHUB_TOKEN\", \"<your-token>\", \"User\")\r\n\r\n"
+            + "  - Replace <your-token> with the token you generated on GitHub.\r\n"
+            + "  - After setting it, restart TokenCheckerWin.\r\n"
+            + "  - Already-open PowerShell windows or running apps may not pick it up.\r\n"
+            + "  - TokenCheckerWin does not store the token; it only reads the environment variable.",
+
+        // ----- Settings dialog: groups, login status, options -----
+        ["共通設定"] = "Common",
+        ["Claude / Codex 設定"] = "Claude / Codex settings",
+        ["Claude / Codex ウィンドウを表示"] = "Show the Claude / Codex window",
+        ["表示方法"] = "Display method",
+        ["表示モード"] = "Display mode",
+        ["表示対象"] = "Shown services",
+        ["ログイン状態"] = "Auth status",
+        ["ログイン"] = "Log in",
+        ["ログアウト"] = "Log out",
+        ["認証状態を再確認"] = "Re-check auth status",
+        ["確認中"] = "Checking...",
+        ["ホスト未接続"] = "Host not connected",
+        ["GitHub Copilot 設定"] = "GitHub Copilot settings",
+        ["GitHub Copilot ウィンドウを表示"] = "Show the GitHub Copilot window",
+        ["プラン"] = "Plan",
+        ["Custom 上限"] = "Custom cap",
+        ["配色"] = "Accent color",
+        ["初回設定"] = "First-time setup",
+        ["コマンドの実行に失敗しました。"] = "Failed to run the command.",
+        ["正常"] = "OK",
+        ["CLI未検出"] = "CLI not found",
+        ["ホバー表示（トレイ）"] = "Hover preview (tray)",
+        ["なし（使用量のみ）"] = "None (usage only)",
+        ["Free（{0}）"] = "Free ({0})",
+        ["Pro（{0}）"] = "Pro ({0})",
+        ["Pro+（{0}）"] = "Pro+ ({0})",
+        ["Max（{0}）"] = "Max ({0})",
+        ["Custom（手入力）"] = "Custom (manual)",
+        ["ブルー（既定）"] = "Blue (default)",
+        ["グリーン"] = "Green",
+        ["スカイ"] = "Sky",
+        ["パープル"] = "Purple",
+        ["スレート"] = "Slate",
     };
 }

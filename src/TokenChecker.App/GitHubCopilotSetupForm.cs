@@ -14,17 +14,17 @@ internal sealed class GitHubCopilotSetupForm : Form
     // Public GitHub page only (no token/login). Constant so it is easy to audit.
     private const string TokenCreateUrl = "https://github.com/settings/personal-access-tokens/new";
 
-    private const string DescriptionText =
+    private static string DescriptionText => Strings.T(
         "GitHub Copilot AI Credits を取得するには、GitHub の fine-grained personal access token が必要です。\r\n\r\n"
         + "この画面では token を入力しません。\r\n"
         + "GitHub の画面で token を作成し、Windows のユーザー環境変数 GITHUB_TOKEN に設定します。\r\n\r\n"
         + "必要な権限:\r\n"
         + "  - User permissions: Plan = read\r\n\r\n"
-        + "TokenCheckerWin はトークンを保存しません。";
+        + "TokenCheckerWin はトークンを保存しません。");
 
     // Shown in the output area when the user opens the token-creation page, so the
     // GitHub-side choices are clear. No token value appears here.
-    private const string TokenCreateStepsText =
+    private static string TokenCreateStepsText => Strings.T(
         "GitHub の fine-grained personal access token 作成画面で、以下を設定してください。\r\n\r\n"
         + "1. Token name\r\n"
         + "   Token name に分かりやすい名前を入力してください。\r\n"
@@ -42,9 +42,9 @@ internal sealed class GitHubCopilotSetupForm : Form
         + "5. 作成された token をコピー\r\n"
         + "   表示された token をコピーしてください。\r\n"
         + "   TokenCheckerWin には token を入力しません。\r\n"
-        + "   次に「環境変数の設定方法を表示」を押して、GITHUB_TOKEN に設定してください。";
+        + "   次に「環境変数の設定方法を表示」を押して、GITHUB_TOKEN に設定してください。");
 
-    private const string EnvVarHelpText =
+    private static string EnvVarHelpText => Strings.T(
         "Windows のユーザー環境変数 GITHUB_TOKEN を設定する手順:\r\n\r\n"
         + "1. スタートメニューで「環境変数」と検索し、「環境変数を編集」を開く\r\n"
         + "   （または「システムのプロパティ」→「環境変数」）。\r\n"
@@ -55,7 +55,7 @@ internal sealed class GitHubCopilotSetupForm : Form
         + "  - <your-token> を GitHub で生成した token に置き換えてください。\r\n"
         + "  - 設定後、TokenCheckerWin を再起動してください。\r\n"
         + "  - 既に開いている PowerShell や起動中のアプリには反映されない場合があります。\r\n"
-        + "  - TokenCheckerWin は token を保存せず、環境変数から読み取るだけです。";
+        + "  - TokenCheckerWin は token を保存せず、環境変数から読み取るだけです。");
 
     private readonly int? _allowance;
     private readonly TextBox _output;
@@ -67,7 +67,7 @@ internal sealed class GitHubCopilotSetupForm : Form
     {
         _allowance = allowance;
 
-        Text = "GitHub Copilot 初回設定";
+        Text = Strings.T("GitHub Copilot 初回設定");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -78,7 +78,7 @@ internal sealed class GitHubCopilotSetupForm : Form
 
         var heading = new Label
         {
-            Text = "GitHub Copilot 初回設定",
+            Text = Strings.T("GitHub Copilot 初回設定"),
             AutoSize = true,
             Font = new Font("Segoe UI", 12F, FontStyle.Bold),
             Location = new Point(16, 14)
@@ -108,12 +108,12 @@ internal sealed class GitHubCopilotSetupForm : Form
             TabStop = false,
             WordWrap = true,
             Font = new Font("Consolas", 9F),
-            Text = "「GitHub のトークン作成ページを開く」「環境変数の設定方法を表示」「接続テスト」の結果はここに表示されます。"
+            Text = Strings.T("「GitHub のトークン作成ページを開く」「環境変数の設定方法を表示」「接続テスト」の結果はここに表示されます。")
         };
 
         _openTokenButton = new Button
         {
-            Text = "GitHub のトークン作成ページを開く",
+            Text = Strings.T("GitHub のトークン作成ページを開く"),
             Location = new Point(16, 200),
             Size = new Size(244, 30)
         };
@@ -125,7 +125,7 @@ internal sealed class GitHubCopilotSetupForm : Form
 
         _showEnvButton = new Button
         {
-            Text = "環境変数の設定方法を表示",
+            Text = Strings.T("環境変数の設定方法を表示"),
             Location = new Point(16, 236),
             Size = new Size(244, 30)
         };
@@ -133,7 +133,7 @@ internal sealed class GitHubCopilotSetupForm : Form
 
         _testButton = new Button
         {
-            Text = "接続テスト",
+            Text = Strings.T("接続テスト"),
             Location = new Point(272, 200),
             Size = new Size(140, 30)
         };
@@ -141,7 +141,7 @@ internal sealed class GitHubCopilotSetupForm : Form
 
         var closeButton = new Button
         {
-            Text = "閉じる",
+            Text = Strings.T("閉じる"),
             DialogResult = DialogResult.OK,
             Location = new Point(432, 424),
             Size = new Size(76, 28)
@@ -162,7 +162,7 @@ internal sealed class GitHubCopilotSetupForm : Form
     private async Task RunTestAsync()
     {
         _testButton.Enabled = false;
-        _output.Text = "接続テスト中...";
+        _output.Text = Strings.T("接続テスト中...");
         try
         {
             _output.Text = await RunConnectionTestAsync(_allowance).ConfigureAwait(true);
@@ -188,7 +188,7 @@ internal sealed class GitHubCopilotSetupForm : Form
             // in words instead of printing the URL.
             MessageBox.Show(
                 this,
-                "ブラウザを開けませんでした。GitHub の personal access token 作成ページを手動で開いてください。",
+                Strings.T("ブラウザを開けませんでした。GitHub の personal access token 作成ページを手動で開いてください。"),
                 "TokenCheckerWin",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
@@ -205,7 +205,7 @@ internal sealed class GitHubCopilotSetupForm : Form
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("GITHUB_TOKEN")))
         {
-            return "GITHUB_TOKEN が未設定です";
+            return Strings.T("GITHUB_TOKEN が未設定です");
         }
 
         ServiceUsage usage;
@@ -216,7 +216,7 @@ internal sealed class GitHubCopilotSetupForm : Form
         }
         catch
         {
-            return "GitHub Copilot AI Credits を取得できませんでした";
+            return Strings.T("GitHub Copilot AI Credits を取得できませんでした");
         }
 
         switch (usage.Status)
@@ -227,26 +227,26 @@ internal sealed class GitHubCopilotSetupForm : Form
                 if (allowance is int cap && cap > 0)
                 {
                     var percent = Math.Min(100d, used / (double)cap * 100d);
-                    return $"正常取得しました。\r\n当月使用量: {used:N0} / {cap:N0} credits\r\n使用率: {Math.Round(percent):0}%";
+                    return Strings.Tf("正常取得しました。\r\n当月使用量: {0} / {1} credits\r\n使用率: {2}%", used.ToString("N0"), cap.ToString("N0"), Math.Round(percent).ToString("0"));
                 }
 
-                return $"正常取得しました。\r\n当月使用量: {used:N0} credits";
+                return Strings.Tf("正常取得しました。\r\n当月使用量: {0} credits", used.ToString("N0"));
 
             case ProviderStatus.NotLoggedIn:
-                return "GITHUB_TOKEN が未設定です";
+                return Strings.T("GITHUB_TOKEN が未設定です");
 
             case ProviderStatus.Unauthorized:
                 // The masked Message carries "(401)" / "(403)" tokens (no secrets);
                 // used only to choose the canned message, never displayed.
                 return usage.Message?.Contains("(403)", StringComparison.Ordinal) == true
-                    ? "権限不足です。fine-grained PAT の User permissions: Plan = read を確認してください"
-                    : "トークンが無効、期限切れ、または取り消されています";
+                    ? Strings.T("権限不足です。fine-grained PAT の User permissions: Plan = read を確認してください")
+                    : Strings.T("トークンが無効、期限切れ、または取り消されています");
 
             case ProviderStatus.RateLimited:
-                return "GitHub API のレート制限中です。しばらくしてから再試行してください";
+                return Strings.T("GitHub API のレート制限中です。しばらくしてから再試行してください");
 
             default:
-                return "GitHub Copilot AI Credits を取得できませんでした";
+                return Strings.T("GitHub Copilot AI Credits を取得できませんでした");
         }
     }
 }

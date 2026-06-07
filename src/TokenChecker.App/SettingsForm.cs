@@ -41,7 +41,7 @@ internal sealed class SettingsForm : Form
     {
         _host = host;
 
-        Text = "設定";
+        Text = Strings.T("設定");
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -53,7 +53,7 @@ internal sealed class SettingsForm : Form
         // ----- 共通設定 -----------------------------------------------------
         var gbCommon = new GroupBox
         {
-            Text = "共通設定",
+            Text = Strings.T("共通設定"),
             Location = new Point(12, 12),
             Size = new Size(368, 168)
         };
@@ -107,24 +107,24 @@ internal sealed class SettingsForm : Form
         // ----- Claude / Codex 設定 -----------------------------------------
         var gbClaudeCodex = new GroupBox
         {
-            Text = "Claude / Codex 設定",
+            Text = Strings.T("Claude / Codex 設定"),
             Location = new Point(12, 188),
             Size = new Size(368, 272)
         };
 
-        _ccWindowEnabled.Text = "Claude / Codex ウィンドウを表示";
+        _ccWindowEnabled.Text = Strings.T("Claude / Codex ウィンドウを表示");
         _ccWindowEnabled.AutoSize = true;
         _ccWindowEnabled.Location = new Point(14, 24);
         _ccWindowEnabled.CheckedChanged += (_, _) => UpdateEnabledStates();
 
-        var ccMethodLabel = new Label { Text = "表示方法", AutoSize = true, Location = new Point(14, 56) };
+        var ccMethodLabel = new Label { Text = Strings.T("表示方法"), AutoSize = true, Location = new Point(14, 56) };
         _ccDisplayMode.DropDownStyle = ComboBoxStyle.DropDownList;
         _ccDisplayMode.Location = new Point(110, 52);
         _ccDisplayMode.Size = new Size(170, 24);
         _ccDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.Always));
         _ccDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.HoverPreview));
 
-        var displayModeLabel = new Label { Text = "表示モード", AutoSize = true, Location = new Point(14, 88) };
+        var displayModeLabel = new Label { Text = Strings.T("表示モード"), AutoSize = true, Location = new Point(14, 88) };
         _displayMode.DropDownStyle = ComboBoxStyle.DropDownList;
         _displayMode.Location = new Point(110, 84);
         _displayMode.Size = new Size(170, 24);
@@ -132,7 +132,7 @@ internal sealed class SettingsForm : Form
         _displayMode.Items.Add(new DisplayModeOption(DisplayMode.Compact));
         _displayMode.Items.Add(new DisplayModeOption(DisplayMode.Minimum));
 
-        var servicesLabel = new Label { Text = "表示対象", AutoSize = true, Location = new Point(14, 120) };
+        var servicesLabel = new Label { Text = Strings.T("表示対象"), AutoSize = true, Location = new Point(14, 120) };
         _showClaude.Text = "Claude Code";
         _showClaude.AutoSize = true;
         _showClaude.Location = new Point(110, 118);
@@ -142,7 +142,7 @@ internal sealed class SettingsForm : Form
 
         var authLabel = new Label
         {
-            Text = "ログイン状態",
+            Text = Strings.T("ログイン状態"),
             AutoSize = true,
             Font = new Font("Segoe UI", 9F, FontStyle.Bold),
             Location = new Point(14, 150)
@@ -161,11 +161,11 @@ internal sealed class SettingsForm : Form
             Size = new Size(80, 22),
             Location = new Point(104, 176),
             TextAlign = ContentAlignment.MiddleLeft,
-            Text = "確認中"
+            Text = Strings.T("確認中")
         };
-        _claudeLoginBtn = new Button { Text = "ログイン", Location = new Point(188, 172), Size = new Size(70, 28) };
+        _claudeLoginBtn = new Button { Text = Strings.T("ログイン"), Location = new Point(188, 172), Size = new Size(70, 28) };
         _claudeLoginBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchClaudeLogin);
-        _claudeLogoutBtn = new Button { Text = "ログアウト", Location = new Point(262, 172), Size = new Size(84, 28) };
+        _claudeLogoutBtn = new Button { Text = Strings.T("ログアウト"), Location = new Point(262, 172), Size = new Size(84, 28) };
         _claudeLogoutBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchClaudeLogout);
 
         var codexName = new Label
@@ -181,14 +181,14 @@ internal sealed class SettingsForm : Form
             Size = new Size(80, 22),
             Location = new Point(104, 208),
             TextAlign = ContentAlignment.MiddleLeft,
-            Text = "確認中"
+            Text = Strings.T("確認中")
         };
-        _codexLoginBtn = new Button { Text = "ログイン", Location = new Point(188, 204), Size = new Size(70, 28) };
+        _codexLoginBtn = new Button { Text = Strings.T("ログイン"), Location = new Point(188, 204), Size = new Size(70, 28) };
         _codexLoginBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchCodexLogin);
-        _codexLogoutBtn = new Button { Text = "ログアウト", Location = new Point(262, 204), Size = new Size(84, 28) };
+        _codexLogoutBtn = new Button { Text = Strings.T("ログアウト"), Location = new Point(262, 204), Size = new Size(84, 28) };
         _codexLogoutBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchCodexLogout);
 
-        _refreshAuthBtn = new Button { Text = "認証状態を再確認", Location = new Point(188, 236), Size = new Size(158, 28) };
+        _refreshAuthBtn = new Button { Text = Strings.T("認証状態を再確認"), Location = new Point(188, 236), Size = new Size(158, 28) };
         _refreshAuthBtn.Click += async (_, _) => await RefreshAuthAsync().ConfigureAwait(true);
 
         gbClaudeCodex.Controls.Add(_ccWindowEnabled);
@@ -213,17 +213,17 @@ internal sealed class SettingsForm : Form
         // ----- GitHub Copilot 設定 -----------------------------------------
         var gbCopilot = new GroupBox
         {
-            Text = "GitHub Copilot 設定",
+            Text = Strings.T("GitHub Copilot 設定"),
             Location = new Point(12, 468),
             Size = new Size(368, 224)
         };
 
-        _copilotWindowEnabled.Text = "GitHub Copilot ウィンドウを表示";
+        _copilotWindowEnabled.Text = Strings.T("GitHub Copilot ウィンドウを表示");
         _copilotWindowEnabled.AutoSize = true;
         _copilotWindowEnabled.Location = new Point(14, 24);
         _copilotWindowEnabled.CheckedChanged += (_, _) => UpdateEnabledStates();
 
-        var planLabel = new Label { Text = "プラン", AutoSize = true, Location = new Point(14, 56) };
+        var planLabel = new Label { Text = Strings.T("プラン"), AutoSize = true, Location = new Point(14, 56) };
         _copilotPlan.DropDownStyle = ComboBoxStyle.DropDownList;
         _copilotPlan.Location = new Point(110, 52);
         _copilotPlan.Size = new Size(180, 24);
@@ -235,7 +235,7 @@ internal sealed class SettingsForm : Form
         _copilotPlan.Items.Add(new CopilotPlanOption(CopilotPlan.Custom));
         _copilotPlan.SelectedIndexChanged += (_, _) => UpdateEnabledStates();
 
-        var customLabel = new Label { Text = "Custom 上限", AutoSize = true, Location = new Point(14, 88) };
+        var customLabel = new Label { Text = Strings.T("Custom 上限"), AutoSize = true, Location = new Point(14, 88) };
         _copilotCustomCredits.Location = new Point(110, 86);
         _copilotCustomCredits.Size = new Size(120, 24);
         _copilotCustomCredits.Minimum = 0;
@@ -243,14 +243,14 @@ internal sealed class SettingsForm : Form
         _copilotCustomCredits.Increment = 100;
         _copilotCustomCredits.ThousandsSeparator = true;
 
-        var copilotMethodLabel = new Label { Text = "表示方法", AutoSize = true, Location = new Point(14, 120) };
+        var copilotMethodLabel = new Label { Text = Strings.T("表示方法"), AutoSize = true, Location = new Point(14, 120) };
         _copilotDisplayMode.DropDownStyle = ComboBoxStyle.DropDownList;
         _copilotDisplayMode.Location = new Point(110, 116);
         _copilotDisplayMode.Size = new Size(180, 24);
         _copilotDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.Always));
         _copilotDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.HoverPreview));
 
-        var accentLabel = new Label { Text = "配色", AutoSize = true, Location = new Point(14, 152) };
+        var accentLabel = new Label { Text = Strings.T("配色"), AutoSize = true, Location = new Point(14, 152) };
         _copilotAccent.DropDownStyle = ComboBoxStyle.DropDownList;
         _copilotAccent.Location = new Point(110, 148);
         _copilotAccent.Size = new Size(180, 24);
@@ -262,12 +262,12 @@ internal sealed class SettingsForm : Form
 
         // First-time setup wizard + connection test. Always enabled (the user can
         // set up the token before enabling the window).
-        _copilotSetupBtn.Text = "初回設定";
+        _copilotSetupBtn.Text = Strings.T("初回設定");
         _copilotSetupBtn.Location = new Point(14, 184);
         _copilotSetupBtn.Size = new Size(110, 28);
         _copilotSetupBtn.Click += (_, _) => OpenCopilotSetup();
 
-        _copilotTestBtn.Text = "接続テスト";
+        _copilotTestBtn.Text = Strings.T("接続テスト");
         _copilotTestBtn.Location = new Point(132, 184);
         _copilotTestBtn.Size = new Size(110, 28);
         _copilotTestBtn.Click += async (_, _) => await RunCopilotTestAsync().ConfigureAwait(true);
@@ -498,7 +498,7 @@ internal sealed class SettingsForm : Form
         try
         {
             var message = await GitHubCopilotSetupForm.RunConnectionTestAsync(CurrentCopilotAllowance()).ConfigureAwait(true);
-            MessageBox.Show(this, message, "接続テスト", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, message, Strings.T("接続テスト"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         finally
         {
@@ -523,7 +523,7 @@ internal sealed class SettingsForm : Form
         }
         catch
         {
-            result = new AuthLaunchResult(false, "コマンドの実行に失敗しました。");
+            result = new AuthLaunchResult(false, Strings.T("コマンドの実行に失敗しました。"));
         }
 
         var icon = result.Ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
@@ -542,8 +542,8 @@ internal sealed class SettingsForm : Form
         _claudeLogoutBtn.Enabled = false;
         _codexLoginBtn.Enabled = false;
         _codexLogoutBtn.Enabled = false;
-        _claudeStatusLabel.Text = "確認中";
-        _codexStatusLabel.Text = "確認中";
+        _claudeStatusLabel.Text = Strings.T("確認中");
+        _codexStatusLabel.Text = Strings.T("確認中");
 
         try
         {
@@ -564,8 +564,8 @@ internal sealed class SettingsForm : Form
     {
         if (_host is null)
         {
-            _claudeStatusLabel.Text = "ホスト未接続";
-            _codexStatusLabel.Text = "ホスト未接続";
+            _claudeStatusLabel.Text = Strings.T("ホスト未接続");
+            _codexStatusLabel.Text = Strings.T("ホスト未接続");
             return;
         }
 
@@ -577,13 +577,13 @@ internal sealed class SettingsForm : Form
     {
         label.Text = status switch
         {
-            ProviderStatus.Available => "正常",
-            ProviderStatus.NotLoggedIn => "未ログイン",
-            ProviderStatus.NotInstalled => "CLI未検出",
-            ProviderStatus.Unauthorized => "認証エラー",
-            ProviderStatus.RateLimited => "取得を一時制限中",
-            ProviderStatus.Error => "取得失敗",
-            _ => "状態不明"
+            ProviderStatus.Available => Strings.T("正常"),
+            ProviderStatus.NotLoggedIn => Strings.T("未ログイン"),
+            ProviderStatus.NotInstalled => Strings.T("CLI未検出"),
+            ProviderStatus.Unauthorized => Strings.T("認証エラー"),
+            ProviderStatus.RateLimited => Strings.T("取得を一時制限中"),
+            ProviderStatus.Error => Strings.T("取得失敗"),
+            _ => Strings.T("状態不明")
         };
 
         // Theme-aware severity color (green/amber/red), matching the windows and
@@ -631,9 +631,9 @@ internal sealed class SettingsForm : Form
         public override string ToString()
             => Mode switch
             {
-                DisplayMode.Normal => "通常モード",
-                DisplayMode.Compact => "コンパクトモード",
-                DisplayMode.Minimum => "ミニマムモード",
+                DisplayMode.Normal => Strings.T("通常モード"),
+                DisplayMode.Compact => Strings.T("コンパクトモード"),
+                DisplayMode.Minimum => Strings.T("ミニマムモード"),
                 _ => Mode.ToString()
             };
     }
@@ -643,8 +643,8 @@ internal sealed class SettingsForm : Form
         public override string ToString()
             => Mode switch
             {
-                WindowDisplayMode.Always => "常時表示",
-                WindowDisplayMode.HoverPreview => "ホバー表示（トレイ）",
+                WindowDisplayMode.Always => Strings.T("常時表示"),
+                WindowDisplayMode.HoverPreview => Strings.T("ホバー表示（トレイ）"),
                 _ => Mode.ToString()
             };
     }
@@ -654,12 +654,12 @@ internal sealed class SettingsForm : Form
         public override string ToString()
             => Plan switch
             {
-                CopilotPlan.None => "なし（使用量のみ）",
-                CopilotPlan.Free => $"Free（{AppSettings.FreeCredits:N0}）",
-                CopilotPlan.Pro => $"Pro（{AppSettings.ProCredits:N0}）",
-                CopilotPlan.ProPlus => $"Pro+（{AppSettings.ProPlusCredits:N0}）",
-                CopilotPlan.Max => $"Max（{AppSettings.MaxCredits:N0}）",
-                CopilotPlan.Custom => "Custom（手入力）",
+                CopilotPlan.None => Strings.T("なし（使用量のみ）"),
+                CopilotPlan.Free => Strings.Tf("Free（{0}）", AppSettings.FreeCredits.ToString("N0")),
+                CopilotPlan.Pro => Strings.Tf("Pro（{0}）", AppSettings.ProCredits.ToString("N0")),
+                CopilotPlan.ProPlus => Strings.Tf("Pro+（{0}）", AppSettings.ProPlusCredits.ToString("N0")),
+                CopilotPlan.Max => Strings.Tf("Max（{0}）", AppSettings.MaxCredits.ToString("N0")),
+                CopilotPlan.Custom => Strings.T("Custom（手入力）"),
                 _ => Plan.ToString()
             };
     }
@@ -669,11 +669,11 @@ internal sealed class SettingsForm : Form
         public override string ToString()
             => Accent switch
             {
-                CopilotAccent.Blue => "ブルー（既定）",
-                CopilotAccent.Green => "グリーン",
-                CopilotAccent.Sky => "スカイ",
-                CopilotAccent.Purple => "パープル",
-                CopilotAccent.Slate => "スレート",
+                CopilotAccent.Blue => Strings.T("ブルー（既定）"),
+                CopilotAccent.Green => Strings.T("グリーン"),
+                CopilotAccent.Sky => Strings.T("スカイ"),
+                CopilotAccent.Purple => Strings.T("パープル"),
+                CopilotAccent.Slate => Strings.T("スレート"),
                 _ => Accent.ToString()
             };
     }

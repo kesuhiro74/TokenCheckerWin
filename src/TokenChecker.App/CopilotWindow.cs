@@ -423,7 +423,7 @@ internal sealed class CopilotWindow : Form
                 ForeColor = UsageTheme.MutedText,
                 TextAlign = ContentAlignment.MiddleRight,
                 AutoEllipsis = true,
-                Text = "状態不明"
+                Text = Strings.T("状態不明")
             };
 
             _statusMessage = new Label
@@ -499,7 +499,7 @@ internal sealed class CopilotWindow : Form
 
             _detailToggle = new LinkLabel
             {
-                Text = "詳細を表示",
+                Text = Strings.T("詳細を表示"),
                 AutoSize = true,
                 BackColor = Color.Transparent,
                 LinkColor = UsageTheme.DetailToggle,
@@ -560,7 +560,7 @@ internal sealed class CopilotWindow : Form
         public void SetLoading()
         {
             _badge.ForeColor = BadgeColor(ProviderStatus.RateLimited);
-            ApplyBadge("更新中");
+            ApplyBadge(Strings.T("更新中"));
             _statusMessage.Visible = false;
             _statusMessage.Text = string.Empty;
             _hasPercent = false;
@@ -569,7 +569,7 @@ internal sealed class CopilotWindow : Form
             _suffix = string.Empty;
             _valueColor = UsageTheme.MutedText;
             _bar.SetValue(null);
-            _resetSub.Text = "更新中";
+            _resetSub.Text = Strings.T("更新中");
             _predictionSub.Visible = false;
             _todaySub.Visible = false;
             ApplyMainLineText();
@@ -607,30 +607,30 @@ internal sealed class CopilotWindow : Form
                 _lastPercent = percent;
                 _compactValue = $"{Math.Round(percent):0}%";
                 _detailValue = $"{u:N0} / {cap:N0}";
-                _suffix = "使用済み";
+                _suffix = Strings.T("使用済み");
                 // The number is a fixed near-black; only the BAR carries the accent
                 // (and still escalates to amber/red at 80/95).
                 _valueColor = UsageTheme.PrimaryText;
                 _bar.AccentColor = UsageTheme.AccentColor(percent, _accent);
                 _bar.SetValue(percent);
-                _resetSub.Text = $"残 {remaining:N0} · {FormatReset(window)}";
+                _resetSub.Text = Strings.Tf("残 {0} · {1}", remaining.ToString("N0"), FormatReset(window));
             }
             else
             {
                 _hasPercent = false;
                 // No allowance to compare against: show the raw used credits only.
                 _compactValue = _detailValue = used is long u2 ? $"{u2:N0}" : "—";
-                _suffix = used is null ? string.Empty : "credits 使用";
+                _suffix = used is null ? string.Empty : Strings.T("credits 使用");
                 _valueColor = used is null ? UsageTheme.MutedText : UsageTheme.PrimaryText;
                 _bar.SetValue(null);
-                _resetSub.Text = "当月集計 · 設定でプランを選ぶと上限・残量を表示";
+                _resetSub.Text = Strings.T("当月集計 · 設定でプランを選ぶと上限・残量を表示");
             }
 
             // When the token is unset, point the user at the first-time setup (no
             // token input here — only env GITHUB_TOKEN is read).
             if (status == ProviderStatus.NotLoggedIn)
             {
-                _resetSub.Text = "設定画面の「初回設定」から手順を確認してください";
+                _resetSub.Text = Strings.T("設定画面の「初回設定」から手順を確認してください");
             }
 
             ApplyMainLineText();
@@ -661,10 +661,10 @@ internal sealed class CopilotWindow : Form
                 _predictionSub.Text = insights.Prediction switch
                 {
                     CopilotPrediction.ReachesThisMonth when insights.FullDateLocal is DateTimeOffset due
-                        => $"このペースだと {due:M/d} 頃に 100%",
-                    CopilotPrediction.NotThisMonth => "このペースなら今月は上限に到達しない見込み",
-                    CopilotPrediction.AlreadyFull => "すでに上限に到達しています",
-                    _ => "予測にはデータ不足"
+                        => Strings.Tf("このペースだと {0} 頃に 100%", due.ToString("M/d")),
+                    CopilotPrediction.NotThisMonth => Strings.T("このペースなら今月は上限に到達しない見込み"),
+                    CopilotPrediction.AlreadyFull => Strings.T("すでに上限に到達しています"),
+                    _ => Strings.T("予測にはデータ不足")
                 };
             }
             else
@@ -675,9 +675,9 @@ internal sealed class CopilotWindow : Form
             _todaySub.Visible = true;
             _todaySub.Text = insights.TodayDeltaCredits is long delta
                 ? insights.TodayDeltaPercent is double percent
-                    ? $"本日9:00以降 +{delta:N0} credits（+{percent:0.0}%）"
-                    : $"本日9:00以降 +{delta:N0} credits"
-                : "本日9:00以降: 未計測";
+                    ? Strings.Tf("本日9:00以降 +{0} credits（+{1}%）", delta.ToString("N0"), percent.ToString("0.0"))
+                    : Strings.Tf("本日9:00以降 +{0} credits", delta.ToString("N0"))
+                : Strings.T("本日9:00以降: 未計測");
         }
 
         // The detailed values only appear on hover/focus, and only when there is a
@@ -718,11 +718,11 @@ internal sealed class CopilotWindow : Form
         {
             if (window?.ResetAtUtc is null)
             {
-                return "当月集計（暦月近似）";
+                return Strings.T("当月集計（暦月近似）");
             }
 
             var reset = window.ResetAtUtc.Value.ToLocalTime();
-            return $"当月集計 · リセット目安 {reset.Month}/{reset.Day}（推定）";
+            return Strings.Tf("当月集計 · リセット目安 {0}/{1}（推定）", reset.Month, reset.Day);
         }
 
         // Copilot-specific copy: the generic "再ログインしてください" hints assume a
@@ -733,19 +733,19 @@ internal sealed class CopilotWindow : Form
             switch (status)
             {
                 case ProviderStatus.NotLoggedIn:
-                    return "GITHUB_TOKEN が未設定です";
+                    return Strings.T("GITHUB_TOKEN が未設定です");
                 case ProviderStatus.Unauthorized:
                     return current?.Message?.Contains("(403)", StringComparison.Ordinal) == true
-                        ? "GITHUB_TOKEN の Plan(Read) 権限・個人課金・Enhanced Billing 対象を確認してください"
-                        : "GITHUB_TOKEN が無効または期限切れです";
+                        ? Strings.T("GITHUB_TOKEN の Plan(Read) 権限・個人課金・Enhanced Billing 対象を確認してください")
+                        : Strings.T("GITHUB_TOKEN が無効または期限切れです");
                 case ProviderStatus.RateLimited:
                     return hasFallback
-                        ? "取得が一時的に制限されています。前回成功値を表示しています"
-                        : "取得が一時的に制限されています";
+                        ? Strings.T("取得が一時的に制限されています。前回成功値を表示しています")
+                        : Strings.T("取得が一時的に制限されています");
                 default:
                     return hasFallback
-                        ? "一時的に取得できません。前回成功値を表示しています"
-                        : "一時的に取得できません";
+                        ? Strings.T("一時的に取得できません。前回成功値を表示しています")
+                        : Strings.T("一時的に取得できません");
             }
         }
 
@@ -765,12 +765,12 @@ internal sealed class CopilotWindow : Form
                 }
 
                 _detailBox.Text = string.Empty;
-                _detailToggle.Text = "詳細を表示";
+                _detailToggle.Text = Strings.T("詳細を表示");
                 return;
             }
 
             _detailBox.Text = diagnostics;
-            _detailToggle.Text = _detailExpanded ? "詳細を隠す" : "詳細を表示";
+            _detailToggle.Text = _detailExpanded ? Strings.T("詳細を隠す") : Strings.T("詳細を表示");
         }
 
         private void ToggleDetail() => SetExpanded(!_detailExpanded);
@@ -779,7 +779,7 @@ internal sealed class CopilotWindow : Form
         {
             _detailExpanded = expanded;
             _detailBox.Visible = expanded;
-            _detailToggle.Text = expanded ? "詳細を隠す" : "詳細を表示";
+            _detailToggle.Text = expanded ? Strings.T("詳細を隠す") : Strings.T("詳細を表示");
             var newHeight = expanded ? CardBaseHeight + CardDetailExtra : CardBaseHeight;
             if (Height != newHeight)
             {
