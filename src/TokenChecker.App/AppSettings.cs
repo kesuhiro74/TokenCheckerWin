@@ -16,7 +16,8 @@ internal enum CopilotPlan
     Pro = 1,
     ProPlus = 2,
     Max = 3,
-    Custom = 4
+    Custom = 4,
+    Free = 5
 }
 
 // How a popup window is surfaced from its dedicated tray icon (per window).
@@ -64,6 +65,10 @@ internal sealed class AppSettings
 
     // Bundled monthly AI credits per plan. Flex allocation can change in the
     // market, so this is the ONE place to edit the plan values.
+    // Copilot Free bundles a small monthly AI-credit allowance (code completions and
+    // chat have their own separate quotas that the personal billing token cannot read,
+    // so only this credit meter is shown for Free).
+    public const int FreeCredits = 200;
     public const int ProCredits = 1500;
     public const int ProPlusCredits = 7000;
     public const int MaxCredits = 20000;
@@ -134,6 +139,7 @@ internal sealed class AppSettings
     public int? CopilotCreditAllowance()
         => CopilotPlan switch
         {
+            CopilotPlan.Free => FreeCredits,
             CopilotPlan.Pro => ProCredits,
             CopilotPlan.ProPlus => ProPlusCredits,
             CopilotPlan.Max => MaxCredits,
@@ -146,6 +152,7 @@ internal sealed class AppSettings
     public string CopilotPlanTitle()
         => CopilotPlan switch
         {
+            CopilotPlan.Free => "Copilot Free",
             CopilotPlan.Pro => "Copilot Pro",
             CopilotPlan.ProPlus => "Copilot Pro+",
             CopilotPlan.Max => "Copilot Max",

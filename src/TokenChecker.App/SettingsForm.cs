@@ -215,6 +215,7 @@ internal sealed class SettingsForm : Form
         _copilotPlan.Location = new Point(110, 52);
         _copilotPlan.Size = new Size(180, 24);
         _copilotPlan.Items.Add(new CopilotPlanOption(CopilotPlan.None));
+        _copilotPlan.Items.Add(new CopilotPlanOption(CopilotPlan.Free));
         _copilotPlan.Items.Add(new CopilotPlanOption(CopilotPlan.Pro));
         _copilotPlan.Items.Add(new CopilotPlanOption(CopilotPlan.ProPlus));
         _copilotPlan.Items.Add(new CopilotPlanOption(CopilotPlan.Max));
@@ -601,6 +602,7 @@ internal sealed class SettingsForm : Form
             => Plan switch
             {
                 CopilotPlan.None => "なし（使用量のみ）",
+                CopilotPlan.Free => $"Free（{AppSettings.FreeCredits:N0}）",
                 CopilotPlan.Pro => $"Pro（{AppSettings.ProCredits:N0}）",
                 CopilotPlan.ProPlus => $"Pro+（{AppSettings.ProPlusCredits:N0}）",
                 CopilotPlan.Max => $"Max（{AppSettings.MaxCredits:N0}）",
