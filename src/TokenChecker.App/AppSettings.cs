@@ -57,6 +57,14 @@ internal enum ThemeMode
     Dark = 2
 }
 
+// UI language. Applied at startup only (a change needs an app restart), like Theme.
+internal enum AppLanguage
+{
+    System = 0,
+    English = 1,
+    Japanese = 2
+}
+
 internal sealed class AppSettings
 {
     // GitHub Copilot is keyed in snapshots by this exact provider name. (It is no
@@ -83,6 +91,9 @@ internal sealed class AppSettings
 
     // App color theme. Applied at startup only (a change needs an app restart).
     public ThemeMode Theme { get; set; } = ThemeMode.System;
+
+    // UI language. Applied at startup only (a change needs an app restart).
+    public AppLanguage Language { get; set; } = AppLanguage.System;
 
     // Kept for backward compatibility with settings.json written by older builds
     // that only knew about a compact-mode boolean. Normalize() reconciles this
@@ -223,6 +234,11 @@ internal sealed class AppSettings
             Theme = ThemeMode.System;
         }
 
+        if (!Enum.IsDefined(Language))
+        {
+            Language = AppLanguage.System;
+        }
+
         CopilotCustomCredits = Math.Max(0, CopilotCustomCredits);
 
         // CompactMode is a derived back-compat write only (see SettingsStore.Load
@@ -236,6 +252,7 @@ internal sealed class AppSettings
             RefreshIntervalSeconds = RefreshIntervalSeconds,
             AutoStartEnabled = AutoStartEnabled,
             Theme = Theme,
+            Language = Language,
             CompactMode = CompactMode,
             DisplayMode = DisplayMode,
             VisibleServices = VisibleServices.ToArray(),

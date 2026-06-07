@@ -18,7 +18,7 @@ internal sealed class AuthCommandService
             "Claude Code",
             command,
             arguments: null,
-            successHint: "Claude Code のコンソールを開きました。プロンプトで /login と入力してログインを完了し、その後に『認証状態を再確認』を実行してください。");
+            successHint: Strings.T("Claude Code のコンソールを開きました。プロンプトで /login と入力してログインを完了し、その後に『認証状態を再確認』を実行してください。"));
     }
 
     public AuthLaunchResult LaunchClaudeLogout()
@@ -32,7 +32,7 @@ internal sealed class AuthCommandService
             "Claude Code",
             command,
             arguments: null,
-            successHint: "Claude Code のコンソールを開きました。プロンプトで /logout と入力してログアウトを完了してください。");
+            successHint: Strings.T("Claude Code のコンソールを開きました。プロンプトで /logout と入力してログアウトを完了してください。"));
     }
 
     public AuthLaunchResult LaunchCodexLogin()
@@ -46,7 +46,7 @@ internal sealed class AuthCommandService
             "Codex",
             command,
             arguments: "login",
-            successHint: "Codex のコンソールを開きました。ブラウザでサインインを完了してから『認証状態を再確認』を実行してください。Codex は ChatGPT ログインを推奨します（API キー認証では使用率を取得できません）。");
+            successHint: Strings.T("Codex のコンソールを開きました。ブラウザでサインインを完了してから『認証状態を再確認』を実行してください。Codex は ChatGPT ログインを推奨します（API キー認証では使用率を取得できません）。"));
     }
 
     public AuthLaunchResult LaunchCodexLogout()
@@ -60,7 +60,7 @@ internal sealed class AuthCommandService
             "Codex",
             command,
             arguments: "logout",
-            successHint: "Codex のコンソールを開きました。ログアウト結果が表示されたらウィンドウを閉じてください。");
+            successHint: Strings.T("Codex のコンソールを開きました。ログアウト結果が表示されたらウィンドウを閉じてください。"));
     }
 
     private static AuthLaunchResult OpenInteractiveConsole(
@@ -153,8 +153,8 @@ internal sealed record AuthLaunchResult(bool Ok, string Message)
     public static AuthLaunchResult Success(string message) => new(true, message);
 
     public static AuthLaunchResult NotInstalled(string serviceName)
-        => new(false, $"{serviceName} CLI が見つかりません。先にインストールしてください。");
+        => new(false, Strings.Tf("{0} CLI が見つかりません。先にインストールしてください。", serviceName));
 
     public static AuthLaunchResult Failed(string serviceName)
-        => new(false, $"{serviceName} のコンソールを開けませんでした。");
+        => new(false, Strings.Tf("{0} のコンソールを開けませんでした。", serviceName));
 }

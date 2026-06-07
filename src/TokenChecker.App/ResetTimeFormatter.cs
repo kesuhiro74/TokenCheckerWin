@@ -8,13 +8,13 @@ internal static class ResetTimeFormatter
     {
         if (window?.ResetAtUtc is null)
         {
-            return "リセット時刻不明";
+            return Strings.T("リセット時刻不明");
         }
 
         var remaining = window.ResetAtUtc.Value - DateTimeOffset.UtcNow;
         if (remaining <= TimeSpan.FromMinutes(1))
         {
-            return "まもなくリセット";
+            return Strings.T("まもなくリセット");
         }
 
         var totalMinutes = Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes));
@@ -24,29 +24,29 @@ internal static class ResetTimeFormatter
 
         if (days > 0)
         {
-            return $"あと{days}日{hours}時間";
+            return Strings.Tf("あと{0}日{1}時間", days, hours);
         }
 
         if (hours > 0)
         {
-            return $"あと{hours}時間{minutes:00}分";
+            return Strings.Tf("あと{0}時間{1:00}分", hours, minutes);
         }
 
-        return $"あと{minutes}分";
+        return Strings.Tf("あと{0}分", minutes);
     }
 
     public static string Format(RateLimitWindow? window)
     {
         if (window?.ResetAtUtc is null)
         {
-            return "リセット時刻不明";
+            return Strings.T("リセット時刻不明");
         }
 
         var localReset = window.ResetAtUtc.Value.ToLocalTime();
         var remaining = window.ResetAtUtc.Value - DateTimeOffset.UtcNow;
         if (remaining <= TimeSpan.FromMinutes(1))
         {
-            return $"まもなく（{localReset:HH:mm}リセット）";
+            return Strings.Tf("まもなく（{0}リセット）", localReset.ToString("HH:mm"));
         }
 
         return window.WindowDurationMins switch
@@ -64,10 +64,10 @@ internal static class ResetTimeFormatter
 
         if (hours <= 0)
         {
-            return $"あと{minutes}分（{localReset:HH:mm}リセット）";
+            return Strings.Tf("あと{0}分（{1}リセット）", minutes, localReset.ToString("HH:mm"));
         }
 
-        return $"あと{hours}時間{minutes:00}分（{localReset:HH:mm}リセット）";
+        return Strings.Tf("あと{0}時間{1:00}分（{2}リセット）", hours, minutes, localReset.ToString("HH:mm"));
     }
 
     private static string FormatWeekly(TimeSpan remaining, DateTimeOffset localReset)
@@ -79,14 +79,14 @@ internal static class ResetTimeFormatter
 
         if (days > 0)
         {
-            return $"あと{days}日{hours}時間（{localReset:M/d HH:mm}リセット）";
+            return Strings.Tf("あと{0}日{1}時間（{2}リセット）", days, hours, localReset.ToString("M/d HH:mm"));
         }
 
         if (hours > 0)
         {
-            return $"あと{hours}時間{minutes:00}分（{localReset:HH:mm}リセット）";
+            return Strings.Tf("あと{0}時間{1:00}分（{2}リセット）", hours, minutes, localReset.ToString("HH:mm"));
         }
 
-        return $"あと{minutes}分（{localReset:HH:mm}リセット）";
+        return Strings.Tf("あと{0}分（{1}リセット）", minutes, localReset.ToString("HH:mm"));
     }
 }

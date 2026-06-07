@@ -312,3 +312,9 @@ Claude Code / Codex の使用率(5時間制限・週次制限)に加え、GitHub
 ```
 Claude Code / Codex の5時間・週次使用率をWindowsタスクトレイに常駐表示するアプリ(通常/コンパクト/ミニマムの3表示モード)
 ```
+
+## ライセンス
+
+本ソフトウェアは [MIT License](LICENSE)（Copyright (c) 2026 kesuhiro74）の下で配布されます。
+
+同梱・利用している第三者コンポーネント（GitHub Octicons、.NET ランタイム）の表記は [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。

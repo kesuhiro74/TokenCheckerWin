@@ -229,7 +229,7 @@ internal sealed class StatusForm : Form
         _compactClaude.SetLoading();
         _compactCodex.SetLoading();
         _minimumPanel.SetLoading();
-        _updatedAt.Text = "最終更新: 更新中";
+        _updatedAt.Text = Strings.T("最終更新: 更新中");
     }
 
     public void UpdateSnapshot(UsageSnapshot snapshot, UsageSnapshot? lastSuccessfulSnapshot)
@@ -248,7 +248,7 @@ internal sealed class StatusForm : Form
         _compactClaude.Update(claude, fallbackClaude);
         _compactCodex.Update(codex, fallbackCodex);
         _minimumPanel.Update(fallbackClaude, fallbackCodex, _showClaude, _showCodex);
-        _updatedAt.Text = $"最終更新: {snapshot.CapturedAtUtc.ToLocalTime():HH:mm:ss}";
+        _updatedAt.Text = Strings.Tf("最終更新: {0}", snapshot.CapturedAtUtc.ToLocalTime().ToString("HH:mm:ss"));
     }
 
     private void ApplyVisibilityForMode()
@@ -500,7 +500,7 @@ internal sealed class StatusForm : Form
                 BackColor = Color.Transparent,
                 ForeColor = MutedText,
                 Location = new Point(264, 14),
-                Text = "状態不明"
+                Text = Strings.T("状態不明")
             };
 
             // Sits right under the title and gives the user an action hint when
@@ -520,7 +520,7 @@ internal sealed class StatusForm : Form
 
             _shortWindowLabel = new Label
             {
-                Text = "5時間",
+                Text = Strings.T("5時間"),
                 AutoSize = false,
                 Size = new Size(140, 22),
                 Location = new Point(14, 46),
@@ -564,7 +564,7 @@ internal sealed class StatusForm : Form
 
             _weeklyLabel = new Label
             {
-                Text = "週次",
+                Text = Strings.T("週次"),
                 AutoSize = false,
                 Size = new Size(120, 22),
                 Location = new Point(14, 122),
@@ -599,7 +599,7 @@ internal sealed class StatusForm : Form
 
             _detailToggle = new LinkLabel
             {
-                Text = "詳細を表示",
+                Text = Strings.T("詳細を表示"),
                 AutoSize = true,
                 BackColor = Color.Transparent,
                 LinkColor = DetailToggle,
@@ -649,14 +649,14 @@ internal sealed class StatusForm : Form
 
         public void SetLoading()
         {
-            _badge.Text = "更新中";
+            _badge.Text = Strings.T("更新中");
             _badge.ForeColor = Warning;
             _statusMessage.Visible = false;
             _statusMessage.Text = string.Empty;
             _shortPercent.Text = "—";
             _shortPercent.ForeColor = MutedText;
             _shortBar.SetValue(null);
-            _shortReset.Text = "更新中";
+            _shortReset.Text = Strings.T("更新中");
             _weeklyPercent.Text = "—";
             _weeklyPercent.ForeColor = MutedText;
             _weeklyBar.SetValue(null);
@@ -722,12 +722,12 @@ internal sealed class StatusForm : Form
                     SetExpanded(false);
                 }
                 _detailBox.Text = string.Empty;
-                _detailToggle.Text = "詳細を表示";
+                _detailToggle.Text = Strings.T("詳細を表示");
                 return;
             }
 
             _detailBox.Text = diagnostics;
-            _detailToggle.Text = _detailExpanded ? "詳細を隠す" : "詳細を表示";
+            _detailToggle.Text = _detailExpanded ? Strings.T("詳細を隠す") : Strings.T("詳細を表示");
         }
 
         private void ToggleDetail() => SetExpanded(!_detailExpanded);
@@ -736,7 +736,7 @@ internal sealed class StatusForm : Form
         {
             _detailExpanded = expanded;
             _detailBox.Visible = expanded;
-            _detailToggle.Text = expanded ? "詳細を隠す" : "詳細を表示";
+            _detailToggle.Text = expanded ? Strings.T("詳細を隠す") : Strings.T("詳細を表示");
             var newHeight = expanded ? NormalCardHeight + NormalDetailExtra : NormalCardHeight;
             if (Height != newHeight)
             {
@@ -845,10 +845,10 @@ internal sealed class StatusForm : Form
 
         public void SetLoading()
         {
-            _status.Text = "更新中";
+            _status.Text = Strings.T("更新中");
             _status.ForeColor = Warning;
             _ring.SetValue(null);
-            _reset.Text = "リセット時刻不明";
+            _reset.Text = Strings.T("リセット時刻不明");
         }
 
         public void Update(ServiceUsage? current, ServiceUsage? fallback)

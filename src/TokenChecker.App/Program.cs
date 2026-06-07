@@ -23,7 +23,12 @@ internal static class Program
         // palette; the standard-control settings dialog is themed by SetColorMode.
         // Applied at startup only — a theme change in settings takes effect on the
         // next launch.
-        var dark = WindowsTheme.ResolveDark(new SettingsStore().Load().Theme);
+        // Resolve language and theme from the saved settings (one load), and apply
+        // both BEFORE Initialize() — windows read the active Strings table / palette
+        // at construction. Applied at startup only; changing either needs a restart.
+        var startupSettings = new SettingsStore().Load();
+        Strings.Apply(LanguageResolver.ResolveJapanese(startupSettings.Language));
+        var dark = WindowsTheme.ResolveDark(startupSettings.Theme);
         UsageTheme.Apply(dark);
         Application.SetColorMode(dark ? SystemColorMode.Dark : SystemColorMode.Classic);
 

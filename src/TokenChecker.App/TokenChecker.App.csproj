@@ -8,6 +8,8 @@
     <AssemblyName>TokenChecker</AssemblyName>
     <Product>TokenCheckerWin</Product>
     <AssemblyTitle>TokenCheckerWin</AssemblyTitle>
+    <Authors>kesuhiro74</Authors>
+    <Copyright>Copyright (c) 2026 kesuhiro74</Copyright>
     <Version>0.7.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- The windows use hand-coded pixel layouts + custom GDI+ drawing that do not

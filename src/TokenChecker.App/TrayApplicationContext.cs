@@ -176,24 +176,24 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // ----- Context menu (5 items): 今すぐ更新 / Claude·Codex 表示モード /
         // GitHub Copilot 表示モード / 設定 / 終了. Login, first-time-setup, and the
         // window-show items live in the settings dialog instead.
-        _refreshMenuItem = new ToolStripMenuItem("今すぐ更新", null, async (_, _) => await RefreshAsync().ConfigureAwait(true));
+        _refreshMenuItem = new ToolStripMenuItem(Strings.T("今すぐ更新"), null, async (_, _) => await RefreshAsync().ConfigureAwait(true));
 
-        _modeNormalItem = new ToolStripMenuItem("通常モード", null, (_, _) => SetDisplayMode(DisplayMode.Normal));
-        _modeCompactItem = new ToolStripMenuItem("コンパクトモード", null, (_, _) => SetDisplayMode(DisplayMode.Compact));
-        _modeMinimumItem = new ToolStripMenuItem("ミニマムモード", null, (_, _) => SetDisplayMode(DisplayMode.Minimum));
-        _displayModeMenuItem = new ToolStripMenuItem("Claude/Codexステータス表示モード");
+        _modeNormalItem = new ToolStripMenuItem(Strings.T("通常モード"), null, (_, _) => SetDisplayMode(DisplayMode.Normal));
+        _modeCompactItem = new ToolStripMenuItem(Strings.T("コンパクトモード"), null, (_, _) => SetDisplayMode(DisplayMode.Compact));
+        _modeMinimumItem = new ToolStripMenuItem(Strings.T("ミニマムモード"), null, (_, _) => SetDisplayMode(DisplayMode.Minimum));
+        _displayModeMenuItem = new ToolStripMenuItem(Strings.T("Claude/Codexステータス表示モード"));
         _displayModeMenuItem.DropDownItems.Add(_modeNormalItem);
         _displayModeMenuItem.DropDownItems.Add(_modeCompactItem);
         _displayModeMenuItem.DropDownItems.Add(_modeMinimumItem);
 
-        _copilotAlwaysItem = new ToolStripMenuItem("常時表示", null, (_, _) => SetCopilotDisplayMode(WindowDisplayMode.Always));
-        _copilotHoverItem = new ToolStripMenuItem("ホバー表示", null, (_, _) => SetCopilotDisplayMode(WindowDisplayMode.HoverPreview));
-        _copilotDisplayMenuItem = new ToolStripMenuItem("GitHubCopilot表示モード");
+        _copilotAlwaysItem = new ToolStripMenuItem(Strings.T("常時表示"), null, (_, _) => SetCopilotDisplayMode(WindowDisplayMode.Always));
+        _copilotHoverItem = new ToolStripMenuItem(Strings.T("ホバー表示"), null, (_, _) => SetCopilotDisplayMode(WindowDisplayMode.HoverPreview));
+        _copilotDisplayMenuItem = new ToolStripMenuItem(Strings.T("GitHubCopilot表示モード"));
         _copilotDisplayMenuItem.DropDownItems.Add(_copilotAlwaysItem);
         _copilotDisplayMenuItem.DropDownItems.Add(_copilotHoverItem);
 
-        _settingsMenuItem = new ToolStripMenuItem("設定", null, (_, _) => ShowSettings());
-        var exitMenuItem = new ToolStripMenuItem("終了", null, (_, _) => ExitThread());
+        _settingsMenuItem = new ToolStripMenuItem(Strings.T("設定"), null, (_, _) => ShowSettings());
+        var exitMenuItem = new ToolStripMenuItem(Strings.T("終了"), null, (_, _) => ExitThread());
 
         _contextMenu.Items.Add(_refreshMenuItem);
         _contextMenu.Items.Add(_displayModeMenuItem);
@@ -916,7 +916,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 ? TrayIconRenderer.CreateStatusBarsIcon(null, null, showClaude, showCodex, loading: true)
                 : MakeStatusIcon(snapshot, showClaude, showCodex);
             SetIcon(_status, icon);
-            _statusIcon.Text = loading ? "TokenCheckerWin 更新中" : TrimTooltip(BuildStatusTooltip(snapshot));
+            _statusIcon.Text = loading ? Strings.T("TokenCheckerWin 更新中") : TrimTooltip(BuildStatusTooltip(snapshot));
         }
 
         _statusIcon.Visible = ccOn;
@@ -925,7 +925,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             var percent = loading || snapshot is null ? null : CopilotPercent(snapshot);
             SetIcon(_copilot, TrayIconRenderer.CreateCopilotIcon(percent, loading, _settings.CopilotAccentColor()));
-            _copilotIcon.Text = loading ? "GitHub Copilot 更新中" : TrimTooltip(BuildCopilotTooltip(snapshot));
+            _copilotIcon.Text = loading ? Strings.T("GitHub Copilot 更新中") : TrimTooltip(BuildCopilotTooltip(snapshot));
         }
 
         _copilotIcon.Visible = cpOn;
@@ -1022,7 +1022,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (service is null)
         {
-            return "未取得";
+            return Strings.T("未取得");
         }
 
         if (service.Status != ProviderStatus.Available)
@@ -1046,7 +1046,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (service is null)
         {
-            return "未取得";
+            return Strings.T("未取得");
         }
 
         if (service.Status != ProviderStatus.Available)

@@ -10,6 +10,7 @@ internal sealed class SettingsForm : Form
     private readonly ComboBox _refreshInterval = new();
     private readonly CheckBox _autoStart = new();
     private readonly ComboBox _theme = new();
+    private readonly ComboBox _language = new();
 
     // Claude / Codex
     private readonly CheckBox _ccWindowEnabled = new();
@@ -54,10 +55,10 @@ internal sealed class SettingsForm : Form
         {
             Text = "共通設定",
             Location = new Point(12, 12),
-            Size = new Size(368, 132)
+            Size = new Size(368, 168)
         };
 
-        var intervalLabel = new Label { Text = "更新間隔", AutoSize = true, Location = new Point(14, 28) };
+        var intervalLabel = new Label { Text = Strings.T("更新間隔"), AutoSize = true, Location = new Point(14, 28) };
         _refreshInterval.DropDownStyle = ComboBoxStyle.DropDownList;
         _refreshInterval.Location = new Point(110, 24);
         _refreshInterval.Size = new Size(170, 24);
@@ -66,23 +67,32 @@ internal sealed class SettingsForm : Form
             _refreshInterval.Items.Add(new RefreshIntervalOption(option));
         }
 
-        _autoStart.Text = "Windowsログイン時に自動起動";
+        _autoStart.Text = Strings.T("Windowsログイン時に自動起動");
         _autoStart.AutoSize = true;
         _autoStart.Location = new Point(14, 58);
 
-        var themeLabel = new Label { Text = "テーマ", AutoSize = true, Location = new Point(14, 90) };
+        var themeLabel = new Label { Text = Strings.T("テーマ"), AutoSize = true, Location = new Point(14, 90) };
         _theme.DropDownStyle = ComboBoxStyle.DropDownList;
         _theme.Location = new Point(110, 86);
         _theme.Size = new Size(170, 24);
         _theme.Items.Add(new ThemeOption(ThemeMode.System));
         _theme.Items.Add(new ThemeOption(ThemeMode.Light));
         _theme.Items.Add(new ThemeOption(ThemeMode.Dark));
-        var themeNote = new Label
+
+        var languageLabel = new Label { Text = Strings.T("言語"), AutoSize = true, Location = new Point(14, 120) };
+        _language.DropDownStyle = ComboBoxStyle.DropDownList;
+        _language.Location = new Point(110, 116);
+        _language.Size = new Size(170, 24);
+        _language.Items.Add(new LanguageOption(AppLanguage.System));
+        _language.Items.Add(new LanguageOption(AppLanguage.English));
+        _language.Items.Add(new LanguageOption(AppLanguage.Japanese));
+
+        var restartNote = new Label
         {
-            Text = "（再起動で反映）",
+            Text = Strings.T("（再起動で反映）"),
             AutoSize = true,
             ForeColor = SystemColors.GrayText,
-            Location = new Point(110, 113)
+            Location = new Point(110, 146)
         };
 
         gbCommon.Controls.Add(intervalLabel);
@@ -90,13 +100,15 @@ internal sealed class SettingsForm : Form
         gbCommon.Controls.Add(_autoStart);
         gbCommon.Controls.Add(themeLabel);
         gbCommon.Controls.Add(_theme);
-        gbCommon.Controls.Add(themeNote);
+        gbCommon.Controls.Add(languageLabel);
+        gbCommon.Controls.Add(_language);
+        gbCommon.Controls.Add(restartNote);
 
         // ----- Claude / Codex 設定 -----------------------------------------
         var gbClaudeCodex = new GroupBox
         {
             Text = "Claude / Codex 設定",
-            Location = new Point(12, 152),
+            Location = new Point(12, 188),
             Size = new Size(368, 272)
         };
 
@@ -202,7 +214,7 @@ internal sealed class SettingsForm : Form
         var gbCopilot = new GroupBox
         {
             Text = "GitHub Copilot 設定",
-            Location = new Point(12, 432),
+            Location = new Point(12, 468),
             Size = new Size(368, 224)
         };
 
@@ -277,14 +289,14 @@ internal sealed class SettingsForm : Form
         {
             Text = "OK",
             DialogResult = DialogResult.OK,
-            Location = new Point(224, 666),
+            Location = new Point(224, 702),
             Size = new Size(76, 28)
         };
         var cancelButton = new Button
         {
-            Text = "キャンセル",
+            Text = Strings.T("キャンセル"),
             DialogResult = DialogResult.Cancel,
-            Location = new Point(306, 666),
+            Location = new Point(306, 702),
             Size = new Size(76, 28)
         };
 
@@ -294,7 +306,7 @@ internal sealed class SettingsForm : Form
             Text = $"TokenCheckerWin v{AppVersion()}",
             AutoSize = true,
             ForeColor = SystemColors.GrayText,
-            Location = new Point(16, 672)
+            Location = new Point(16, 708)
         };
 
         Controls.Add(gbCommon);
@@ -376,6 +388,7 @@ internal sealed class SettingsForm : Form
         settings.RefreshIntervalSeconds = (_refreshInterval.SelectedItem as RefreshIntervalOption)?.Seconds ?? current.RefreshIntervalSeconds;
         settings.AutoStartEnabled = _autoStart.Checked;
         settings.Theme = (_theme.SelectedItem as ThemeOption)?.Mode ?? current.Theme;
+        settings.Language = (_language.SelectedItem as LanguageOption)?.Lang ?? current.Language;
 
         settings.ClaudeCodexWindowEnabled = _ccWindowEnabled.Checked;
         settings.ClaudeCodexDisplayMode = (_ccDisplayMode.SelectedItem as WindowDisplayModeOption)?.Mode ?? current.ClaudeCodexDisplayMode;
@@ -409,6 +422,7 @@ internal sealed class SettingsForm : Form
         _refreshInterval.SelectedIndex = IndexOf(_refreshInterval, o => (o as RefreshIntervalOption)?.Seconds == settings.RefreshIntervalSeconds);
         _autoStart.Checked = settings.AutoStartEnabled;
         _theme.SelectedIndex = IndexOf(_theme, o => (o as ThemeOption)?.Mode == settings.Theme);
+        _language.SelectedIndex = IndexOf(_language, o => (o as LanguageOption)?.Lang == settings.Language);
 
         _ccWindowEnabled.Checked = settings.ClaudeCodexWindowEnabled;
         _ccDisplayMode.SelectedIndex = IndexOf(_ccDisplayMode, o => (o as WindowDisplayModeOption)?.Mode == settings.ClaudeCodexDisplayMode);
@@ -582,9 +596,20 @@ internal sealed class SettingsForm : Form
         public override string ToString()
             => Mode switch
             {
-                ThemeMode.Light => "ライト",
-                ThemeMode.Dark => "ダーク",
-                _ => "システム連動"
+                ThemeMode.Light => Strings.T("ライト"),
+                ThemeMode.Dark => Strings.T("ダーク"),
+                _ => Strings.T("システム連動")
+            };
+    }
+
+    private sealed record LanguageOption(AppLanguage Lang)
+    {
+        public override string ToString()
+            => Lang switch
+            {
+                AppLanguage.English => "English",
+                AppLanguage.Japanese => "日本語",
+                _ => Strings.T("システム連動")
             };
     }
 
@@ -593,11 +618,11 @@ internal sealed class SettingsForm : Form
         public override string ToString()
             => Seconds switch
             {
-                30 => "30秒",
-                60 => "1分",
-                300 => "5分",
-                600 => "10分",
-                _ => $"{Seconds}秒"
+                30 => Strings.T("30秒"),
+                60 => Strings.T("1分"),
+                300 => Strings.T("5分"),
+                600 => Strings.T("10分"),
+                _ => Strings.Tf("{0}秒", Seconds)
             };
     }
 
