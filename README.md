@@ -8,10 +8,9 @@ It fetches the Claude Code / Codex 5-hour and weekly rate limits and presents th
 
 ## Screenshots
 
-<img width="413" height="102" alt="image" src="https://github.com/user-attachments/assets/affc94d4-e3e7-4d96-95c2-1580b17e4362" />
-<img width="412" height="103" alt="image" src="https://github.com/user-attachments/assets/1397f163-3639-4ab2-814c-ea6a6003d940" /><br>
-<img width="297" height="202" alt="image" src="https://github.com/user-attachments/assets/f4f1deac-3f45-4102-8fbb-5d6d49b028c0" />
-<img width="295" height="201" alt="image" src="https://github.com/user-attachments/assets/ec29c47d-cecb-400b-b90a-e420b452beb2" />
+<img width="413" height="102" alt="image" src="https://github.com/user-attachments/assets/affc94d4-e3e7-4d96-95c2-1580b17e4362" /><br>
+<img width="302" height="203" alt="image" src="https://github.com/user-attachments/assets/405f7698-9996-42fc-ad0c-c8f446e7d955" />
+<img width="302" height="206" alt="image" src="https://github.com/user-attachments/assets/bec22e93-53f7-4c57-b703-23d9e3c552da" />
 
 ## Features
 
