@@ -14,3 +14,6 @@ publish/
 
 # Generated artifacts (OGP images, test result reports, scratch output)
 outputs/
+
+# Obsidian vault config (notes/ holds the knowledge .md, but its workspace is local)
+.obsidian/
