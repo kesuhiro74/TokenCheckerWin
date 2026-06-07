@@ -1,320 +1,260 @@
 # TokenCheckerWin
 
-TokenCheckerWin は、Claude Code と OpenAI Codex と GitHub Copilot の AI Credits の使用率を Windows の通知領域から確認できる常駐アプリです。
+English | **[日本語](README.ja.md)**
 
-Claude Code / Codex の 5時間制限・週次制限を取得し、通常モード、コンパクトモード、ミニマムモードで見やすく表示します。取得に失敗した場合でも、前回成功した使用率を表示できます。
+TokenCheckerWin is a tray-resident Windows app that shows your Claude Code, OpenAI Codex, and GitHub Copilot AI Credits usage from the notification area.
 
-## 画面例
+It fetches the Claude Code / Codex 5-hour and weekly rate limits and presents them in three readable layouts — Normal, Compact, and Minimum. When a fetch fails, it can keep showing the last successfully retrieved usage.
+
+## Screenshots
 
 <img width="412" height="103" alt="image" src="https://github.com/user-attachments/assets/1397f163-3639-4ab2-814c-ea6a6003d940" /><br>
 <img width="297" height="202" alt="image" src="https://github.com/user-attachments/assets/f4f1deac-3f45-4102-8fbb-5d6d49b028c0" />
 <img width="295" height="201" alt="image" src="https://github.com/user-attachments/assets/ec29c47d-cecb-400b-b90a-e420b452beb2" />
 
-## 主な機能
+## Features
 
-- Claude Code / Codex の使用率表示
-- 5時間制限・週次制限の表示
-- Windows通知領域への常駐
-- 通常 / コンパクト / ミニマムの 3 表示モード
-- 使用率のバー / ドーナツ表示(サービスごとのブランド色)
-- リセットまでの残り時間表示
-- タイトルバーのない角丸フライアウト(どこでもドラッグ移動・Esc で閉じる)
-- Claude Code / Codex のログイン補助
-- GitHub Copilot の AI Credits 当月消費表示(オプトイン・専用ウィンドウ)
-- 前回成功値のフォールバック表示
-- ライト / ダーク / システム連動のテーマ(Windows の色モードに追従)
-- Windowsログイン時の自動起動設定
+- Claude Code / Codex usage display
+- 5-hour and weekly rate-limit display
+- Resides in the Windows notification area
+- Three display modes: Normal / Compact / Minimum
+- Bar / doughnut usage rendering (per-service brand colors)
+- Time-remaining-until-reset display
+- Title-bar-less rounded flyout (drag anywhere to move, Esc to close)
+- Claude Code / Codex sign-in assistance
+- GitHub Copilot AI Credits current-month consumption display (opt-in, dedicated window)
+- Last-successful-value fallback display
+- Light / Dark / System-linked theme (follows the Windows color mode)
+- UI language switch (System-linked / English / Japanese, applied on restart)
+- Auto-start at Windows sign-in
 
-## 注意事項
+## Notes
 
-- Claude Code の使用率取得には非公式の usage endpoint を利用しています
-- 将来の仕様変更により取得できなくなる可能性があります
-- このアプリは認証情報やトークンを保存しません
-- Claude Code / Codex のログイン処理は、それぞれの公式 CLI を起動して行います
-- Windows SmartScreen の警告が表示される場合があります
+- Claude Code usage is retrieved through an unofficial usage endpoint
+- A future specification change may make retrieval stop working
+- This app does not store any credentials or tokens
+- Claude Code / Codex sign-in is performed by launching each official CLI
+- Windows SmartScreen may display a warning
 
-## 動作環境
+## Requirements
 
 - Windows 11
 - VS Code
-- .NET 10 SDK 以降の .NET 10 互換 SDK
-- Visual Studio は不要
+- A .NET 10-compatible SDK (.NET 10 SDK or later)
+- Visual Studio is not required
 
-## プロジェクト構成
+## Project layout
 
-- `src/TokenChecker.Core`: 使用率のモデル、プロバイダ・インタフェース、アグリゲータ、各プロバイダ実装の共有ライブラリ
-- `src/TokenChecker.Poc`: `UsageSnapshot` を JSON で標準出力に書き出すコンソール POC
-- `src/TokenChecker.App`: WinForms + `NotifyIcon` の通知領域常駐アプリ
+- `src/TokenChecker.Core`: shared library for the usage models, provider interface, aggregator, and each provider implementation
+- `src/TokenChecker.Poc`: console POC that writes a `UsageSnapshot` to stdout as JSON
+- `src/TokenChecker.App`: WinForms + `NotifyIcon` notification-area resident app
 
-## ビルド
+## Build
 
 ```powershell
 dotnet build
 ```
 
-## POC を実行する
+## Test
+
+An xUnit test project under `tests/` pins the app's invariants (the 80%/95% thresholds, privacy masking, the Copilot allowance, prediction logic, settings migration, provider-failure isolation, and more). Make sure the whole solution is green before committing or releasing.
+
+```powershell
+dotnet test
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs `dotnet test` on windows-latest for every push / PR.
+
+## Running the POC
 
 ```powershell
 dotnet run --project src/TokenChecker.Poc
 ```
 
-GitHub Copilot の AI Credits プロバイダだけを確認したい場合は `--github-copilot` を渡します。`--raw` を併せると、候補エンドポイント(`ai_credit/usage` → `usage` → `premium_request/usage`)を叩いて、HTTP ステータスとマスク済みの `usageItems` フィールド(`product` / `sku` / `unitType` / `quantity` / `grossQuantity` / `grossAmount` / `netQuantity` / `netAmount` / `copilot`)だけを出力します(レスポンス本文・login・トークンは出力しません)。`GITHUB_TOKEN` が必要です。
+To check only the GitHub Copilot AI Credits provider, pass `--github-copilot`. Adding `--raw` hits the candidate endpoints (`ai_credit/usage` → `usage` → `premium_request/usage`) and prints only the HTTP status and the masked `usageItems` fields (`product` / `sku` / `unitType` / `quantity` / `grossQuantity` / `grossAmount` / `netQuantity` / `netAmount` / `copilot`) — never the response body, login, or token. A `GITHUB_TOKEN` is required.
 
 ```powershell
 dotnet run --project src/TokenChecker.Poc -- --github-copilot
 dotnet run --project src/TokenChecker.Poc -- --github-copilot --raw
 ```
 
-POC は Claude / Codex の `UsageSnapshot` を JSON で出力します。プロバイダの主な挙動は次の通りです。
+The POC prints the Claude / Codex `UsageSnapshot` as JSON. The main provider behaviors are:
 
-- `claude` / `codex` が PATH 上に存在するかをまずチェックします。
-- Codex プロバイダは `codex app-server --listen stdio://` を起動し、stdin/stdout に JSONL を流して `initialize` → `account/read` → `account/rateLimits/read` を呼びます。読み取り後は app-server プロセスを停止します。
-- `rateLimitsByLimitId` の各エントリは汎用的にパースし、`usedPercent` / `windowDurationMins` / `resetsAt` が取得できた場合に `RateLimitWindow` として公開します。
-- トークン・認証データ・メールアドレス・パス全体は読み取りも出力もしません。
-- CLI が見つからない場合は `NotInstalled` を返します。
-- Codex のログイン未完了レスポンスは `NotLoggedIn` として扱います。
-- Codex の `account.type` が `chatgpt` でない(API キー認証など)場合、使用率を取得できないことを `Error` として報告します。
-- Codex の起動失敗・タイムアウト・JSON/プロトコルエラーは `Error` として報告し、POC 全体は失敗させません。
-- Claude Code の使用率取得は非公式の OAuth usage endpoint を利用しています。仕様は予告なく変わる可能性があります。
-- Claude Code の OAuth 認証情報は、その endpoint に必要なアクセストークンを取り出すためだけに読み取ります。認証情報 JSON 本文、トークン、メールアドレス、パス全体を出力することはありません。
-- Claude Code の `five_hour` は 300 分の `RateLimitWindow`、`seven_day` は 10080 分の `RateLimitWindow` にマッピングします。
-- Claude Code usage endpoint の HTTP `401`/`403` は `Unauthorized`、`429` は `RateLimited`、5xx・タイムアウト・JSON エラーは `Error` として報告します。
-- `.credentials.json` は存在するものの、その中から有効な access token が取り出せない(例: `/logout` でファイルが空にされた、JSON 構造が想定外など)場合は、`Error` ではなく `NotLoggedIn` として報告します。UI 側は「未ログイン」バッジ + 「Claude Code にログインしてください」のメッセージで案内します。
+- It first checks whether `claude` / `codex` exist on the PATH.
+- The Codex provider launches `codex app-server --listen stdio://`, streams JSONL over stdin/stdout, and calls `initialize` → `account/read` → `account/rateLimits/read`. It stops the app-server process after reading.
+- Each `rateLimitsByLimitId` entry is parsed generically and exposed as a `RateLimitWindow` when `usedPercent` / `windowDurationMins` / `resetsAt` are available.
+- Tokens, auth data, email addresses, and full paths are never read out or printed.
+- If a CLI is not found, it returns `NotInstalled`.
+- A Codex not-signed-in response is treated as `NotLoggedIn`.
+- When the Codex `account.type` is not `chatgpt` (e.g. API-key auth), it reports `Error` because usage cannot be retrieved.
+- Codex launch failures, timeouts, and JSON/protocol errors are reported as `Error` without failing the whole POC.
+- Claude Code usage uses an unofficial OAuth usage endpoint. The specification may change without notice.
+- The Claude Code OAuth credentials are read only to extract the access token that endpoint needs. The credentials JSON body, tokens, email addresses, and full paths are never printed.
+- Claude Code `five_hour` maps to a 300-minute `RateLimitWindow` and `seven_day` to a 10080-minute `RateLimitWindow`.
+- For the Claude Code usage endpoint, HTTP `401`/`403` is `Unauthorized`, `429` is `RateLimited`, and 5xx / timeout / JSON errors are `Error`.
+- If `.credentials.json` exists but no valid access token can be extracted from it (e.g. the file was emptied by `/logout`, or the JSON shape is unexpected), it reports `NotLoggedIn` rather than `Error`. The UI then shows a "not signed in" badge and a "Please sign in to Claude Code" message.
 
-## VS Code から使う
+## Using it from VS Code
 
-このフォルダを VS Code で開き、次のいずれかを利用します。
+Open this folder in VS Code and use any of:
 
-- ターミナル: `dotnet build`
-- ターミナル: `dotnet run --project src/TokenChecker.Poc`
-- タスク: `dotnet build`
-- タスク: `run poc`
-- デバッグ構成: `TokenChecker.Poc`
+- Terminal: `dotnet build`
+- Terminal: `dotnet run --project src/TokenChecker.Poc`
+- Task: `dotnet build`
+- Task: `run poc`
+- Debug configuration: `TokenChecker.Poc`
 
-## 通知領域アプリの動作確認
+## Trying out the notification-area app
 
-タスクトレイ常駐として起動するには次を実行します。
+To launch it as a system-tray resident:
 
 ```powershell
 dotnet run --project src/TokenChecker.App
 ```
 
-起動直後に状態ウィンドウを開いて確認したい場合(開発・スクリーンショット・publish 後の動作確認向け)は `--show-status` を渡してください。
+To open the status window right at startup (handy for development, screenshots, and post-publish checks), pass `--show-status`:
 
 ```powershell
 dotnet run --project src/TokenChecker.App -- --show-status
 .\publish\win-x64\TokenChecker.exe --show-status
 ```
 
-引数なしで起動した場合は、設定画面で選択した各ウィンドウの表示方法(`常時表示` / `ホバー表示`)に従って起動します(`常時表示` のウィンドウは起動時に表示され、`ホバー表示` のウィンドウは対象トレイアイコンのホバーで表示されます)。`--show-status` は、起動時に Claude / Codex ステータスウィンドウを明示的に表示する補助オプションです。
+When launched without arguments, each window follows the display method you selected in settings (`Always show` / `Hover`): an `Always show` window appears at startup, while a `Hover` window appears when you hover its tray icon. `--show-status` is just a helper that explicitly shows the Claude / Codex status window at startup.
 
-設定ダイアログだけを開きたい場合は `--show-settings` を渡します。
+To open only the settings dialog, pass `--show-settings`:
 
 ```powershell
 dotnet run --project src/TokenChecker.App -- --show-settings
 ```
 
-### 表示モード
+### Display modes
 
-設定ダイアログとトレイ右クリックメニューから、次の 3 つの表示モードを切り替えられます。選択値は `settings.json` の `DisplayMode` フィールドに保存されます(旧バージョン向けに `CompactMode` の真偽値も互換のために書き出されます)。
+You can switch between three display modes from the settings dialog and the tray right-click menu. The chosen value is saved to the `DisplayMode` field of `settings.json` (the boolean `CompactMode` is also written for backward compatibility with older versions).
 
-いずれのモードもタイトルバーのない角丸のフライアウトとして表示されます。ウィンドウのどこでもドラッグで移動でき(リンク・テキスト欄を除く)、`Esc` キーまたはトレイアイコンの再クリックで閉じられます。ウィンドウ位置は保存され、次回も同じ場所に開きます。
+Every mode is shown as a title-bar-less rounded flyout. You can drag anywhere on the window to move it (except links and text fields), and close it with the `Esc` key or by clicking the tray icon again. The window position is saved and reopens in the same place.
 
-- **通常モード (Normal)**: Claude Code / Codex のカードを縦に並べる最も詳しい表示です。`5時間` の使用率を大きな数字 + 横長プログレスバーで主役として見せ、その下に `週次` の使用率(数字 + 控えめな細いバー)も表示します。`5時間` のリセットまでの残り時間(例: `あと2時間18分（11:50リセット）`)、状態バッジ、`詳細を表示` リンク(マスク済み診断情報を折りたたみ表示)も備えます。
-- **コンパクトモード (Compact)**: Claude Code / Codex を横並びの 2 カードにまとめ、`5時間` のドーナツチャートとバッジ、リセット文だけを表示する省スペースモードです。表示中のサービス数に合わせてウィンドウ幅が詰まり(片方だけ表示なら 1 枚分の幅)、余白を抑えた角丸ウィンドウになります。`最終更新` 行はこのモードでは省略します。
-- **ミニマムモード (Minimum)**: 2 サービスを 1 行ずつ(`● サービス名 ──バー── 45%`)積み重ねた最小表示です。各行はサービスのブランド色(Claude=青 / Codex=紫)のドットと細い横長バーで使用率を示し、使用率に応じて 80% 以上で橙、95% 以上で赤にエスカレーションします。週次・診断・リセット時刻はこのモードでは省略します。
+- **Normal**: the most detailed layout, stacking the Claude Code / Codex cards vertically. It features the `5h` usage as the hero — a large number plus a wide progress bar — with the `Weekly` usage (number plus a subtle thin bar) below it. It also has the time remaining until the `5h` reset (e.g. `2 h 18 m left (resets 11:50)`), a status badge, and a `Show details` link (collapsible masked diagnostics).
+- **Compact**: a space-saving mode that condenses Claude Code / Codex into two side-by-side cards showing only the `5h` doughnut chart, the badge, and the reset text. The window width shrinks to the number of visible services (a single card's width when only one is shown), with reduced padding. The `Last updated` line is omitted in this mode.
+- **Minimum**: the smallest layout, stacking the two services as one row each (`● ServiceName ──bar── 45%`). Each row shows usage with a dot in the service brand color (Claude = blue / Codex = purple) and a thin wide bar, escalating to amber at 80%+ and red at 95%+. Weekly, diagnostics, and reset time are omitted in this mode.
 
-### 通知領域アイコン
+### Notification-area icon
 
-- 外部画像を持たず、起動時にコードでアイコンを生成します。外側リングが Claude Code、内側リングが Codex、中央の `T` グリフがアプリ識別子です。
-- それぞれのリングは最大 `usedPercent` の値に応じて時計回りに伸び、トレイを一目見るだけで最も逼迫しているウィンドウの目安が分かります。
-- 全体最悪値に応じて配色が変わります。
-  - 通常 (`< 80%`): 青の外リング + 紫の内リング
-  - 警告 (`>= 80%`): アンバー
-  - 危険 (`>= 95%`): 赤
-  - エラー (両プロバイダが `NotInstalled` / `NotLoggedIn` / `Unauthorized` / `RateLimited` / `Error`): くすんだ赤
-  - 取得前 / データなし: ライトグレー
-- マウスオーバーのツールチップも日本語化されており、サービスごとに日本語のステータスバッジ、または `5h X% / Weekly Y%` を表示します。
+- It carries no external image and generates the icon in code at startup. An icon is shown per enabled window (Claude / Codex use vertical % bars; GitHub Copilot also uses a vertical % bar).
+- The Claude / Codex vertical % bars show the maximum `usedPercent` of the enabled services as a bar that grows vertically, so a single glance at the tray hints at the most constrained window. Two bars appear when both Claude and Codex are enabled, one when only one is.
+- The color changes with the overall worst value.
+  - Normal (`< 80%`): the service brand color
+  - Warning (`>= 80%`): amber
+  - Critical (`>= 95%`): red
+  - Error (both providers `NotInstalled` / `NotLoggedIn` / `Unauthorized` / `RateLimited` / `Error`): muted red
+  - Before retrieval / no data: light gray
+- The hover tooltip follows the UI language and shows a per-service status badge, or `5h X% / Weekly Y%`.
 
-### Claude Code / Codex のログイン補助
+### Claude Code / Codex sign-in assistance
 
-このアプリは認証情報を保存しません。ログイン処理はすべて公式 CLI に委ねます。
+This app does not store credentials. All sign-in is delegated to the official CLIs.
 
-- トレイ右クリックメニューは次の **5 項目** だけです（どのトレイアイコンを右クリックしても同じメニュー。両ウィンドウ OFF 時のコントロール用アイコンでも同じです）。
-  - `今すぐ更新` — 使用率の再取得（provider が無くてもクラッシュしません）。
-  - `Claude/Codexステータス表示モード` ▶(`通常モード` / `コンパクトモード` / `ミニマムモード`) — 現在の `DisplayMode` にチェック。選択すると即時にステータス窓の表示が切り替わり `settings.json` に保存されます。Claude/Codex ウィンドウが OFF のときは無効表示。
-  - `GitHubCopilot表示モード` ▶(`常時表示` / `ホバー表示`) — 現在の `CopilotDisplayMode` にチェック。選択すると即時に Copilot ウィンドウの表示方法が切り替わり保存されます（`常時表示`＝有効なら表示・ピンは解除して常時表示に統一、`ホバー表示`＝ピン留め時以外は非表示でトレイアイコンのホバーで表示）。Copilot ウィンドウが OFF のときは無効表示。
-  - `設定` — 設定ダイアログを開きます。
-  - `終了`。
-- ログイン/ログアウト・認証状態の再確認・GitHub Copilot の初回設定/接続テストは、**右クリックメニューには出さず設定ダイアログ側**に集約しています。
-- 設定ダイアログの `Claude Code にログイン` を押すと、新しい `cmd.exe` を開いて `claude` CLI を起動します。プロンプトで `/login` と入力してログインを完了し、その後に `認証状態を再確認` を押してください。`Claude Code からログアウト` も同じく `claude` を開き、ユーザーが `/logout` を入力します。アプリ側で `.credentials.json` や OAuth トークンを読むことはありません。
-- 設定ダイアログの `Codex にログイン` は、新しい `cmd.exe` で `codex login` を実行します。ブラウザで ChatGPT サインインを完了したあと、`認証状態を再確認` を押してください。`codex logout` も同じく実行できます。Codex の使用率取得は ChatGPT ログインを前提としており、API キー認証では使用率を取得できません。
-- 設定ダイアログの `認証状態を再確認` は単に使用率取得を再実行します。ログインが成功していればステータスが `正常取得` に切り替わり、リング表示も更新されます。
-- 設定ダイアログには `ログイン状態` セクションがあり、`Claude Code` / `Codex` の現在のステータス(`正常` / `未ログイン` / `CLI未検出` / `認証エラー` / `取得を一時制限中` / `取得失敗`)と、サービス別の `ログイン` / `ログアウト` ボタン、共通の `認証状態を再確認` ボタンが置かれています。
-- CLI が PATH に見つからない場合は `Claude Code CLI が見つかりません` / `Codex CLI が見つかりません` とメッセージを出すだけで、プロセスは起動しません。
+- The tray right-click menu has exactly **five items** (the same menu regardless of which tray icon you right-click — including the control icon shown when both windows are OFF).
+  - `Refresh now` — re-fetch usage (does not crash even if a provider is absent).
+  - `Claude/Codex status display mode` ▶ (`Normal` / `Compact` / `Minimum`) — checks the current `DisplayMode`. Selecting one immediately switches the status window and saves to `settings.json`. Disabled when the Claude/Codex window is OFF.
+  - `GitHub Copilot display mode` ▶ (`Always show` / `Hover preview`) — checks the current `CopilotDisplayMode`. Selecting one immediately switches the Copilot window's display method and saves it (`Always show` = shown when enabled, unpinned into a unified always-on state; `Hover preview` = hidden unless pinned, shown by hovering the tray icon). Disabled when the Copilot window is OFF.
+  - `Settings` — opens the settings dialog.
+  - `Exit`.
+- Log in / out, re-checking the auth status, and GitHub Copilot first-time setup / connection test are **kept out of the right-click menu and consolidated in the settings dialog**.
+- Pressing `Log in` for Claude Code in the settings dialog opens a new `cmd.exe` and launches the `claude` CLI. Type `/login` at the prompt to finish logging in, then press `Re-check auth status`. `Log out` likewise opens `claude`, and you type `/logout`. The app never reads `.credentials.json` or OAuth tokens.
+- `Log in` for Codex in the settings dialog runs `codex login` in a new `cmd.exe`. Finish the ChatGPT sign-in in your browser, then press `Re-check auth status`. `codex logout` works the same way. Codex usage retrieval requires ChatGPT sign-in; API-key auth cannot retrieve usage.
+- `Re-check auth status` in the settings dialog simply re-runs the usage fetch. If sign-in succeeded, the status switches to `OK` and the tray icon updates.
+- The settings dialog has an `Auth status` section showing the current status of `Claude Code` / `Codex` (`OK` / `Not logged in` / `CLI not found` / `Auth error` / `Temporarily rate-limited` / `Fetch failed`), per-service `Log in` / `Log out` buttons, and a shared `Re-check auth status` button.
+- If a CLI is not found on the PATH, it only shows a `Claude Code CLI not found` / `Codex CLI not found` message and does not launch any process.
 
-### ステータスバッジとメッセージ
+### Status badges and messages
 
-- ステータスバッジは日本語表示(`正常取得` / `未インストール` / `未ログイン` / `認証エラー` / `取得を一時制限中` / `取得失敗` / `状態不明`)です。`ProviderStatus` enum の英名はそのまま画面に出しません。`取得を一時制限中` は usage endpoint 自体が HTTP `429` を返したときだけ表示されます(LLM 自体のクォータ超過ではないことに注意)。
-- バッジ下の本文は短いユーザ向け文(例: `Claude Code の使用率を取得できています`)を表示します。`claudeFound=...; usageApi=...` のような生診断文字列は通常表示には出しません。
-- 各カードの `詳細を表示` / `詳細を隠す` リンクから、トラブルシュート用にマスク済みの診断情報を確認できます。
+- Status badges follow the UI language (in English: `OK` / `Not installed` / `Not logged in` / `Auth error` / `Temporarily rate-limited` / `Fetch failed` / `Unknown`). The raw `ProviderStatus` enum names are never shown directly. `Temporarily rate-limited` appears only when the usage endpoint itself returned HTTP `429` (note: this is not an LLM quota overage).
+- The body text below the badge shows a short user-facing sentence (e.g. `Claude Code usage is being read`). Raw diagnostic strings like `claudeFound=...; usageApi=...` are not shown in the normal view.
+- Each card's `Show details` / `Hide details` link reveals masked diagnostic info for troubleshooting.
 
-### リセット時刻
+### Reset time
 
-- リセットまでの残り時間はローカルタイムで表示します。
-- `5時間` ウィンドウ: `あと2時間18分（11:50リセット）`
-- `週次` ウィンドウ: `あと3日4時間（5/27 18:00リセット）`
+- The time remaining until reset is shown in local time.
+- `5h` window: `in 2h 18m (resets 11:50)`
+- `Weekly` window: `in 3d 4h (resets 5/27 18:00)`
 
-### 設定と保存ファイル
+### Settings and saved files
 
-- 設定は現在ユーザーの `AppData` フォルダ配下に保存され、アプリ再起動後も維持されます。
-- `settings.json` には、更新間隔・自動起動設定・テーマ(`ThemeMode`: システム連動 / ライト / ダーク)・表示モード(`DisplayMode`、後方互換のための `CompactMode`)・各ウィンドウの表示 ON/OFF・表示方法(`常時表示` / `ホバー表示`)・Claude / Codex の表示対象サービス・GitHub Copilot のプラン / Custom 上限・配色・各ウィンドウの位置といった**アプリ設定のみ**を保存します。トークン・認証情報・login・URL・パス・メールアドレスは一切保存しません。
-- 設定ファイルが破損していた場合は、デフォルト設定で起動します。
-- 状態ウィンドウの位置は移動・閉じる後も復元されます。保存された位置が現在のモニタ構成外にある場合は、表示領域内に補正して開きます。
-- 設定で Claude Code / Codex の表示・非表示を切り替えられます。両方非表示にしてもアプリは常駐し、トレイアイコン / メニューは利用できます。
-- Windows ログイン時の自動起動は、現在ユーザーの Run キーにある `TokenCheckerWin` の値で管理します。publish 済みビルドは publish 済み exe のパスを登録し、開発中の `dotnet` 実行では `dotnet "<app dll>"` 形式にフォールバックします。
-- 更新間隔は `30秒` / `1分` / `5分` / `10分` から選択できます。
-- **テーマ(ライト / ダーク / システム連動)** を「共通設定」で選べます。`システム連動` は Windows の色モード(設定 > 個人用設定 > 色)に追従します。**反映は起動時のみ**で、変更後は**アプリを再起動**すると反映されます(設定画面にも「(再起動で反映)」と表示)。ウィンドウ(Claude/Codex・GitHub Copilot)と設定ダイアログがダーク/ライトに切り替わります(トレイアイコンの配色は共通)。
+- Settings are saved under the current user's `AppData` folder and persist across restarts.
+- `settings.json` stores **app settings only**: refresh interval, auto-start, theme (`ThemeMode`: system-linked / light / dark), UI language (`Language`: System-linked / English / Japanese), display mode (`DisplayMode`, plus `CompactMode` for backward compatibility), each window's ON/OFF, display method (`Always show` / `Hover`), the visible Claude / Codex services, the GitHub Copilot plan / custom cap, accent color, and each window's position. It never stores tokens, credentials, login, URLs, paths, or email addresses.
+- If the settings file is corrupted, the app starts with defaults.
+- The status window position is restored after moving / closing. If a saved position is off the current monitor layout, it opens corrected into the visible area.
+- Settings can show/hide Claude Code / Codex. Even with both hidden, the app stays resident and the tray icon / menu remain available.
+- Auto-start at Windows sign-in is managed by the `TokenCheckerWin` value under the current user's Run key. A published build registers the published exe's path; a development `dotnet` run falls back to the `dotnet "<app dll>"` form.
+- The refresh interval can be `30 s` / `1 min` / `5 min` / `10 min`.
+- **Theme (Light / Dark / System-linked)** can be chosen under "Common settings". `System-linked` follows the Windows color mode (Settings > Personalization > Colors). **It is applied only at startup**, so **restart the app** for a change to take effect (the settings screen also shows "(applied on restart)"). The windows (Claude/Codex, GitHub Copilot) and the settings dialog switch between dark/light (the tray icon palette is shared).
+- **UI language (System-linked / English / Japanese)** can be chosen under "Common settings". `System` uses Japanese when the Windows display language (UI culture) is Japanese, and English otherwise. Like the theme, **it is applied only at startup**, so **restart the app** for a change to take effect across the entire UI (windows, settings dialog, tray menu, tooltips). The settings screen also shows "(applied on restart)".
 
-### 前回成功値のフォールバック
+### Last-successful-value fallback
 
-- 取得に失敗しても、サービスごとに最後に成功した使用率を保持しているため、Claude / Codex の片方が一時的に失敗してももう片方の前回値は消えません。
-- 最後に成功した Claude / Codex の使用率は、`settings.json` と同じ AppData フォルダの `last_usage.json` にも永続化されます。起動直後に Anthropic 側で `HTTP 429` を引いた場合(例: 同じ usage endpoint に対して POC を直前に実行した直後など)でも、前回の使用率がドーナツに残ったまま表示されます。
-- 失敗時のバッジには現在のステータス(`取得を一時制限中` / `取得失敗` など)が出て、本文には `一時的に取得できません。前回成功値を表示しています` と表示されます。次回の取得が成功するとドーナツが更新され、永続化スナップショットも上書きされます。
-- `last_usage.json` にはサービスごとの `Status` / `Windows` / `CapturedAtUtc` の数値だけを保存し、プロバイダの診断 `Message` 文字列は `null` にクリアしてから書き出します。トークン・認証情報・メールアドレス・パスは一切保存しません。
+- Even when a fetch fails, the last successful usage is retained per service, so a temporary failure of one of Claude / Codex does not wipe out the other's previous value.
+- The last successful Claude / Codex usage is also persisted to `last_usage.json` in the same AppData folder as `settings.json`. Even if Anthropic returns `HTTP 429` right after startup (e.g. just after running the POC against the same usage endpoint), the previous usage stays in the doughnut.
+- On failure, the badge shows the current status (`Temporarily rate-limited` / `Fetch failed`, etc.) and the body shows `Temporarily unavailable — showing the last successful values`. When the next fetch succeeds, the doughnut updates and the persisted snapshot is overwritten.
+- `last_usage.json` stores only the numeric `Status` / `Windows` / `CapturedAtUtc` per service, with the provider's diagnostic `Message` string cleared to `null` before writing. It never stores tokens, credentials, email addresses, or paths.
 
-### その他の挙動
+### Other behaviors
 
-- `今すぐ更新` を連打しても重複した更新は走らないようロックされています。
-- 更新中にアプリを終了するとトレイアイコンも消え、プロセスが残りません。
-- Claude CLI 診断で `claude --version` がタイムアウトした場合、子プロセスは Kill されます。
+- Repeatedly clicking `Refresh now` is locked so duplicate refreshes do not run.
+- Exiting the app during a refresh also removes the tray icon, leaving no process behind.
+- If `claude --version` times out during Claude CLI diagnostics, the child process is killed.
 
-### GitHub Copilot(AI Credits・オプトイン)
+### GitHub Copilot (AI Credits, opt-in)
 
-GitHub Copilot は 2026-06-01 から従量課金(AI Credits)へ移行しました。Claude / Codex のようなリアルタイムのレート制限ウィンドウ(`utilization%` + `resets_at`)は無く、個人トークンで取得できるのは **当月の AI Credits 消費量** だけです。月次の上限(同梱クレジット枠)は API では公開されていないため、上限は **設定でプランを選ぶ(または手入力する)** ことでアプリ側が与えます。
+GitHub Copilot moved to usage-based billing (AI Credits) on 2026-06-01. There is no real-time rate-limit window (`utilization%` + `resets_at`) like Claude / Codex; a personal token can only retrieve the **current month's AI Credits consumption**. Because the monthly cap (included credit allowance) is not exposed by the API, the app supplies the cap by having you **select a plan in settings (or enter it manually)**.
 
-- **既定はオフ(オプトイン)** です。設定の「GitHub Copilot 設定」で「GitHub Copilot ウィンドウを表示」を有効にしたときだけ、GitHub の billing endpoint にアクセスします。無効な間は `/user`・billing へ一切アクセスしません(取得処理自体を走らせません)。
-- **専用ウィンドウ**(Claude / Codex のステータス窓とは別の角丸フライアウト)に表示します。上部は **Copilot アイコン＋`GitHub Copilot`**(1行目)と**選択中のプラン名**(2行目・小さめ薄め。例: `Copilot Pro` / `Copilot Pro+` / `Copilot Max` / `Custom 7,000 credits`)です。通常時は使用率のみを大きく表示し(例: `66% 使用済み`。`使用済み` は小さめ・薄いグレー)、**メイン表示エリア(`n% 使用済み`)にマウスを乗せる**かキーボードフォーカスすると詳細値(例: `4,627 / 7,000 使用済み`)に切り替わります(メイン表示エリア以外にマウスを置いても切り替わりません)。バーの割合・リセット目安・サブ情報・ウィンドウサイズは通常時と詳細時で変わりません。
-- **フォント**: GitHub Copilot ウィンドウの主要表示(タイトル・プラン名・数値・`使用済み`・ステータスバッジ・サブ情報)は、`Moralerspace` を**インストールしている場合に使用**します。**未インストールなら標準フォント(Segoe UI)へ自動でフォールバック**します(フォントは同梱しません・無くても動作し、アプリは落ちません)。
-- **追加のサブ情報**: このペースで 100% に到達する予測日(例: `このペースだと 6/21 頃に 100%`、不能時は `予測にはデータ不足`)と、本日 9:00 以降の増分(例: `本日9:00以降 +327 credits（+4.7%）`、基準値が無ければ `未計測`)を小さく表示します。
-- **トークンは環境変数 `GITHUB_TOKEN` のみ** から読み取ります(読み取り専用・非保存・非出力)。未設定のときは「未ログイン」として、トークン設定を案内します。fine-grained PAT の場合は **User permissions の「Plan: Read」** が必要です。
-- **プラン**(なし / Free=200 / Pro=1,500 / Pro+=7,000 / Max=20,000 / Custom 手入力)を設定で選びます。`なし` のときは使用量(クレジット)だけを表示します。プランを選ぶと上限・残量・割合・バーを表示し、80% 以上で橙・95% 以上で赤にエスカレーションします(Claude / Codex と同じ閾値)。
-  - **Copilot Free** は当月の AI Credits 枠(200)に対する使用率メーターのみを表示します。Free のコード補完(インライン候補・2,000/月)やチャット(50/月)のクォータは、個人トークンで読み取れる billing エンドポイントには現れない(補完はクレジットを消費しない)ため、**本アプリでは表示しません**(取得には Copilot の OAuth ログインと非公開 API が必要で、アプリ内ログインは実装しない方針のため)。
-- **ウィンドウの表示方法**はウィンドウごとに 2 種類から選べます(Claude / Codex ウィンドウと GitHub Copilot ウィンドウで別々に設定可)。
-  - `常時表示`: アプリ起動中は対象ウィンドウを常に表示します(閉じても設定が ON なら再表示できます)。
-  - `ホバー表示`: 対象ウィンドウ専用のタスクトレイアイコンにマウスを乗せるとフェードインで表示し、マウスがウィンドウの外に出ると即座に隠れます(アイコン→ウィンドウへの移動では消えません)。トレイアイコンを**クリックするとピン留め**(常時表示)に切り替わります。
-- **トレイアイコン**は有効なウィンドウごとに表示します(Claude / Codex はリング、GitHub Copilot は縦%バー)。Copilot の縦%バーはアイコン領域を縦長に使い、当月消費の割合(プラン上限比)を示します(角はやや角張った角丸矩形・80%/95% の色変化は維持)。両ウィンドウとも OFF のときは、設定・終了に到達できるよう操作用アイコンを 1 つだけ表示します。
-- **配色**: GitHub Copilot の**カードのバー・トレイ縦%バーの通常色(80% 未満)**を設定で選べます(`グリーン（既定）` / `ブルー` / `スカイ` / `パープル` / `スレート`)。**数値(`n%`)は黒系・`使用済み` は薄いグレーで固定**(配色設定の影響を受けません)。**80% 以上で橙・95% 以上で赤へのエスカレーションはバー側で維持**されます(Claude / Codex と同じ閾値)。<br>※配色設定はバーにのみ反映されます。以前のビルドで `スレート` 等を選んでいた場合、本バージョンからはバーがその色になります。
-- **ピン留め / 常時表示中の枠と外クリック非表示**: トレイアイコンのクリックで Copilot ウィンドウをピン留め(常時表示)にすると、外周に薄い 1px の枠線が付きます(通常のホバー表示では枠線なし)。クリックで表示・ピン留めした状態では、**ウィンドウの外をクリックすると非表示**になります(ウィンドウ内クリックでは消えません。トレイ操作・右クリックメニュー操作とは競合しません)。
-- **制約**:
-  - 個人アカウントに直接課金される利用量のみが対象です。Organization / Enterprise 管理の Copilot 利用量は個人 billing endpoint には現れません(`403` / `404` になり得ます)。
-  - Enhanced Billing Platform 対象外のアカウントでは取得できないことがあります。
-  - 月次上限はプランの既知値(または手入力)です。GitHub の配分変更で陳腐化し得るため、定数は 1 箇所(`AppSettings`)に集約しています。
-  - リセット日は **暦月近似の推定**です(API からは取得できません)。請求サイクルが署名日基準の場合は暦月とずれ得ます。UI は「当月集計・リセット目安(推定)」として表示します。
-- **HTTP ステータスの扱い**: `GITHUB_TOKEN` 未設定 → `未ログイン` / `401` → 「無効または期限切れ」/ `403` → 「Plan(Read) 権限・個人課金・Enhanced Billing 対象を確認」/ `429`・Retry-After → `取得を一時制限中` / 5xx・タイムアウト・JSON 異常 → `取得失敗`。当月消費が無い(空配列・Copilot 行なし)場合は使用量 0 として正常表示します。
-- **初回設定（PAT + `GITHUB_TOKEN` 環境変数方式）**: 設定の「GitHub Copilot 設定」に **`初回設定`** と **`接続テスト`** ボタンがあります。`初回設定` を押すとウィザードが開き、(1) GitHub の fine-grained PAT 作成ページを既定ブラウザで開く＋下部に**作成手順**を表示、(2) Windows のユーザー環境変数 `GITHUB_TOKEN` 設定手順（PowerShell 例つき）を表示、(3) 現在の `GITHUB_TOKEN` で取得を試す `接続テスト` を行えます。
-  - **fine-grained PAT の作成手順（要点）**:
-    1. **Token name**: 分かりやすい名前（例: `TokenChecker`）。
-    2. **Expiration**: 推奨 `90 days`（継続利用優先なら `No expiration` も可）。
-    3. **Permissions**: `[+ Add permissions]` →一覧から **`Plan`** を追加し、**`Read-only`** を選択。
-    4. **`Generate token`** を押してトークンを作成・コピー。
-    5. コピーしたトークンを Windows のユーザー環境変数 **`GITHUB_TOKEN`** に設定（アプリには入力しません）。設定後 TokenCheckerWin を再起動。
-  - **アプリ内ログイン / OAuth / Device Flow は現時点では未実装**です。トークンは**アプリ内に入力させず・保存せず**、ユーザー環境変数 `GITHUB_TOKEN` から読み取るだけです。
-  - **接続テストはトークンを表示しません**。成功時は使用量の数値（例: `当月使用量: 4,627 / 7,000 credits`・`使用率: 66%`）のみ、失敗時は安全な定型文（未設定／無効・期限切れ／権限不足（Plan=read 確認）／レート制限中／取得失敗）のみを表示します。token・login・URL・path・email・生の診断文字列は表示・保存・ログ出力しません。
-  - 環境変数の設定後、既に起動中の TokenCheckerWin には反映されない場合があります。反映されないときは再起動してください。
-  - `GITHUB_TOKEN` 未設定で Copilot ウィンドウが ON のときは、ウィンドウに「`GITHUB_TOKEN が未設定です` / 設定画面の『初回設定』から手順を確認してください」と案内します（ウィンドウ内にトークン入力欄は設けません）。
+- **Off by default (opt-in).** Only when you enable "Show the GitHub Copilot window" under "GitHub Copilot settings" does it access the GitHub billing endpoint. While disabled, it never touches `/user` or billing (the fetch itself does not run).
+- **A dedicated window** (a rounded flyout separate from the Claude / Codex status window). The top shows the **Copilot icon + `GitHub Copilot`** (line 1) and the **selected plan name** (line 2, smaller and lighter, e.g. `Copilot Pro` / `Copilot Pro+` / `Copilot Max` / `Custom 7,000 credits`). Normally it shows only the usage prominently (e.g. `66% used`, with `used` smaller and light gray); **hovering the main display area (`n% used`)** or giving it keyboard focus switches to the detail values (e.g. `4,627 / 7,000 used`) — hovering anywhere else does not switch it. The bar fraction, reset estimate, sub-info, and window size are identical between the normal and detail states.
+- **Font**: the GitHub Copilot window's main text (title, plan name, numbers, `used`, status badge, sub-info) uses `Moralerspace` **when it is installed**, and **falls back to the standard font (Segoe UI) when it is not** (the font is not bundled; the app works and does not crash without it).
+- **Extra sub-info**: it shows, in small text, the predicted date of reaching 100% at the current pace (e.g. `At this pace, 100% around 6/21`, or `Not enough data to project` when impossible) and the increment since 9:00 today (e.g. `Since 9:00 today: +327 credits (+4.7%)`, or `Since 9:00 today: not measured` when there is no baseline).
+- **Tokens are read only from the `GITHUB_TOKEN` environment variable** (read-only, not stored, not printed). When unset, it reports "not signed in" and guides you to set a token. A fine-grained PAT needs **User permissions "Plan: Read"**.
+- **Plan** (None / Free=200 / Pro=1,500 / Pro+=7,000 / Max=20,000 / Custom manual entry) is chosen in settings. With `None`, it shows only the consumption (credits). Choosing a plan shows the cap, remaining, fraction, and bar, escalating to amber at 80%+ and red at 95%+ (the same thresholds as Claude / Codex).
+  - **Copilot Free** shows only a usage meter against the monthly AI Credits allowance (200). Free's code completions (inline suggestions, 2,000/month) and chat (50/month) quotas do not appear in the billing endpoint a personal token can read (completions do not consume credits), so **this app does not show them** (retrieving them would need Copilot OAuth sign-in and a private API, and in-app sign-in is intentionally not implemented).
+- **Display method** can be chosen per window from two options (set separately for the Claude / Codex window and the GitHub Copilot window).
+  - `Always show`: the target window is always shown while the app runs (you can re-show it even after closing, as long as the setting is ON).
+  - `Hover`: hovering the target window's dedicated tray icon fades it in, and moving the mouse outside the window hides it immediately (moving from icon to window does not hide it). **Clicking** the tray icon switches it to pinned (always show).
+- **Tray icons** are shown per enabled window (Claude / Codex use vertical % bars; GitHub Copilot also uses a vertical % bar). The Copilot vertical % bar uses the icon area vertically to show the current-month consumption fraction (against the plan cap) (a slightly squared rounded rectangle; the 80%/95% color changes are preserved). When both windows are OFF, a single control icon is shown so you can still reach Settings and Exit.
+- **Accent color**: you can choose the **normal color (below 80%) of the Copilot card bar and the tray vertical % bar** in settings (`Blue (default)` / `Green` / `Sky` / `Purple` / `Slate`). **The number (`n%`) is fixed to a near-black color and `used` to light gray** (unaffected by the accent setting). **Escalation to amber at 80%+ and red at 95%+ is preserved on the bar** (the same thresholds as Claude / Codex).<br>Note: the accent setting affects only the bar. If you had selected e.g. `Slate` in an earlier build, the bar takes that color from this version on.
+- **Border while pinned / always-on, and hide on outside click**: pinning the Copilot window (always show) by clicking the tray icon adds a faint 1px border around it (no border in normal hover display). While shown/pinned by clicking, **clicking outside the window hides it** (clicking inside does not; it does not conflict with tray or right-click-menu operations).
+- **Constraints**:
+  - Only usage billed directly to the personal account is in scope. Organization / Enterprise-managed Copilot usage does not appear in the personal billing endpoint (it may `403` / `404`).
+  - Retrieval may not work for accounts not on the Enhanced Billing Platform.
+  - The monthly cap is the plan's known value (or your manual entry). Because a GitHub allotment change could make it stale, the constants are consolidated in one place (`AppSettings`).
+  - The reset date is a **calendar-month approximation estimate** (it is not retrievable from the API). If the billing cycle is anchored to the signup date, it can drift from the calendar month. The UI shows it as `This month (calendar-month approx.)` / `This month · est. reset {month}/{day}`.
+- **HTTP status handling**: `GITHUB_TOKEN` unset → `Not logged in` / `401` → "invalid or expired" / `403` → "check Plan(Read) permission, personal billing, and Enhanced Billing eligibility" / `429` and Retry-After → `Temporarily rate-limited` / 5xx, timeout, JSON anomaly → `Fetch failed`. When there is no current-month consumption (empty array, no Copilot rows), it shows 0 usage as a normal result.
+- **First-time setup (PAT + `GITHUB_TOKEN` environment-variable method)**: "GitHub Copilot settings" has **`First-time setup`** and **`Connection test`** buttons. `First-time setup` opens a wizard that lets you (1) open GitHub's fine-grained PAT creation page in your default browser plus show the **creation steps** at the bottom, (2) show the steps to set the Windows user environment variable `GITHUB_TOKEN` (with a PowerShell example), and (3) run a `Connection test` that tries a fetch with the current `GITHUB_TOKEN`.
+  - **Fine-grained PAT creation steps (key points)**:
+    1. **Token name**: a clear name (e.g. `TokenChecker`).
+    2. **Expiration**: `90 days` recommended (`No expiration` is also fine if you prioritize continuous use).
+    3. **Permissions**: `[+ Add permissions]` → add **`Plan`** from the list and select **`Read-only`**.
+    4. Press **`Generate token`** to create and copy the token.
+    5. Set the copied token to the Windows user environment variable **`GITHUB_TOKEN`** (you do not enter it into the app). Restart TokenCheckerWin afterward.
+  - **In-app sign-in / OAuth / Device Flow is not currently implemented.** The token is **never entered into the app and never stored** — it is only read from the `GITHUB_TOKEN` user environment variable.
+  - **The connection test does not display the token.** On success it shows only usage numbers (e.g. `Fetched successfully. This month: 4,627 / 7,000 credits  Usage: 66%`); on failure it shows only safe boilerplate (unset / invalid-or-expired / insufficient permission (check Plan=read) / rate-limited / fetch-failed). It never displays, stores, or logs the token, login, URL, path, email, or raw diagnostic strings.
+  - After setting the environment variable, an already-running TokenCheckerWin may not pick it up. Restart it if it does not.
+  - When `GITHUB_TOKEN` is unset and the Copilot window is ON, the window guides you with `GITHUB_TOKEN is not set` / `See the steps under "First-time setup" in settings` (no token input field is placed in the window).
 
-## 認証情報とプライバシー
+## Credentials and privacy
 
-- アプリは UI・ツールチップ・ログ・`settings.json` のいずれにも、トークン・OAuth 認証情報・パス全体・メールアドレスを書き出しません。
-- 通常表示には生の診断文字列(`claudeFound=true; versionPresent=true; ...`、`accountNull=false; ...`)を出しません。`詳細を表示` の中だけに表示し、しかも次のマスク処理を通します。
-  - メールアドレス風 → `<email>`
-  - 絶対パス(Windows / POSIX) → `<path>`
-  - `token=` / `secret=` / `key=` / `authorization=` / `bearer=` の値 → `<redacted>`
-  - 長い英数字の塊 → `<redacted>`
-- `詳細を表示` には `[debug] serviceName=...; currentStatus=...; currentWindowCount=...; fallbackStatus=...; fallbackWindowCount=...;` の 1 行も含まれます。これにより、画面のリングが今回取得値かフォールバック値かを生診断文字列を見ずに判定できます。
-- ログイン補助(`Claude Code にログイン`、`Codex にログイン` など)は、公式 CLI を新しい `cmd.exe` 内で起動するだけです。アプリは `~/.claude/.credentials.json`、`~/.codex/auth.json`、Windows 資格情報マネージャー、API キーなどを読みません。保存も行いません。アプリが書き込むのは次の 3 ファイルだけです。
-  - `settings.json`(設定のみ)
-  - `last_usage.json`(数値の使用率のみ。診断 `Message` は `null` 化)
-  - `copilot_usage.json`(GitHub Copilot の差分計算用。対象月・最終取得日時・当月使用クレジット・当日 9:00 窓の基準値といった**数値と日付のみ**。トークン・login・URL・パス・メールアドレスは保存しません。Copilot ウィンドウが有効で取得に成功したときだけ作成されます)
-- Claude Code usage endpoint は非公式で、予告なく変更される可能性があります。表示される Claude の使用率はベストエフォートとして扱ってください。
+- The app never writes tokens, OAuth credentials, full paths, or email addresses to any of the UI, tooltips, logs, or `settings.json`.
+- The normal view never shows raw diagnostic strings (`claudeFound=true; versionPresent=true; ...`, `accountNull=false; ...`). They appear only inside `Show details`, and even then they pass through the following masking.
+  - Email-like → `<email>`
+  - Absolute paths (Windows / POSIX) → `<path>`
+  - Values after `token=` / `secret=` / `key=` / `authorization=` / `bearer=` → `<redacted>`
+  - Long alphanumeric blobs → `<redacted>`
+- `Show details` also includes a single line `[debug] serviceName=...; currentStatus=...; currentWindowCount=...; fallbackStatus=...; fallbackWindowCount=...;`. This lets you tell whether the on-screen ring is the latest value or a fallback without reading raw diagnostics.
+- Log-in assistance (the Claude Code / Codex `Log in` buttons, etc.) only launches the official CLI inside a new `cmd.exe`. The app does not read `~/.claude/.credentials.json`, `~/.codex/auth.json`, the Windows Credential Manager, API keys, and so on. It does not store them either. The app writes only these three files:
+  - `settings.json` (settings only)
+  - `last_usage.json` (numeric usage only; diagnostic `Message` nulled out)
+  - `copilot_usage.json` (for GitHub Copilot delta calculation: **numbers and dates only**, such as the target month, last fetch time, current-month used credits, and the 09:00-today window baseline. It does not store tokens, login, URLs, paths, or email addresses. It is created only when the Copilot window is enabled and a fetch succeeds.)
+- The Claude Code usage endpoint is unofficial and may change without notice. Treat the displayed Claude usage as best-effort.
 
-## 動作確認(本リポジトリでの履歴)
+## License
 
-2026-05-23 に次のコマンドで動作確認を行いました。
+This software is distributed under the [MIT License](LICENSE) (Copyright (c) 2026 kesuhiro74).
 
-```powershell
-dotnet build
-dotnet run --project src/TokenChecker.Poc
-```
-
-観測結果:
-
-- `dotnet build` は成功
-- `dotnet run --project src/TokenChecker.Poc` は成功
-- Claude は `NotInstalled` を報告
-- Codex CLI は検出されたがログインしていない環境のため `NotLoggedIn` を報告
-
-Codex にログイン済みの環境で期待される結果:
-
-- Codex が `Available` を報告
-- `UsageSnapshot.Services[].Windows` に少なくとも 1 つの Codex `RateLimitWindow` が含まれる
-
-その他の制約:
-
-- POC は Codex の `chatgptAuthTokens` を直接読みません。
-- 出力には意図的にトークン・認証データ・メールアドレス・パス全体を含めません。
-
-## GitHub Release 用説明文
-
-GitHub Release を作成する際の本文として、以下をそのまま貼り付けて利用できます。
-
-```
-TokenCheckerWin v0.5.0
-
-Claude Code / Codex の使用率(5時間制限・週次制限)に加え、GitHub Copilot の AI Credits 当月消費も Windows 通知領域から確認できる常駐アプリです。
-
-主な機能:
-- Claude Code / Codex の使用率をトレイアイコンとフライアウトに表示
-- GitHub Copilot の AI Credits 当月消費を専用ウィンドウ／トレイ縦%バーに表示(オプトイン・環境変数 GITHUB_TOKEN の fine-grained PAT「Plan: Read」を読み取り)
-- 用途に合わせて選べる 3 表示モード(すりガラス調のカード表示)
-  - 通常: 5時間を主役に、週次の細いバーも添えた詳細表示
-  - コンパクト: 5時間のドーナツを横並びにした省スペース表示
-  - ミニマム: サービスのブランド色バーで使用率だけを示す最小表示
-- 各サービスのブランドに合わせた見出し(✳ Claude Code / </> Codex)
-- タイトルバーのない角丸フライアウト(どこでもドラッグ移動・Esc で閉じる)
-- 各ウィンドウ(Claude/Codex・GitHub Copilot)の表示方法を「常時表示」または「ホバー表示」から個別に選択
-- ライト / ダーク / システム連動のテーマ(Windows の色モードに追従・反映は起動時)
-- リセットまでの残り時間表示と、取得失敗時の前回成功値フォールバック
-- Windows ログイン時の自動起動設定
-- 二重起動を防止(再起動するとすでに常駐しているウィンドウを前面に表示し、設定画面も多重に開きません)
-- アプリ専用のアイコンを exe に同梱
-- .NET 10 ベース(自己完結版はランタイム同梱のため .NET のインストール不要)
-
-使い方:
-1. zip ファイルをダウンロードして展開します
-2. TokenChecker.exe を起動します
-3. Windows 通知領域のアイコンをクリックすると使用率を確認できます
-4. トレイアイコンを右クリックすると、メニューは「今すぐ更新」「Claude/Codexステータス表示モード」「GitHubCopilot表示モード」「設定」「終了」の 5 項目です
-5. Claude Code / Codex のログイン・ログアウトや認証状態の再確認、GitHub Copilot の初回設定・接続テストは「設定」画面から行えます(未ログインの場合もここから案内されます)
-
-注意事項:
-- Claude Code の使用率取得には非公式の usage endpoint を利用しています
-- 将来の仕様変更により取得できなくなる可能性があります
-- このアプリは認証情報やトークンを保存しません
-- ログイン処理は公式 CLI (claude / codex) を起動して行います
-- GitHub Copilot の取得は環境変数 GITHUB_TOKEN(fine-grained PAT)のみを読み取り、トークンは保存・表示しません
-- Windows SmartScreen の警告が表示される場合があります
-```
-
-リポジトリの GitHub description(About 欄)には、以下を設定することを推奨します。
-
-```
-Claude Code / Codex の5時間・週次使用率をWindowsタスクトレイに常駐表示するアプリ(通常/コンパクト/ミニマムの3表示モード)
-```
-
-## ライセンス
-
-本ソフトウェアは [MIT License](LICENSE)（Copyright (c) 2026 kesuhiro74）の下で配布されます。
-
-同梱・利用している第三者コンポーネント（GitHub Octicons、.NET ランタイム）の表記は [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。
+For the third-party components used / bundled (GitHub Octicons, the .NET runtime), see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
