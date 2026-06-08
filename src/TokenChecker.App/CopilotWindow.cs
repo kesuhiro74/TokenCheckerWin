@@ -5,6 +5,16 @@ using TokenChecker.Core;
 
 namespace TokenChecker.App;
 
+// Daily-burn severity bands for the Copilot today-delta SPARK ICON (the text stays
+// the user's accent color; only the icon escalates green/amber/red). internal so
+// TokenChecker.App.Tests can assert the boundary mapping.
+internal enum DeltaSeverity
+{
+    Normal,
+    Alert,
+    Red
+}
+
 // Dedicated, borderless popup for the GitHub Copilot AI Credits card. Separate
 // from the Claude/Codex status window (the user asked for it as its own screen).
 //
@@ -22,11 +32,46 @@ internal sealed class CopilotWindow : Form
     private const int FormPadding = 0;
     public const int CardWidth = 300;
     // Taller than 186 to fit the two-line header (icon + "GitHub Copilot" / plan
-    // name) on top of the sub-info lines. This is a one-time base-size change, NOT
-    // hover jitter — the sub-lines and header are static when the main line swaps.
-    public const int CardBaseHeight = 204;
+    // name) on top of the sub-info lines, plus the promoted "today's delta" line
+    // (now a second hero, between the reset line and the projection). This is a
+    // one-time base-size change, NOT hover jitter — the sub-lines and header are
+    // static when the main line swaps.
+    public const int CardBaseHeight = 214;
     public const int CardDetailExtra = 88;
     private const int FormWidth = CardWidth + FormPadding * 2;
+
+    // Daily-burn thresholds for the today-delta ICON. This is ONE-DAY consumption
+    // pace, a DIFFERENT concept from the monthly 80% / 95% usage escalation
+    // (UsageTheme.WarningPercent / CriticalPercent) — do not conflate them.
+    private const double DailyAlertPercent = 4d; // >= 4% today -> amber alert
+    private const double DailyRedPercent = 5d;   // >= 5% today -> red
+
+    // Maps today's delta percent (of the monthly allowance) to a severity band for
+    // the spark icon. internal (not private) so the boundaries can be unit-tested.
+    // null / non-finite -> Normal (we cannot judge a pace without a percentage).
+    internal static DeltaSeverity GetTodayDeltaSeverity(double? percent)
+    {
+        if (percent is not double p || double.IsNaN(p) || double.IsInfinity(p))
+        {
+            return DeltaSeverity.Normal;
+        }
+
+        return p switch
+        {
+            >= DailyRedPercent => DeltaSeverity.Red,
+            >= DailyAlertPercent => DeltaSeverity.Alert,
+            _ => DeltaSeverity.Normal
+        };
+    }
+
+    // The spark-icon color for a severity band (full-strength green / amber / red).
+    internal static Color SeverityIconColor(DeltaSeverity severity)
+        => severity switch
+        {
+            DeltaSeverity.Red => UsageTheme.Bad,
+            DeltaSeverity.Alert => UsageTheme.Warning,
+            _ => UsageTheme.Good
+        };
 
     private readonly CopilotCard _card;
     // Window-level mirror of the accent + pinned state, used to drive the DWM border
@@ -346,11 +391,19 @@ internal sealed class CopilotWindow : Form
         private readonly Label _planSub;
         private readonly Label _badge;
         private readonly Label _statusMessage;
+        // Small header row directly above the 67% hero: a fixed "クレジット" caption on
+        // the left and the (right-aligned) monthly reset estimate on the right.
+        private readonly Label _creditLabel;
+        private readonly Label _resetTop;
         private readonly MainUsageControl _mainLine;
         private readonly UsageBarControl _bar;
+        // Hint line used ONLY for non-Available / no-plan states (e.g. "set a token",
+        // "pick a plan"); the normal reset estimate now lives in _resetTop.
         private readonly Label _resetSub;
         private readonly Label _predictionSub;
-        private readonly Label _todaySub;
+        // Promoted to a second hero line (icon + bold ~14pt, color-escalated). No
+        // longer a quiet muted Label — see TodayDeltaControl.
+        private readonly TodayDeltaControl _todayLine;
         private readonly LinkLabel _detailToggle;
         private readonly TextBox _detailBox;
 
@@ -439,43 +492,14 @@ internal sealed class CopilotWindow : Form
                 Visible = false
             };
 
-            // The hover/focus swap target: a fixed-size custom control that draws a
-            // big value plus a smaller suffix on a shared baseline. Only the value
-            // text swaps on hover; the box never changes, so layout cannot jitter.
-            _mainLine = new MainUsageControl(15F)
+            // Header row above the 67% hero: "クレジット" caption (left). Kept to the
+            // left ~100px so it never sits under the right-aligned reset label.
+            _creditLabel = new Label
             {
-                Location = new Point(ContentLeft, 68),
-                Size = new Size(ContentWidth, 30)
-            };
-
-            _bar = new UsageBarControl
-            {
-                Location = new Point(ContentLeft, 106),
-                Size = new Size(ContentWidth, 8),
-                BackColor = Color.Transparent,
-                UseGradient = true
-            };
-
-            _resetSub = new Label
-            {
+                Text = Strings.T("クレジット"),
                 AutoSize = false,
-                Size = new Size(ContentWidth, 16),
-                Location = new Point(ContentLeft, 118),
-                ForeColor = UsageTheme.MutedText,
-                BackColor = Color.Transparent,
-                TextAlign = ContentAlignment.MiddleLeft,
-                AutoEllipsis = true,
-                Font = UsageTheme.CreateCopilotFont(8.5F),
-                Text = "—"
-            };
-
-            // Sub-info lines (smaller, muted): a 100%-reach projection and the
-            // since-today's-09:00 delta. Static — they do not change on hover.
-            _predictionSub = new Label
-            {
-                AutoSize = false,
-                Size = new Size(ContentWidth, 16),
-                Location = new Point(ContentLeft, 136),
+                Size = new Size(100, 16),
+                Location = new Point(ContentLeft, 54),
                 ForeColor = UsageTheme.MutedText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
@@ -484,11 +508,72 @@ internal sealed class CopilotWindow : Form
                 Visible = false
             };
 
-            _todaySub = new Label
+            // Same row, right-aligned: a short monthly reset estimate. Occupies only
+            // the right portion so it cannot overlap the caption on its left.
+            _resetTop = new Label
+            {
+                AutoSize = false,
+                Size = new Size(ContentWidth - 106, 16),
+                Location = new Point(ContentLeft + 106, 54),
+                ForeColor = UsageTheme.MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleRight,
+                AutoEllipsis = true,
+                Font = UsageTheme.CreateCopilotFont(8.5F),
+                Visible = false
+            };
+
+            // The hover/focus swap target: a fixed-size custom control that draws a
+            // big value plus a smaller suffix on a shared baseline. Only the value
+            // text swaps on hover; the box never changes, so layout cannot jitter.
+            _mainLine = new MainUsageControl(15F)
+            {
+                Location = new Point(ContentLeft, 72),
+                Size = new Size(ContentWidth, 30)
+            };
+
+            _bar = new UsageBarControl
+            {
+                Location = new Point(ContentLeft, 108),
+                Size = new Size(ContentWidth, 8),
+                BackColor = Color.Transparent,
+                UseGradient = true
+            };
+
+            // Hint line (non-Available / no-plan only). Sits under the status message
+            // when the usage block is hidden, so it never collides with the number.
+            _resetSub = new Label
             {
                 AutoSize = false,
                 Size = new Size(ContentWidth, 16),
-                Location = new Point(ContentLeft, 154),
+                Location = new Point(ContentLeft, 72),
+                ForeColor = UsageTheme.MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Font = UsageTheme.CreateCopilotFont(8.5F),
+                Visible = false,
+                Text = "—"
+            };
+
+            // Second hero: the since-today's-09:00 delta. The "本日" label matches the
+            // "使用済み" suffix (small, muted) and the value matches the 67% number
+            // (15pt bold, primary text); only the spark icon carries the daily-pace
+            // severity color. Sits right under the bar.
+            _todayLine = new TodayDeltaControl(15F)
+            {
+                Location = new Point(ContentLeft, 120),
+                Size = new Size(ContentWidth, 30),
+                Visible = false
+            };
+
+            // Sub-info: a 100%-reach projection (smaller, muted). Static — it does
+            // not change on hover. Below the promoted today line.
+            _predictionSub = new Label
+            {
+                AutoSize = false,
+                Size = new Size(ContentWidth, 16),
+                Location = new Point(ContentLeft, 152),
                 ForeColor = UsageTheme.MutedText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
@@ -506,7 +591,7 @@ internal sealed class CopilotWindow : Form
                 ActiveLinkColor = UsageTheme.PrimaryText,
                 VisitedLinkColor = UsageTheme.DetailToggle,
                 LinkBehavior = LinkBehavior.HoverUnderline,
-                Location = new Point(ContentLeft, 178),
+                Location = new Point(ContentLeft, 176),
                 Font = UsageTheme.CreateCopilotFont(8.5F),
                 Visible = false
             };
@@ -520,7 +605,7 @@ internal sealed class CopilotWindow : Form
                 BorderStyle = BorderStyle.FixedSingle,
                 BackColor = UsageTheme.DetailBackground,
                 ForeColor = UsageTheme.SecondaryText,
-                Location = new Point(ContentLeft, 196),
+                Location = new Point(ContentLeft, 194),
                 Size = new Size(ContentWidth, CardDetailExtra - 16),
                 Visible = false,
                 TabStop = false,
@@ -532,11 +617,13 @@ internal sealed class CopilotWindow : Form
             Controls.Add(_planSub);
             Controls.Add(_badge);
             Controls.Add(_statusMessage);
+            Controls.Add(_creditLabel);
+            Controls.Add(_resetTop);
             Controls.Add(_mainLine);
             Controls.Add(_bar);
             Controls.Add(_resetSub);
+            Controls.Add(_todayLine);
             Controls.Add(_predictionSub);
-            Controls.Add(_todaySub);
             Controls.Add(_detailToggle);
             Controls.Add(_detailBox);
         }
@@ -569,9 +656,11 @@ internal sealed class CopilotWindow : Form
             _suffix = string.Empty;
             _valueColor = UsageTheme.MutedText;
             _bar.SetValue(null);
-            _resetSub.Text = Strings.T("更新中");
+            _creditLabel.Visible = false;
+            _resetTop.Visible = false;
+            _resetSub.Visible = false;
             _predictionSub.Visible = false;
-            _todaySub.Visible = false;
+            _todayLine.Visible = false;
             ApplyMainLineText();
             UpdateDiagnostics(string.Empty);
         }
@@ -586,8 +675,10 @@ internal sealed class CopilotWindow : Form
 
             var window = FindMonthlyWindow(fallback);
             var used = window?.Used;
+            var available = status == ProviderStatus.Available;
 
-            if (status == ProviderStatus.Available)
+            // The status message takes over the credit-row space when not Available.
+            if (available)
             {
                 _statusMessage.Visible = false;
                 _statusMessage.Text = string.Empty;
@@ -599,10 +690,11 @@ internal sealed class CopilotWindow : Form
                 _statusMessage.Visible = true;
             }
 
+            var hasPlan = false;
             if (allowance is int cap && cap > 0 && used is long u)
             {
+                hasPlan = true;
                 var percent = Math.Min(100d, u / (double)cap * 100d);
-                var remaining = Math.Max(0L, cap - u);
                 _hasPercent = true;
                 _lastPercent = percent;
                 _compactValue = $"{Math.Round(percent):0}%";
@@ -613,7 +705,6 @@ internal sealed class CopilotWindow : Form
                 _valueColor = UsageTheme.PrimaryText;
                 _bar.AccentColor = UsageTheme.AccentColor(percent, _accent);
                 _bar.SetValue(percent);
-                _resetSub.Text = Strings.Tf("残 {0} · {1}", remaining.ToString("N0"), FormatReset(window));
             }
             else
             {
@@ -623,18 +714,55 @@ internal sealed class CopilotWindow : Form
                 _suffix = used is null ? string.Empty : Strings.T("credits 使用");
                 _valueColor = used is null ? UsageTheme.MutedText : UsageTheme.PrimaryText;
                 _bar.SetValue(null);
-                _resetSub.Text = Strings.T("当月集計 · 設定でプランを選ぶと上限・残量を表示");
             }
 
-            // When the token is unset, point the user at the first-time setup (no
-            // token input here — only env GITHUB_TOKEN is read).
-            if (status == ProviderStatus.NotLoggedIn)
-            {
-                _resetSub.Text = Strings.T("設定画面の「初回設定」から手順を確認してください");
-            }
+            // The credit-row reset estimate (right side) — monthly reset is an
+            // estimate (the API gives none), so it stays a "目安".
+            _resetTop.Text = FormatResetShort(window);
 
             ApplyMainLineText();
             ApplyInsights(insights);
+
+            // Visibility — the usage hero block (credit row, number, bar, today's
+            // delta, projection) only makes sense once usage was actually fetched.
+            // For every non-Available state we hide it so it can never overlap the
+            // status message that takes its place.
+            _creditLabel.Visible = available;
+            _resetTop.Visible = available;
+            _mainLine.Visible = available;
+            _bar.Visible = available;
+            if (!available)
+            {
+                _todayLine.Visible = false;
+                _predictionSub.Visible = false;
+            }
+
+            // Action hints:
+            //  - NotLoggedIn: a first-time-setup pointer right under the status line.
+            //  - Available but no plan: reuse the (otherwise-empty) projection row to
+            //    point the user at plan selection.
+            if (!available)
+            {
+                // NOTE: gate the text on a LOCAL bool, never on _resetSub.Visible —
+                // the Control.Visible getter returns false while the window is hidden
+                // (updates run on a timer with the popup hidden), so reading it back
+                // here would skip the assignment and leave the stale default text.
+                var showHint = status == ProviderStatus.NotLoggedIn;
+                _resetSub.Visible = showHint;
+                if (showHint)
+                {
+                    _resetSub.Text = Strings.T("設定画面の「初回設定」から手順を確認してください");
+                }
+            }
+            else
+            {
+                _resetSub.Visible = false;
+                if (!hasPlan)
+                {
+                    _predictionSub.Visible = true;
+                    _predictionSub.Text = Strings.T("プランを選ぶと上限・残量を表示");
+                }
+            }
 
             var debug = ProviderStatusPresenter.BuildDebugSummary("GitHub Copilot", current, fallback);
             var masked = ProviderStatusPresenter.SafeDiagnostics(current?.Message);
@@ -651,7 +779,7 @@ internal sealed class CopilotWindow : Form
             if (insights is null)
             {
                 _predictionSub.Visible = false;
-                _todaySub.Visible = false;
+                _todayLine.Visible = false;
                 return;
             }
 
@@ -672,12 +800,36 @@ internal sealed class CopilotWindow : Form
                 _predictionSub.Visible = false;
             }
 
-            _todaySub.Visible = true;
-            _todaySub.Text = insights.TodayDeltaCredits is long delta
-                ? insights.TodayDeltaPercent is double percent
-                    ? Strings.Tf("本日9:00以降 +{0} credits（+{1}%）", delta.ToString("N0"), percent.ToString("0.0"))
-                    : Strings.Tf("本日9:00以降 +{0} credits", delta.ToString("N0"))
-                : Strings.T("本日9:00以降: 未計測");
+            // The since-09:00 delta — a small "本日" label + a larger value, drawn in
+            // the user-selected accent color (no daily-pace escalation). Three cases:
+            // Label matches "使用済み" (muted) and value matches the 67% number
+            // (primary) — both fixed inside TodayDeltaControl. Only the SPARK ICON
+            // escalates green/amber/red with the daily pace.
+            _todayLine.Visible = true;
+            var label = Strings.T("本日");
+            if (insights.TodayDeltaCredits is not long delta)
+            {
+                // Not measured yet (no 09:00 baseline this day): muted note, muted icon.
+                _todayLine.SetContent(Strings.T("本日: 未計測"), string.Empty, UsageTheme.MutedText);
+            }
+            else if (insights.TodayDeltaPercent is not double percentToday)
+            {
+                // No allowance to express the burn as a % of: show credits only, and a
+                // calm (Normal) icon — there is no pace to escalate on.
+                _todayLine.SetContent(
+                    label,
+                    Strings.Tf("+{0} credits", delta.ToString("N0")),
+                    SeverityIconColor(DeltaSeverity.Normal));
+            }
+            else
+            {
+                // The "クレジット" header already labels the unit, so the value stays
+                // terse: "+96（+1.4%）". The icon escalates by today's pace.
+                _todayLine.SetContent(
+                    label,
+                    Strings.Tf("+{0}（+{1}%）", delta.ToString("N0"), percentToday.ToString("0.0")),
+                    SeverityIconColor(GetTodayDeltaSeverity(percentToday)));
+            }
         }
 
         // The detailed values only appear on hover/focus, and only when there is a
@@ -712,17 +864,17 @@ internal sealed class CopilotWindow : Form
             _title.Width = Math.Max(40, x - TitleLeft - 8);
         }
 
-        // Calendar-month reset is an estimate (the API gives no reset), so it is
-        // shown as a "目安/推定", never a definitive countdown.
-        private static string FormatReset(RateLimitWindow? window)
+        // Compact reset estimate for the credit-row right slot (the "クレジット" caption
+        // already gives the monthly context, so this stays short). Still an estimate.
+        private static string FormatResetShort(RateLimitWindow? window)
         {
             if (window?.ResetAtUtc is null)
             {
-                return Strings.T("当月集計（暦月近似）");
+                return Strings.T("リセット目安 月初");
             }
 
             var reset = window.ResetAtUtc.Value.ToLocalTime();
-            return Strings.Tf("当月集計 · リセット目安 {0}/{1}（推定）", reset.Month, reset.Day);
+            return Strings.Tf("リセット目安 {0}/{1}", reset.Month, reset.Day);
         }
 
         // Copilot-specific copy: the generic "再ログインしてください" hints assume a
@@ -912,6 +1064,185 @@ internal sealed class CopilotWindow : Form
             return lineSpacing <= 0
                 ? font.GetHeight(g)
                 : font.GetHeight(g) * family.GetCellAscent(font.Style) / lineSpacing;
+        }
+    }
+
+    // The promoted "since 09:00 today" delta: a spark glyph + a small "本日" label and
+    // a larger value, sharing a baseline. To read as a sibling of the main line, the
+    // label matches the "使用済み" suffix (small, muted, regular) and the value matches
+    // the 67% number (valueSize, bold, primary text). Only the GLYPH carries the
+    // daily-pace severity color (green/amber/red). Transparent background so the glass
+    // card gradient shows through.
+    private sealed class TodayDeltaControl : Control
+    {
+        private const int Gap = 6;       // glyph -> label
+        private const int LabelGap = 5;  // label -> value
+        private readonly float _valueSize;
+        private readonly float _labelSize;
+        private string _label = string.Empty;
+        private string _value = string.Empty;
+        private Color _iconColor = UsageTheme.MutedText;
+
+        public TodayDeltaControl(float valuePointSize)
+        {
+            _valueSize = valuePointSize;
+            // Same formula MainUsageControl uses for its "使用済み" suffix, so the "本日"
+            // label is exactly the suffix size.
+            _labelSize = valuePointSize * 0.46f + 1f;
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer
+                | ControlStyles.UserPaint
+                | ControlStyles.SupportsTransparentBackColor,
+                true);
+            BackColor = Color.Transparent;
+        }
+
+        public void SetContent(string label, string value, Color iconColor)
+        {
+            _label = label ?? string.Empty;
+            _value = value ?? string.Empty;
+            _iconColor = iconColor;
+            Invalidate();
+        }
+
+        // Transparent: let the glass card paint its gradient behind us.
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            if (BackColor == Color.Transparent && Parent is not null)
+            {
+                var g = e.Graphics;
+                var state = g.Save();
+                g.TranslateTransform(-Left, -Top);
+                using var pe = new PaintEventArgs(g, new Rectangle(Left, Top, Width, Height));
+                InvokePaintBackground(Parent, pe);
+                InvokePaint(Parent, pe);
+                g.Restore(state);
+                return;
+            }
+
+            base.OnPaintBackground(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            var g = e.Graphics;
+
+            const TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+
+            // Glyph sized off the value point size, drawn left + vertically centered.
+            int glyphBox;
+            using (var nominal = UsageTheme.CreateCopilotFont(_valueSize, FontStyle.Bold))
+            {
+                var glyphSize = (float)Math.Round(nominal.GetHeight(g) * 0.92f);
+                var glyphTop = (Height - glyphSize) / 2f;
+                TodayDeltaGlyph.Draw(g, new RectangleF(0f, glyphTop, glyphSize, glyphSize), _iconColor);
+                glyphBox = (int)Math.Round(glyphSize);
+            }
+
+            var contentLeft = glyphBox + Gap;
+            var avail = Math.Max(1, Width - contentLeft);
+
+            // Label = the "使用済み" look: small, muted, regular weight.
+            using var labelFont = UsageTheme.CreateCopilotFont(_labelSize, FontStyle.Regular);
+            var labelWidth = string.IsNullOrEmpty(_label)
+                ? 0
+                : TextRenderer.MeasureText(g, _label, labelFont, new Size(int.MaxValue, int.MaxValue), flags).Width;
+            var valueLeftOffset = string.IsNullOrEmpty(_label) ? 0 : labelWidth + LabelGap;
+
+            // Value = the 67% look: valueSize, bold, primary text. Auto-shrink so a long
+            // value (4-digit credits + percent, or the wider English copy) never clips.
+            var size = _valueSize;
+            var valueFont = UsageTheme.CreateCopilotFont(size, FontStyle.Bold);
+            while (size > 9f
+                && valueLeftOffset
+                    + TextRenderer.MeasureText(g, _value, valueFont, new Size(int.MaxValue, int.MaxValue), flags).Width > avail)
+            {
+                valueFont.Dispose();
+                size -= 0.5f;
+                valueFont = UsageTheme.CreateCopilotFont(size, FontStyle.Bold);
+            }
+
+            try
+            {
+                // Share a baseline so the small label and big value sit on one line.
+                var valueTop = (Height - valueFont.GetHeight(g)) / 2f;
+                var baseline = valueTop + AscentPx(g, valueFont);
+
+                if (!string.IsNullOrEmpty(_label))
+                {
+                    var labelTop = baseline - AscentPx(g, labelFont);
+                    TextRenderer.DrawText(g, _label, labelFont, new Point(contentLeft, (int)Math.Round(labelTop)), UsageTheme.MutedText, flags);
+                }
+
+                if (!string.IsNullOrEmpty(_value))
+                {
+                    TextRenderer.DrawText(g, _value, valueFont, new Point(contentLeft + valueLeftOffset, (int)Math.Round(valueTop)), UsageTheme.PrimaryText, flags);
+                }
+            }
+            finally
+            {
+                valueFont.Dispose();
+            }
+        }
+
+        // Ascent (baseline offset from the top of the text cell), in pixels.
+        private static float AscentPx(Graphics g, Font font)
+        {
+            var family = font.FontFamily;
+            var lineSpacing = family.GetLineSpacing(font.Style);
+            return lineSpacing <= 0
+                ? font.GetHeight(g)
+                : font.GetHeight(g) * family.GetCellAscent(font.Style) / lineSpacing;
+        }
+    }
+
+    // Hand-drawn (GDI+) spark / burst glyph for the today-delta line — no logo / no
+    // font file. A four-pointed sparkle (✦): sharp rays N/E/S/W with deep concave
+    // notches between them, plus two tiny accent sparks for a livelier "burst". The
+    // whole thing is filled in the caller's color (the user-selected accent).
+    private static class TodayDeltaGlyph
+    {
+        public static void Draw(Graphics g, RectangleF dest, Color color)
+        {
+            var prevSmoothing = g.SmoothingMode;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            try
+            {
+                using var brush = new SolidBrush(color);
+
+                var cx = dest.X + dest.Width / 2f;
+                var cy = dest.Y + dest.Height / 2f;
+                var outer = Math.Min(dest.Width, dest.Height) / 2f * 0.94f;
+                // Small inner radius = sharp, pointed rays (a sparkle, not a star).
+                var inner = outer * 0.34f;
+
+                using (var star = new GraphicsPath())
+                {
+                    var pts = new PointF[8];
+                    for (var i = 0; i < 8; i++)
+                    {
+                        // Start at straight up (-90°), alternate outer/inner every 45°.
+                        var angle = (-90 + i * 45) * (float)(Math.PI / 180d);
+                        var r = (i % 2 == 0) ? outer : inner;
+                        pts[i] = new PointF(cx + r * (float)Math.Cos(angle), cy + r * (float)Math.Sin(angle));
+                    }
+
+                    star.AddPolygon(pts);
+                    g.FillPath(brush, star);
+                }
+
+                // Two tiny accent sparks (upper-right, lower-left) for a "burst" feel.
+                var d1 = outer * 0.26f;
+                g.FillEllipse(brush, dest.X + dest.Width * 0.80f - d1 / 2f, dest.Y + dest.Height * 0.20f - d1 / 2f, d1, d1);
+                var d2 = outer * 0.18f;
+                g.FillEllipse(brush, dest.X + dest.Width * 0.16f - d2 / 2f, dest.Y + dest.Height * 0.82f - d2 / 2f, d2, d2);
+            }
+            finally
+            {
+                g.SmoothingMode = prevSmoothing;
+            }
         }
     }
 
