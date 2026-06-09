@@ -81,6 +81,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private readonly Dictionary<string, ServiceUsage> _lastSuccessfulServices = new(StringComparer.OrdinalIgnoreCase);
     private readonly CopilotUsageTracker _copilotTracker = new();
+    // Last computed Copilot today's-burn percent (of the monthly allowance), cached
+    // from UpdateCopilotWindow's tracker.Observe so UpdateTrayIcons can drive the
+    // burn warning mark without re-running Observe (which would skew the 09:00
+    // baseline). Null until the first fresh Available sample produces insights.
+    private double? _copilotTodayPercent;
     private readonly AuthCommandService _authService = new();
     private AppSettings _settings;
     private bool _disposed;
@@ -924,7 +929,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (cpOn)
         {
             var percent = loading || snapshot is null ? null : CopilotPercent(snapshot);
-            SetIcon(_copilot, TrayIconRenderer.CreateCopilotIcon(percent, loading, _settings.CopilotAccentColor()));
+            // today's-burn mark: amber at 4-5% / red at >=5% (no mark below 4% or
+            // while loading). Reuses the cached percent from UpdateCopilotWindow and
+            // the shared severity/color logic in CopilotWindow.
+            var burnSeverity = CopilotWindow.GetTodayDeltaSeverity(loading ? null : _copilotTodayPercent);
+            var burnMark = TrayIconRenderer.BurnMarkColor(burnSeverity);
+            SetIcon(_copilot, TrayIconRenderer.CreateCopilotIcon(
+                percent, loading, _settings.CopilotAccentColor(), burnMark));
             _copilotIcon.Text = loading ? Strings.T("GitHub Copilot 更新中") : TrimTooltip(BuildCopilotTooltip(snapshot));
         }
 
@@ -983,6 +994,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             && copilot.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200)?.Used is long usedNow)
         {
             insights = _copilotTracker.Observe(usedNow, allowance, snapshot.CapturedAtUtc);
+        }
+
+        // Cache today's burn for the tray icon's warning mark. Only a fresh sample
+        // produces insights; a fallback turn leaves the previous value in place so
+        // the mark matches the bar (which also holds its last value on fallback).
+        if (insights is not null)
+        {
+            _copilotTodayPercent = insights.TodayDeltaPercent;
         }
 
         _copilotWindow.Update(_settings.CopilotPlanTitle(), copilot, fallbackCopilot, allowance, insights);

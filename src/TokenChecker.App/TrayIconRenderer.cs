@@ -67,7 +67,12 @@ internal static class TrayIconRenderer
     // % bar that uses as much of the icon area as possible (a rectangle), filling
     // bottom→top to `percent` with the shared 80/95 severity escalation. A null
     // percent (no plan/allowance or no data) or loading shows an empty track.
-    public static Icon CreateCopilotIcon(double? percent, bool loading, Color? accentBase = null, int size = 32)
+    //
+    // `burnMarkColor` is the today's-burn warning: when non-null (>=4% consumed
+    // today; see TrayApplicationContext) a large spark is overlaid on the bar in
+    // that color (amber at 4-5%, red at >=5%). Null means no mark (a calm day).
+    public static Icon CreateCopilotIcon(
+        double? percent, bool loading, Color? accentBase = null, Color? burnMarkColor = null, int size = 32)
     {
         // Normal (<80%) fill: a lightened version of the configured accent so it
         // stays vivid on the small, dark tray track. Null falls back to the
@@ -78,7 +83,7 @@ internal static class TrayIconRenderer
         using var bitmap = new Bitmap(size, size);
         using (var graphics = Graphics.FromImage(bitmap))
         {
-            DrawCopilotBar(graphics, size, percent, loading, normalFill);
+            DrawCopilotBar(graphics, size, percent, loading, normalFill, burnMarkColor);
         }
 
         var handle = bitmap.GetHicon();
@@ -161,7 +166,8 @@ internal static class TrayIconRenderer
         }
     }
 
-    private static void DrawCopilotBar(Graphics graphics, int size, double? percent, bool loading, Color normalFill)
+    private static void DrawCopilotBar(
+        Graphics graphics, int size, double? percent, bool loading, Color normalFill, Color? burnMarkColor)
     {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.Clear(Color.Transparent);
@@ -177,6 +183,17 @@ internal static class TrayIconRenderer
         var radius = Math.Max(1.5f, Math.Min(barWidth * 0.22f, size * 0.12f));
 
         DrawBar(graphics, rect, radius, size, percent, loading, normalFill);
+
+        // today's-burn warning mark: a large spark overlaid on top of the bar,
+        // filling nearly the whole icon (the bar may end up mostly hidden — that is
+        // intentional, the burn alert takes over the slot on a heavy day). Only when
+        // a severity color is supplied (>=4% today) and never while loading.
+        if (!loading && burnMarkColor is Color mark)
+        {
+            var inset = size * 0.04f;
+            var markRect = new RectangleF(inset, inset, size - inset * 2f, size - inset * 2f);
+            TodayDeltaGlyph.Draw(graphics, markRect, mark);
+        }
     }
 
     // Draws one vertical % bar (rounded track + bottom→top fill + outline) inside
@@ -222,6 +239,14 @@ internal static class TrayIconRenderer
             >= UsageTheme.WarningPercent => WarningColor,
             _ => normalFill
         };
+
+    // Maps a today's-burn severity to the tray warning-mark color, or null when the
+    // pace is Normal (<4% today) so no mark is drawn. The severity bands (4%/5%) and
+    // their colors are owned by CopilotWindow (GetTodayDeltaSeverity / SeverityIconColor)
+    // — the single source of truth shared with the status-card today-delta line; the
+    // tray must NOT duplicate those thresholds. internal for unit testing.
+    internal static Color? BurnMarkColor(DeltaSeverity severity)
+        => severity == DeltaSeverity.Normal ? null : CopilotWindow.SeverityIconColor(severity);
 
     public static OverallState DetermineState(UsageSnapshot snapshot, out double? claudePercent, out double? codexPercent)
     {
