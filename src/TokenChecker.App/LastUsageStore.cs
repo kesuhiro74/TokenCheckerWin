@@ -41,12 +41,6 @@ internal sealed class LastUsageStore
     {
         try
         {
-            var directory = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
             // Strip provider diagnostic Message before persisting; the rest is
             // numeric usage data only (no tokens, emails, or paths).
             var sanitized = new UsageSnapshot(
@@ -59,7 +53,7 @@ internal sealed class LastUsageStore
                         service.Windows))
                     .ToArray());
 
-            File.WriteAllText(_path, JsonSerializer.Serialize(sanitized, JsonOptions));
+            AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(sanitized, JsonOptions));
         }
         catch
         {

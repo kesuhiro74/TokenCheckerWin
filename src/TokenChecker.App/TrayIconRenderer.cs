@@ -214,7 +214,10 @@ internal static class TrayIconRenderer
             {
                 // Clip the fill to the rounded track so its top/bottom follow the pill.
                 using var clip = UsageTheme.CreateRoundedRectPath(rect, radius);
-                var previous = graphics.Clip;
+                // Graphics.Clip getter returns a fresh Region copy each call; the
+                // setter copies it back in, so dispose this one to avoid leaking a
+                // Region per icon repaint (tray refreshes on every timer tick).
+                using var previous = graphics.Clip;
                 graphics.SetClip(clip, CombineMode.Replace);
                 var fillRect = new RectangleF(rect.X, rect.Bottom - fillHeight, rect.Width, fillHeight);
                 using (var fillBrush = new SolidBrush(CopilotBarColor(clamped, normalFill)))

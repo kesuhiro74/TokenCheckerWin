@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -209,24 +208,9 @@ public sealed class ClaudeUsageProvider : IUsageProvider
             using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
                 .ConfigureAwait(false);
 
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            if (ClaudeUsageStatusMapper.Classify(response.StatusCode) is { } httpFailure)
             {
-                return ClaudeUsageReadResult.Failed(ProviderStatus.Unauthorized, "unauthorized");
-            }
-
-            if ((int)response.StatusCode == 429)
-            {
-                return ClaudeUsageReadResult.Failed(ProviderStatus.RateLimited, "rateLimited");
-            }
-
-            if ((int)response.StatusCode >= 500)
-            {
-                return ClaudeUsageReadResult.Failed(ProviderStatus.Error, "serverError");
-            }
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return ClaudeUsageReadResult.Failed(ProviderStatus.Error, "httpError");
+                return ClaudeUsageReadResult.Failed(httpFailure.Status, httpFailure.SafeSummary);
             }
 
             var body = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);

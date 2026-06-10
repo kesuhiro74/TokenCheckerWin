@@ -83,13 +83,7 @@ internal sealed class CopilotUsageStore
     {
         try
         {
-            var directory = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            File.WriteAllText(_path, JsonSerializer.Serialize(record, JsonOptions));
+            AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(record, JsonOptions));
         }
         catch
         {

@@ -128,13 +128,7 @@ internal sealed class SettingsStore
         try
         {
             settings.Normalize();
-            var directory = Path.GetDirectoryName(_settingsPath);
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            File.WriteAllText(_settingsPath, JsonSerializer.Serialize(settings, JsonOptions));
+            AtomicFile.WriteAllText(_settingsPath, JsonSerializer.Serialize(settings, JsonOptions));
         }
         catch
         {

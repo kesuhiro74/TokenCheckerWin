@@ -53,41 +53,37 @@ public sealed class CodexUsageProvider : IUsageProvider
 
             await client.SendNotificationAsync("initialized", timeout.Token).ConfigureAwait(false);
 
-            var account = await client.SendRequestAsync(
-                "account/read",
-                new { refreshToken = false },
-                timeout.Token).ConfigureAwait(false);
+            JsonNode account;
+            try
+            {
+                account = await client.SendRequestAsync(
+                    "account/read",
+                    new { refreshToken = false },
+                    timeout.Token).ConfigureAwait(false);
+            }
+            catch (CodexAppServerException ex)
+            {
+                // A JSON-RPC *error* on account/read (as opposed to a result whose
+                // account is null) has no documented login/auth mapping, so surface
+                // a specific Error with the masked summary rather than letting it
+                // fall through to the generic outer catch.
+                return new ServiceUsage(
+                    ServiceName,
+                    ProviderStatus.Error,
+                    $"Codex account could not be read. error={ex.SafeSummary}",
+                    Array.Empty<RateLimitWindow>());
+            }
 
             var accountState = ReadAccountState(account);
+            var decision = CodexAccountClassifier.Classify(
+                accountState.AccountIsNull, accountState.AccountType, accountState.RequiresOpenAiAuth);
 
-            if (accountState.AccountIsNull && accountState.RequiresOpenAiAuth)
+            if (!decision.CanProceed)
             {
                 return new ServiceUsage(
                     ServiceName,
-                    ProviderStatus.NotLoggedIn,
-                    $"Codex login is required. {accountState.ToDebugMessage()}",
-                    Array.Empty<RateLimitWindow>());
-            }
-
-            if (accountState.AccountIsNull)
-            {
-                return new ServiceUsage(
-                    ServiceName,
-                    ProviderStatus.Error,
-                    $"Codex account state does not allow rate limit collection. {accountState.ToDebugMessage()}",
-                    Array.Empty<RateLimitWindow>());
-            }
-
-            if (!string.Equals(accountState.AccountType, "chatgpt", StringComparison.Ordinal))
-            {
-                var message = string.Equals(accountState.AccountType, "apiKey", StringComparison.Ordinal)
-                    ? "ChatGPT login is required for rate limits."
-                    : "Codex account type does not support rate limit collection.";
-
-                return new ServiceUsage(
-                    ServiceName,
-                    ProviderStatus.Error,
-                    $"{message} {accountState.ToDebugMessage()}",
+                    decision.Status,
+                    $"{decision.Message} {accountState.ToDebugMessage()}",
                     Array.Empty<RateLimitWindow>());
             }
 
@@ -363,7 +359,11 @@ public sealed class CodexUsageProvider : IUsageProvider
             while (true)
             {
                 var response = await ReadLineAsync(cancellationToken).ConfigureAwait(false);
-                if (response["id"]?.GetValue<long>() != id)
+                // Skip anything that is not OUR response: notifications / server-side
+                // requests (no id or non-numeric id), or a numeric id other than the
+                // one we just sent. GetValue<long>() on a non-numeric id would throw
+                // and abort the whole read, so guard the value kind first.
+                if (!TryGetLongId(response["id"], out var responseId) || responseId != id)
                 {
                     continue;
                 }
@@ -500,6 +500,28 @@ public sealed class CodexUsageProvider : IUsageProvider
         {
             await _stdin.WriteLineAsync(message.ToJsonString().AsMemory(), cancellationToken).ConfigureAwait(false);
             await _stdin.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Safely reads a JSON-RPC id as our long, or false when the node is absent,
+        // not a number, or a number we cannot represent as Int64 (a fractional or
+        // out-of-range id is never one we issued, so it is simply skipped).
+        private static bool TryGetLongId(JsonNode? node, out long value)
+        {
+            value = 0;
+            if (node is null || node.GetValueKind() != JsonValueKind.Number)
+            {
+                return false;
+            }
+
+            try
+            {
+                value = node.GetValue<long>();
+                return true;
+            }
+            catch (Exception ex) when (ex is FormatException or InvalidOperationException or OverflowException)
+            {
+                return false;
+            }
         }
 
         private async Task<JsonNode> ReadLineAsync(CancellationToken cancellationToken)

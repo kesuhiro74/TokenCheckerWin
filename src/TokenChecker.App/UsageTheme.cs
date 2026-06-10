@@ -243,7 +243,9 @@ internal static class UsageTheme
             g.FillPath(fill, path);
         }
 
-        var prevClip = g.Clip;
+        // Graphics.Clip getter hands back a fresh Region copy; dispose it so the
+        // card repaint (hover polling, timer updates) does not leak one each time.
+        using var prevClip = g.Clip;
         g.SetClip(path, CombineMode.Replace);
 
         // Top gloss: a faint light highlight. On dark it is much weaker (low alpha)
