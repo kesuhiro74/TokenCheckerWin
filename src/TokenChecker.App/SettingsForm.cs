@@ -476,6 +476,7 @@ internal sealed class SettingsForm : Form
         var plan = (_copilotPlan.SelectedItem as CopilotPlanOption)?.Plan ?? CopilotPlan.None;
         return plan switch
         {
+            CopilotPlan.Free => AppSettings.FreeCredits,
             CopilotPlan.Pro => AppSettings.ProCredits,
             CopilotPlan.ProPlus => AppSettings.ProPlusCredits,
             CopilotPlan.Max => AppSettings.MaxCredits,
