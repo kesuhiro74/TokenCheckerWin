@@ -40,7 +40,7 @@ It fetches the Claude Code / Codex 5-hour and weekly rate limits and presents th
 
 - Windows 11
 - VS Code
-- A .NET 10-compatible SDK (.NET 10 SDK or later)
+- .NET 10 SDK (global.json pins 10.0.100 with rollForward latestFeature)
 - Visual Studio is not required
 
 ## Project layout

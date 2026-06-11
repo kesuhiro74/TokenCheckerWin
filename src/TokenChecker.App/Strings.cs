@@ -115,9 +115,7 @@ internal static class Strings
 
         // ----- Copilot window (CopilotWindow) -----
         ["使用済み"] = "used",
-        ["残 {0} · {1}"] = "{0} left · {1}",
         ["credits 使用"] = "credits used",
-        ["当月集計 · 設定でプランを選ぶと上限・残量を表示"] = "This month · pick a plan in settings to show the cap & remaining",
         ["設定画面の「初回設定」から手順を確認してください"] = "See the steps under \"First-time setup\" in settings",
         ["このペースだと {0} 頃に 100%"] = "At this pace, 100% around {0}",
         ["このペースなら今月は上限に到達しない見込み"] = "At this pace it won't reach the cap this month",
@@ -131,8 +129,6 @@ internal static class Strings
         ["+{0}（+{1}%）"] = "+{0} (+{1}%)",
         ["+{0} credits"] = "+{0} credits",
         ["本日: 未計測"] = "Today: not measured",
-        ["当月集計（暦月近似）"] = "This month (calendar-month approx.)",
-        ["当月集計 · リセット目安 {0}/{1}（推定）"] = "This month · est. reset {0}/{1}",
         ["GITHUB_TOKEN が未設定です"] = "GITHUB_TOKEN is not set",
         ["GITHUB_TOKEN の Plan(Read) 権限・個人課金・Enhanced Billing 対象を確認してください"]
             = "Check GITHUB_TOKEN's Plan (Read) permission, personal billing, and Enhanced Billing eligibility",

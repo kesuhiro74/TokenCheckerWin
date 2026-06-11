@@ -1,9 +1,13 @@
 namespace TokenChecker.App;
 
 // Writes a text file as atomically as the OS allows: serialize to a sibling temp
-// file, then swap it into place in a single move. A crash or power loss mid-write
-// leaves either the previous file or the complete new one — never a half-written
-// file that would force a fallback-to-defaults on the next load.
+// file, then swap it into place in a single move. This protects against a process
+// crash mid-write — a reader sees either the previous file or the complete new one,
+// never a half-written file that would force a fallback-to-defaults on the next
+// load. It does NOT fsync, so it is not a power-loss guarantee: a sudden power loss
+// can still lose the most recent write or leave a stray .tmp behind. That trade-off
+// is fine here — the persisted data is just cached usage/settings, regenerated on
+// the next successful fetch.
 //
 // Shared by every store the app persists (settings.json / last_usage.json /
 // copilot_usage.json) so the atomic-write rule lives in one place instead of being

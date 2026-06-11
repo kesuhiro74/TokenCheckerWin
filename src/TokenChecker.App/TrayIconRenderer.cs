@@ -43,14 +43,12 @@ internal static class TrayIconRenderer
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr handle);
 
-    public static Icon CreateIcon(double? claudePercent, double? codexPercent, OverallState state, int size = 32)
+    // Materializes a drawn bitmap into a managed Icon: GetHicon() hands back an
+    // unmanaged HICON that the caller must free, so clone an owned Icon from it and
+    // destroy the temporary handle. Shared by every CreateXxxIcon entry point so the
+    // handle-lifetime dance lives in exactly one place.
+    private static Icon BitmapToIcon(Bitmap bitmap)
     {
-        using var bitmap = new Bitmap(size, size);
-        using (var graphics = Graphics.FromImage(bitmap))
-        {
-            DrawIcon(graphics, size, claudePercent, codexPercent, state);
-        }
-
         var handle = bitmap.GetHicon();
         try
         {
@@ -61,6 +59,17 @@ internal static class TrayIconRenderer
         {
             DestroyIcon(handle);
         }
+    }
+
+    public static Icon CreateIcon(double? claudePercent, double? codexPercent, OverallState state, int size = 32)
+    {
+        using var bitmap = new Bitmap(size, size);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            DrawIcon(graphics, size, claudePercent, codexPercent, state);
+        }
+
+        return BitmapToIcon(bitmap);
     }
 
     // Renders the alternate tray icon for the GitHub Copilot mode: a tall vertical
@@ -86,16 +95,7 @@ internal static class TrayIconRenderer
             DrawCopilotBar(graphics, size, percent, loading, normalFill, burnMarkColor);
         }
 
-        var handle = bitmap.GetHicon();
-        try
-        {
-            using var temp = Icon.FromHandle(handle);
-            return (Icon)temp.Clone();
-        }
-        finally
-        {
-            DestroyIcon(handle);
-        }
+        return BitmapToIcon(bitmap);
     }
 
     // Renders the Claude/Codex tray icon as up to two side-by-side vertical % bars
@@ -112,16 +112,7 @@ internal static class TrayIconRenderer
             DrawStatusBars(graphics, size, claudePercent, codexPercent, showClaude, showCodex, loading);
         }
 
-        var handle = bitmap.GetHicon();
-        try
-        {
-            using var temp = Icon.FromHandle(handle);
-            return (Icon)temp.Clone();
-        }
-        finally
-        {
-            DestroyIcon(handle);
-        }
+        return BitmapToIcon(bitmap);
     }
 
     private static void DrawStatusBars(

@@ -30,7 +30,9 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
     private const string ApiBaseUrl = "https://api.github.com";
     private const string UserEndpoint = ApiBaseUrl + "/user";
     private const string ApiVersion = "2026-03-10";
-    private const string UserAgent = "TokenCheckerWin/0.4.1";
+    // No version suffix: GitHub only requires a User-Agent to be present, and a
+    // hard-coded version drifts from the real release on every bump.
+    private const string UserAgent = "TokenCheckerWin";
     private const string AcceptHeader = "application/vnd.github+json";
     private const long MonthWindowMins = 43200; // ~30 days, nominal monthly bucket.
     private const string WindowName = "GitHub Copilot AI Credits";

@@ -1,10 +1,12 @@
 namespace TokenChecker.Core.Providers;
 
-internal static class CommandLineProbe
+// Locates a CLI on PATH (honoring PATHEXT on Windows). Public so the App can reuse
+// the exact same probe instead of carrying a duplicate copy; Core has no
+// InternalsVisibleTo, so cross-assembly helpers are public (same convention as
+// ClaudeUsageStatusMapper / CodexAccountClassifier). No secrets are involved — this
+// only reads the PATH/PATHEXT environment and tests File.Exists.
+public static class CommandLineProbe
 {
-    public static bool ExistsOnPath(string commandName)
-        => TryFindOnPath(commandName, out _);
-
     public static bool TryFindOnPath(string commandName, out string commandPath)
     {
         commandPath = string.Empty;

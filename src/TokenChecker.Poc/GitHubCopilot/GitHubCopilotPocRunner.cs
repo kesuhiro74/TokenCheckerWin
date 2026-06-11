@@ -33,7 +33,9 @@ internal static class GitHubCopilotPocRunner
 {
     private const string ApiBaseUrl = "https://api.github.com";
     private const string ApiVersion = "2026-03-10";
-    private const string UserAgent = "TokenCheckerWin/0.4.1";
+    // No version suffix: GitHub only requires a User-Agent to be present (kept in
+    // sync with GitHubCopilotUsageProvider so a release bump can't make them drift).
+    private const string UserAgent = "TokenCheckerWin";
     private const string AcceptHeader = "application/vnd.github+json";
 
     private static readonly HttpClient HttpClient = new()

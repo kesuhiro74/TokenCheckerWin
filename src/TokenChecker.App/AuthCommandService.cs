@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using TokenChecker.Core.Providers;
 
 namespace TokenChecker.App;
 
@@ -103,49 +104,10 @@ internal sealed class AuthCommandService
         }
     }
 
+    // Delegates to the shared Core probe (PATH + PATHEXT, Windows-aware) so the
+    // CLI-location logic lives in exactly one place instead of a duplicate copy.
     private static bool TryLocate(string commandName, out string commandPath)
-    {
-        commandPath = string.Empty;
-        var path = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return false;
-        }
-
-        var extensions = OperatingSystem.IsWindows()
-            ? GetPathExtensions()
-            : new[] { string.Empty };
-
-        foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            foreach (var extension in extensions)
-            {
-                var candidate = Path.Combine(directory, commandName + extension);
-                if (File.Exists(candidate))
-                {
-                    commandPath = candidate;
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static string[] GetPathExtensions()
-    {
-        var pathExt = Environment.GetEnvironmentVariable("PATHEXT");
-        if (string.IsNullOrWhiteSpace(pathExt))
-        {
-            return new[] { ".exe", ".cmd", ".bat", string.Empty };
-        }
-
-        return pathExt
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Append(string.Empty)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
+        => CommandLineProbe.TryFindOnPath(commandName, out commandPath);
 }
 
 internal sealed record AuthLaunchResult(bool Ok, string Message)

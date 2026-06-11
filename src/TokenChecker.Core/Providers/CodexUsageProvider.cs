@@ -463,14 +463,7 @@ public sealed class CodexUsageProvider : IUsageProvider
         }
 
         private static string SummarizeJsonRpcError(JsonNode error)
-        {
-            var code = error["code"]?.ToJsonString() ?? "unknown";
-            var message = DiagnosticMasker.Mask(
-                error["message"]?.GetValue<string>() ?? "Codex app-server returned an error.",
-                maxLength: 160);
-
-            return $"code={code}; message={message}";
-        }
+            => CodexErrorSummarizer.Summarize(error);
 
         private static ProcessStartInfo CreateStartInfo(string codexCommand)
         {

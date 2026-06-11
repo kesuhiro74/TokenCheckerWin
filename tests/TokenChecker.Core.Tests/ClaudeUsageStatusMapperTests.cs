@@ -46,6 +46,7 @@ public class ClaudeUsageStatusMapperTests
     }
 
     [Theory]
+    [InlineData(100)] // 1xx informational is not a 2xx success -> httpError
     [InlineData(400)]
     [InlineData(404)]
     [InlineData(302)] // redirect not followed -> not a success

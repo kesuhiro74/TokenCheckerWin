@@ -2,10 +2,11 @@
 
 > ⚠ **現行仕様は「現行仕様サマリ（active）」と「§0 実装時の改訂」が正。** 本文 §1〜§14 のうち **UI に関する旧記述は廃止**です。特に **§5「UI 設計（通常モードの CopilotCard）」全体**、**§2/§13 の「トレイアイコン対象外」**、**§3／§7 の `VisibleServices` による Copilot 表示ゲート**、**§5.1 等の「`NotifyIcon` は1つ」前提**、**「通常モードに専用カードを追加」前提**、**旧 `CopilotWindowTrigger`／`TrayIconMode`／`CopilotWindowFadeSeconds`／`ShowOnStartup`** は **旧案・不採用**（現行はウィンドウごとの ON/OFF・Always/HoverPreview・有効ウィンドウごとの専用トレイアイコン・両窓OFF時のみコントロールアイコン・`CopilotWindowEnabled`/`ClaudeCodexWindowEnabled` ゲート）。Core プロバイダ／パーサ（§4）、Poc（§8）、プライバシー（§9）、`decimal` 集計（§4.3）、検証手順（§11）は引き続き有効。README と本サマリを一致させること。
 
+**Status: 実装済み（v0.8.2 時点の現行仕様を反映）**
+
 - 作成日(UTC): 2026-06-03
-- 対象ブランチ: `feature/github-copilot-ai-credits`（`main`/タグ/過去リリースは変更しない）
-- 状態: 設計承認済み（ユーザーによる6点修正＋Codex spec レビュー（Medium 4・Low 3）の指摘を反映）。**本ドキュメントは設計のみ。実装・コミット・push・tag はユーザーの明示指示まで行わない。**
-- 関連: 既存 POC ブランチ `feature/github-copilot-provider-poc`（`docs/experiments/github-copilot/{README,findings}.md`、`GitHubCopilotUsageProvider`/`GitHubBillingUsageParser`/`GitHubCopilotPocRunner`）
+- 状態: 実装完了・main にマージ済み（v0.8.x）
+- 注: §5（StatusForm への CopilotCard 案）・§7（VisibleServices ゲート配線案）は廃止・旧案として残置。§11（テスト無し時代の検証方針）は現在の `dotnet test` ベースの CI ゲートに置き換え済み。現行実装の正は「現行仕様サマリ（active）」と「§0 実装時の改訂」。
 
 ---
 
@@ -17,7 +18,7 @@
 - **トレイアイコンは有効ウィンドウごとに専用**: `_statusIcon`（Claude/Codex リング）／`_copilotIcon`（Copilot 縦%バー）。「1アイコン either/or（`TrayIconMode`）」は**撤回**。
 - **両窓 OFF 時はコントロール用アイコン**を1つだけ表示（`_controlIcon`）。ウィンドウは出さず、左クリック＝設定／右クリック＝共有メニュー。常に最低1アイコンは可視。
 - **右クリックメニューは5項目固定**: `今すぐ更新` / `Claude/Codexステータス表示モード`▶(通常/コンパクト/ミニマム) / `GitHubCopilot表示モード`▶(常時表示/ホバー表示) / `設定` / `終了`。現在値にチェック・切替は即時保存＋反映。ログイン/初回設定/接続テスト等は設定ダイアログ側。
-- **Copilot 配色**: `CopilotAccent`（Green(既定)/Blue/Sky/Purple/Slate）は**バーのみ**に反映＝**カードの%バー＋トレイ縦%バー**の通常色(80%未満)（`UsageTheme.AccentColor(value, baseColor)` 経由・トレイは `Lighten(accent,0.25)`）。**`n%` の文字色は黒系固定（`PrimaryText`）・`使用済み` は薄いグレー固定（`MutedText`）で配色設定の影響を受けない**。**80/95 の橙/赤エスカレーションはバー側で維持**（severity が上書き）。装飾グラスのスレートピルは固定。配色の対象は第4弾「装飾のみ」→第5弾「数値も」→**第6弾でバーのみ＋数値黒・`使用済み`薄グレー固定**に更新。
+- **Copilot 配色**: `CopilotAccent`（Green/Blue(既定)/Sky/Purple/Slate）は**バーのみ**に反映＝**カードの%バー＋トレイ縦%バー**の通常色(80%未満)（`UsageTheme.AccentColor(value, baseColor)` 経由・トレイは `Lighten(accent,0.25)`）。**`n%` の文字色は黒系固定（`PrimaryText`）・`使用済み` は薄いグレー固定（`MutedText`）で配色設定の影響を受けない**。**80/95 の橙/赤エスカレーションはバー側で維持**（severity が上書き）。装飾グラスのスレートピルは固定。配色の対象は第4弾「装飾のみ」→第5弾「数値も」→**第6弾でバーのみ＋数値黒・`使用済み`薄グレー固定**に更新。
 - **Copilot カード上部**: Octicons Copilot アイコン＋`GitHub Copilot`（1行目）＋**プラン名サブ行**（2行目・小さめ薄め）。**「タイトルそのものをプラン名にする」旧仕様は廃止**。主要表示フォントは `Moralerspace`（インストール時のみ使用・同梱せず・無ければ Segoe UI へフォールバック）。
 - **取得ゲート**: Copilot provider は `CopilotProviderEnabled`(=`CopilotWindowEnabled`)、Claude/Codex provider は `ClaudeProviderEnabled`/`CodexProviderEnabled`(=`ClaudeCodexWindowEnabled` ＋ `VisibleServices` の個別サービス表示)。OFF のものは provider を生成せず取得しない。
 - **OFF サービスの stale 値除去**: 表示用 snapshot/fallback（`BuildFallbackSnapshot`）・トレイアイコン（`DetermineState` 入力）・ツールチップは `IsServiceEnabledForDisplay` でフィルタし、無効化済みサービスの古い警告/危険状態を出さない。`last_usage.json` 自体は改変しない（表示段階でフィルタ）。
@@ -76,7 +77,7 @@
 - **#1 バッジ見切れ＋小型化**: `_badge` フォント `8F→7.5F`。`CopilotCard.ApplyBadge` を「Label 実描画に合わせたパディング込み実測（`TextRenderer.MeasureText(text,font)`・`NoPadding` を付けない）」で幅・高さとも採寸しタイトル行へ縦配置。高DPI 対策で `y=Math.Max(12, 12+(22-height)/2)`（行頭を下限化＝浮き上がり防止）、高さは文字追従（縦切れ防止・右余白へ下方展開）。
 - **#2 「使用済み」縮小**: `MainUsageControl` のサフィックス比 `0.55→0.46`（ベースライン揃え・固定ボックス無ガタは維持）。
 - **#3 100%到達予測の起点**: `CopilotUsageTracker.PredictFull` を **UTC1日0時 → ローカル暦の当月1日0時**起点に変更（`nowLocal.Offset`・`resetLocal=monthStartLocal.AddMonths(1)`・`fullLocal` を直接返却）。算出時点の利用割合からの線形外挿（`月初 + 経過日数×cap/usedNow`）。※実リセットは UTC1日=JST9:00 のため起点は約9h 早いが、**ユーザー明示要件「ローカル暦の当月1日0時を起点」を優先**（影響は月初9hのみ・到達日は僅かに“遅め”側・軽微）。
-- **#4 配色＝本体色の設定化**（第4弾の「装飾のみ」を**置換**）: `enum CopilotAccent { Green=0(既定),Blue,Sky,Purple,Slate }` に再定義（`JsonStringEnumConverter` は名前保存ゆえ旧 `Blue/Sky/Slate` も解釈可）。`CopilotAccentColor()` は**本体ベース色**を返す。`UsageTheme.AccentColor(double?)` は `AccentColor(value, Good)` へ委譲し、新オーバーロード `AccentColor(value, baseColor)`（`>=95 Bad / >=80 Warning / else baseColor`）で**数値・カードバー（`CopilotWindow.SetAccent`）・トレイ縦%バー（`CreateCopilotIcon(…, accentBase)`＝`Lighten(accent,0.25)`）**の 80%未満色を変更。**80/95 エスカレーションは色設定に関わらず維持**。装飾グラスのスレートピル（`_brand`）は固定。Claude/Codex 側（`AccentColor(value)`）は不変。**旧 settings の `Slate` 等は本バージョンから数値・バーがその色になる**（以前は緑固定。緑へ戻すには `グリーン（既定）`）。設定コンボは Green/Blue/Sky/Purple/Slate。
+- **#4 配色＝本体色の設定化**（第4弾の「装飾のみ」を**置換**）: `enum CopilotAccent { Green=0,Blue,Sky,Purple,Slate }` に再定義（`JsonStringEnumConverter` は名前保存ゆえ旧 `Blue/Sky/Slate` も解釈可）。`CopilotAccentColor()` は**本体ベース色**を返す。`UsageTheme.AccentColor(double?)` は `AccentColor(value, Good)` へ委譲し、新オーバーロード `AccentColor(value, baseColor)`（`>=95 Bad / >=80 Warning / else baseColor`）で**数値・カードバー（`CopilotWindow.SetAccent`）・トレイ縦%バー（`CreateCopilotIcon(…, accentBase)`＝`Lighten(accent,0.25)`）**の 80%未満色を変更。**80/95 エスカレーションは色設定に関わらず維持**。装飾グラスのスレートピル（`_brand`）は固定。Claude/Codex 側（`AccentColor(value)`）は不変。設定コンボは Green/Blue/Sky/Purple/Slate。**注: この第5弾の時点では Green=0 を既定としていたが、現行実装（`AppSettings.cs`）では `CopilotAccent.Blue` が既定値（`Normalize()` の未定義フォールバックも Blue）に変更済み。**
 - **#5 HoverPreview のホバー切替**: `CopilotWindow` に **Visible 中のみ動く 120ms ポーリング**（`_hoverPoll`→`RefreshHover`）を追加。HoverPreview は非アクティブ表示＋カーソル直下出現で `MouseEnter/Leave` が飛ばず、イベント駆動の %↔詳細値スワップが漏れるのを補完。`OnVisibleChanged` で表示時 Start／非表示時 Stop（teardown 中は `Disposing||IsDisposed` ガードで Timer/`_card` 非タッチ）、`Dispose(bool)` で停止破棄。Always/HoverPreview とも同一挙動・差分時のみ反映で無ガタ。Context 側 leave ポーリングとは独立。
 
 ### 第6弾（2026-06-06・Copilot ウィンドウ UI 調整 9点）
@@ -404,7 +405,9 @@ GitHub Copilot は**個人トークンで外部 API を叩く**ため、表示 O
 
 ---
 
-## 11. 検証計画（テストプロジェクトは無し → ビルド＋POC＋目視）
+## 11. 検証計画【旧案・廃止 — テストスイートと CI ゲートに置き換え済み】
+
+> この §11 は「テストプロジェクトは無し」前提の旧検証計画であり、現在は `dotnet test`（xUnit）＋ GitHub Actions CI に置き換え済み（`notes/2026-06-07-test-suite-plan.md` 参照）。以下は経緯保存のため残置。
 
 1. 再ビルド前に実行中インスタンス停止: `Stop-Process -Name TokenChecker -Force -ErrorAction SilentlyContinue`。
 2. `dotnet build`（ソリューション全体）が通ること。

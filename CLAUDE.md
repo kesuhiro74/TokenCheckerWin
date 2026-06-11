@@ -99,18 +99,24 @@ git config core.hooksPath .githooks
 - アプリが書き込むのは `settings.json`（設定のみ）、`last_usage.json`（数値の使用率のみ。診断 `Message` は `null` にしてから保存）、`copilot_usage.json`（Copilot の月次/9:00 ベースライン追跡。数値と日付のみ。トークン・ログイン・パス・メールは持たない）の3ファイルだけ。資格情報ファイルやクレデンシャルストアへは**書かない**。
 - 機能追加でこれらに反する可能性があるときは、実装前にユーザーへ確認する。
 
-### 80% / 95% の閾値は全箇所で一致させる
+### 80% / 95% の閾値は UsageTheme の定数を参照する
 
-警告 `>= 80%` / 危険 `>= 95%` の配色エスカレーションは複数箇所に散在し、**必ず揃える**こと:
-- `TrayIconRenderer.DetermineState`（トレイアイコン）
-- `StatusForm.UsageAccentColor`（通常/コンパクトの数字・バー・リング）
-- `StatusForm.BrandUsageColor`（ミニマムのブランド色エスカレーション）
+警告 `>= 80%` / 危険 `>= 95%` の配色エスカレーション閾値は **`UsageTheme.WarningPercent`（80）/ `UsageTheme.CriticalPercent`（95）に一元化**されており、各呼び出し元はリテラルを複製せずこの定数を参照すること:
+- `TrayIconRenderer`（`DetermineState`・`CopilotBarColor`）— `UsageTheme.CriticalPercent` / `WarningPercent` を直接参照
+- `StatusForm.UsageAccentColor`（通常/コンパクトの数字・バー）— `UsageTheme.AccentColor()` に委譲
+- `StatusForm.BrandUsageColor`（ミニマムのブランド色エスカレーション）— `UsageTheme.BrandUsageColor()` に委譲
+
+**不変条件**: 80/95 の値が他箇所でずれてはならない。定義は `UsageTheme` の1箇所のみ。閾値を変更するときはここだけを直す。
 
 ### 設定の永続化
 
-- 保存先: `%APPDATA%\TokenCheckerWin\settings.json`（`SettingsStore`、`JsonStringEnumConverter` 使用）。同フォルダに `last_usage.json`（`LastUsageStore`）と `copilot_usage.json`（`CopilotUsageStore`／`CopilotUsageTracker`、数値・日付のみ）。3ファイルとも `AtomicFile.WriteAllText`（temp→`Replace`）で原子的に書き出し、途中失敗で半端なファイルを残さない。
+- 保存先: `%APPDATA%\TokenCheckerWin\settings.json`（`SettingsStore`、`JsonStringEnumConverter` 使用）。同フォルダに `last_usage.json`（`LastUsageStore`）と `copilot_usage.json`（`CopilotUsageStore`／`CopilotUsageTracker`、数値・日付のみ）。3ファイルとも `AtomicFile.WriteAllText`（temp→`File.Move(overwrite: true)`）で原子的に書き出し、途中失敗で半端なファイルを残さない。
 - `DisplayMode`（`Normal`/`Compact`/`Minimum`）が表示モードの真実。旧 `CompactMode` bool は後方互換でミラー書き出しするだけ。レガシー移行（`CompactMode`→`DisplayMode`）は `SettingsStore.Load` で**JSON にフィールドが無い時だけ**一度行う。`AppSettings.Normalize()` で再移行してはいけない（モード切替が巻き戻る）。理由は `AppSettings.cs` / `SettingsStore.cs` のコメント参照。
 - 保存ファイルが壊れていれば既定値で起動（例外を握りつぶす）。永続化失敗でアプリを落とさない。
+
+### コメント・文字列の言語方針
+
+コード内コメント・コミットメッセージは英語。UI 表示文字列は日本語をキーに `Strings.T()` / `Strings.Tf()` 経由で多言語化（直接ハードコードしない）。
 
 ### UI（`StatusForm.cs`）
 

@@ -1,70 +1,5 @@
 namespace TokenChecker.App;
 
-internal enum DisplayMode
-{
-    Normal = 0,
-    Compact = 1,
-    Minimum = 2
-}
-
-// GitHub Copilot plan. The bundled monthly AI-credit allowance is NOT exposed by
-// the API, so the user picks a plan (or enters a custom cap) and the App overlays
-// it at display time. None = no allowance (show raw used credits only).
-internal enum CopilotPlan
-{
-    None = 0,
-    Pro = 1,
-    ProPlus = 2,
-    Max = 3,
-    Custom = 4,
-    Free = 5
-}
-
-// How a popup window is surfaced from its dedicated tray icon (per window).
-internal enum WindowDisplayMode
-{
-    // Shown whenever the app is running while the window is enabled; re-openable
-    // (tray click / menu) if the user closes it.
-    Always = 0,
-
-    // Hovering the window's tray icon fades it in; moving the mouse off the window
-    // hides it immediately (with a small grace for the icon->window move). Clicking
-    // the tray icon pins it (treated as always-visible until unpinned/closed).
-    HoverPreview = 1
-}
-
-// Accent color for the GitHub Copilot card's numbers + bar (and the tray %-bar):
-// it sets the normal (<80%) "good" color, while the shared 80/95 severity
-// escalation (amber/red) still applies. Green is the default (the original look).
-// Values are serialized by NAME (JsonStringEnumConverter), so older settings.json
-// that stored "Blue"/"Sky"/"Slate" still parse correctly after this reordering.
-internal enum CopilotAccent
-{
-    Green = 0,
-    Blue = 1,
-    Sky = 2,
-    Purple = 3,
-    Slate = 4
-}
-
-// App color theme for the windows. System follows the Windows app color mode
-// (light/dark) at startup; Light/Dark force a mode. Applied at startup only (a
-// change takes effect on the next launch).
-internal enum ThemeMode
-{
-    System = 0,
-    Light = 1,
-    Dark = 2
-}
-
-// UI language. Applied at startup only (a change needs an app restart), like Theme.
-internal enum AppLanguage
-{
-    System = 0,
-    English = 1,
-    Japanese = 2
-}
-
 internal sealed class AppSettings
 {
     // GitHub Copilot is keyed in snapshots by this exact provider name. (It is no
@@ -266,11 +201,4 @@ internal sealed class AppSettings
             CopilotWindowLocation = CopilotWindowLocation,
             CopilotAccent = CopilotAccent
         };
-}
-
-internal readonly record struct FormLocation(int X, int Y)
-{
-    public Point ToPoint() => new(X, Y);
-
-    public static FormLocation FromPoint(Point point) => new(point.X, point.Y);
 }

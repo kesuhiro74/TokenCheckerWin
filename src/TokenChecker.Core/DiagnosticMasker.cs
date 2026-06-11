@@ -63,7 +63,9 @@ public static partial class DiagnosticMasker
     private static partial Regex SecretAssignmentRegex();
 
     // base64url JWT: header.payload[.signature], header always begins "eyJ" ({" ).
-    [GeneratedRegex(@"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?")]
+    // The leading \b keeps "eyJ" anchored to a token start so an embedded match
+    // inside an ordinary word (e.g. "hockeyJab.def") is not over-masked.
+    [GeneratedRegex(@"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?")]
     private static partial Regex JwtRegex();
 
     [GeneratedRegex(@"\b[A-Za-z0-9_-]{32,}\b")]

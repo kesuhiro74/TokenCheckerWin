@@ -357,15 +357,10 @@ internal sealed class StatusForm : Form
         WindowEffects.UseRoundedCorners(Handle, small: true);
     }
 
-    private static Color StatusColor(ProviderStatus status)
-        => status switch
-        {
-            ProviderStatus.Available => Good,
-            ProviderStatus.NotInstalled or ProviderStatus.NotLoggedIn
-                or ProviderStatus.Unauthorized or ProviderStatus.RateLimited => Warning,
-            ProviderStatus.Error => Bad,
-            _ => MutedText
-        };
+    // Provider-status coloring is centralized in UsageTheme (same severity palette
+    // as the Copilot card, which calls UsageTheme.StatusColor directly); this thin
+    // forwarder keeps the rest of StatusForm's call sites unchanged.
+    private static Color StatusColor(ProviderStatus status) => UsageTheme.StatusColor(status);
 
     // Severity coloring is centralized in UsageTheme so the 80%/95% escalation
     // lives in exactly one place (CLAUDE.md). These thin wrappers keep the rest

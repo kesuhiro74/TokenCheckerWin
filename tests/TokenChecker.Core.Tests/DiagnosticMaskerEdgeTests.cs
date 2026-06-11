@@ -23,6 +23,23 @@ public class DiagnosticMaskerEdgeTests
             200));
 
     [Fact]
+    public void TwoSegmentJwt_IsRedactedWhole()
+        => Assert.Equal("jwt <redacted> end", DiagnosticMasker.Mask(
+            "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0 end",
+            200));
+
+    [Fact]
+    public void EmbeddedEyJ_InOrdinaryWord_IsNotMasked()
+    {
+        // "hockeyJab.def" contains the substring "eyJab.def" but it is mid-word,
+        // so the JWT rule's \b anchor must leave it untouched. "value=" is not one
+        // of the secret-assignment keywords (token/secret/key/authorization/bearer),
+        // so SecretAssignmentRegex must not touch it either.
+        const string text = "value=hockeyJab.def is fine";
+        Assert.Equal(text, DiagnosticMasker.Mask(text, 200));
+    }
+
+    [Fact]
     public void ZeroMaxLength_ReturnsEmpty()
         => Assert.Equal("", DiagnosticMasker.Mask("hello", 0));
 
