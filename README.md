@@ -16,7 +16,8 @@ The app stores **no credentials or tokens** (see [Privacy](#privacy)). Claude Co
 
 - Resides in the Windows notification area; per-window tray icons render a vertical % bar in code (no external image).
 - **Claude Code / Codex**: 5-hour and weekly rate limits, time remaining until reset, per-service brand colors (Claude = blue, Codex = purple).
-- Three display modes for the Claude / Codex window: **Normal** (detailed cards), **Compact** (side-by-side doughnuts), **Minimum** (one row per service).
+- Three display modes for the Claude / Codex window: **Normal** (detailed cards), **Compact** (side-by-side doughnuts), **Minimum** (a Nerd Font one-line status per service).
+- **Today's estimated spend** (`¥N (daily)`): today's tokens from the local Claude / Codex session logs, priced with a built-in per-model table and converted to JPY (a public USD→JPY rate fetched once a day). Shown on the Normal cards and the Minimum line; hidden when it cannot be computed.
 - **GitHub Copilot**: current-month AI Credits consumption in a dedicated window (opt-in), with today's-burn pace and a 100%-reach date estimate.
 - Color escalation at **80% (amber) / 95% (red)** across the icons, numbers, and bars.
 - Title-bar-less rounded flyouts: drag anywhere to move, `Esc` to close, position remembered.
@@ -63,9 +64,9 @@ dotnet publish src/TokenChecker.App/TokenChecker.App.csproj -c Release -r win-x6
 
 Switch from the settings dialog or the tray menu; the choice is saved to `DisplayMode` in `settings.json` (a legacy `CompactMode` boolean is mirrored for backward compatibility). Every mode is a rounded flyout you can drag anywhere (except links / text fields) and close with `Esc`.
 
-- **Normal** — the most detailed layout, stacking the Claude / Codex cards. The `5h` usage is the hero (large number + wide bar), with `Weekly` below, the time until the `5h` reset (e.g. `in 2h 18m (resets 11:50)`), a status badge, and a `Show details` link.
+- **Normal** — the most detailed layout, stacking the Claude / Codex cards. The `5h` usage is the hero (large number + wide bar) with the time until reset inline next to its label (e.g. `2h 18m (resets 11:50)`); `Weekly` sits below with its reset datetime inline (e.g. `(resets 6/17 18:00)`); then today's estimated spend (`¥46 (daily)`), a status badge, and a `Show details` link.
 - **Compact** — two side-by-side cards showing only the `5h` doughnut, badge, and reset text. The window shrinks to the number of visible services; the `Last updated` line is omitted.
-- **Minimum** — one row per service (`● ServiceName ──bar── 45%`) with a brand-color dot and a thin bar. Weekly, diagnostics, and reset time are omitted.
+- **Minimum** — a single Nerd Font status line per service: `<icon> Claude | 5h 38% 10:50 | 7d 39% 6/17 18:00 | ¥46 (daily)` (service name; the 5-hour and weekly `%` each with their reset time; today's spend). Text is drawn in Cascadia Mono and the icons in Symbols Nerd Font (icon runs are skipped entirely when that font is absent); the `|` separators are aligned between the two rows and the window auto-fits the line width. A segment is dropped when its data is unknown (e.g. no reset time, or cost not computable).
 
 ### Tray icon
 
@@ -129,6 +130,7 @@ The app **never** writes tokens, OAuth credentials, full paths, or email address
 
 - **Sign-in assistance** (the Claude Code / Codex `Log in` / `Log out` buttons) only launches the official CLI in a new `cmd.exe` — it does **not** read `~/.claude/.credentials.json`, `~/.codex/auth.json`, the Windows Credential Manager, API keys, etc. After running `claude` / `codex`, press `Re-check auth status` (which just re-runs the fetch).
 - **During a usage fetch**, the Claude Code provider reads the access token from `~/.claude/.credentials.json` (override with `CLAUDE_CONFIG_DIR`) **for the sole purpose** of calling the unofficial usage endpoint. It is **read-only**: the token, credentials body, email, and paths are never displayed, saved, or logged, and the app never writes to any credential file.
+- **For the daily-spend estimate**, the app reads the local Claude / Codex session logs (`~/.claude/projects`, `~/.codex/sessions`; override with `CLAUDE_CONFIG_DIR` / `CODEX_HOME`) **read-only**, extracting only token counts and model ids — never conversation content, cwd, or paths. The USD→JPY rate is fetched once a day from a free public FX API (falling back to a fixed rate on failure). Neither the rate nor the computed cost is persisted (in-memory only), so the three-file rule below is unchanged.
 - **Diagnostics** never appear in the normal view; they show only inside `Show details`, and only after masking via the single `DiagnosticMasker`:
   - email-like → `<email>`
   - absolute paths (Windows / UNC / POSIX) → `<path>`
