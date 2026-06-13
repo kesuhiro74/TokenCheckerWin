@@ -10,7 +10,7 @@
     <AssemblyTitle>TokenCheckerWin</AssemblyTitle>
     <Authors>kesuhiro74</Authors>
     <Copyright>Copyright (c) 2026 kesuhiro74</Copyright>
-    <Version>0.9.0</Version>
+    <Version>0.9.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- The windows use hand-coded pixel layouts + custom GDI+ drawing that do not
          auto-scale, so under SystemAware (the WinForms default) the fonts grow at
