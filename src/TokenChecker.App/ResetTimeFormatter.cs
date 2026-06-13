@@ -70,6 +70,53 @@ internal static class ResetTimeFormatter
         return Strings.Tf("あと{0}時間{1:00}分（{2}リセット）", hours, minutes, localReset.ToString("HH:mm"));
     }
 
+    // Inline variant for the Normal-mode card header rows: same remaining-time
+    // breakdown as FormatShortWindow but WITHOUT the "あと" prefix, because the
+    // text sits right next to the window label ("5時間 3時間15分（18:30 リセット）").
+    // Unknown reset time -> "" so the caller can simply leave the label blank.
+    public static string FormatShortInline(RateLimitWindow? window)
+        => FormatShortInline(window, DateTimeOffset.UtcNow);
+
+    // Test seam: nowUtc is injected so tests are deterministic.
+    internal static string FormatShortInline(RateLimitWindow? window, DateTimeOffset nowUtc)
+    {
+        if (window?.ResetAtUtc is null)
+        {
+            return string.Empty;
+        }
+
+        var localReset = window.ResetAtUtc.Value.ToLocalTime();
+        var remaining = window.ResetAtUtc.Value - nowUtc;
+        if (remaining <= TimeSpan.FromMinutes(1))
+        {
+            return Strings.Tf("まもなく（{0}リセット）", localReset.ToString("HH:mm"));
+        }
+
+        var totalMinutes = Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes));
+        var hours = totalMinutes / 60;
+        var minutes = totalMinutes % 60;
+
+        if (hours <= 0)
+        {
+            return Strings.Tf("{0}分（{1} リセット）", minutes, localReset.ToString("HH:mm"));
+        }
+
+        return Strings.Tf("{0}時間{1:00}分（{2} リセット）", hours, minutes, localReset.ToString("HH:mm"));
+    }
+
+    // Weekly inline: the reset datetime only (e.g. （6/18 09:00 リセット）) — the
+    // remaining time is intentionally omitted next to the weekly label. Unknown -> "".
+    public static string FormatWeeklyResetOnly(RateLimitWindow? window)
+    {
+        if (window?.ResetAtUtc is null)
+        {
+            return string.Empty;
+        }
+
+        var localReset = window.ResetAtUtc.Value.ToLocalTime();
+        return Strings.Tf("（{0} リセット）", localReset.ToString("M/d HH:mm"));
+    }
+
     private static string FormatWeekly(TimeSpan remaining, DateTimeOffset localReset)
     {
         var totalMinutes = Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes));

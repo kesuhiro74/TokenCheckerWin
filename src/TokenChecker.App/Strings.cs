@@ -41,6 +41,9 @@ internal static class Strings
         ["あと{0}分（{1}リセット）"] = "in {0}m (resets {1})",
         ["あと{0}時間{1:00}分（{2}リセット）"] = "in {0}h {1:00}m (resets {2})",
         ["あと{0}日{1}時間（{2}リセット）"] = "in {0}d {1}h (resets {2})",
+        ["{0}時間{1:00}分（{2} リセット）"] = "{0}h {1:00}m (resets {2})",
+        ["{0}分（{1} リセット）"] = "{0}m (resets {1})",
+        ["（{0} リセット）"] = "(resets {0})",
 
         // ----- Settings dialog: common group -----
         ["更新間隔"] = "Update interval",
@@ -97,6 +100,7 @@ internal static class Strings
         ["最終更新: 更新中"] = "Last updated: updating",
         ["最終更新: {0}"] = "Last updated: {0}",
         ["{0}: リセット時刻不明"] = "{0}: reset time unknown",
+        ["¥{0:N0} (daily)"] = "¥{0:N0} (daily)",
 
         // ----- Tray menu & tooltips (TrayApplicationContext) -----
         ["今すぐ更新"] = "Refresh now",

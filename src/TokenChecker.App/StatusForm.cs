@@ -232,7 +232,7 @@ internal sealed class StatusForm : Form
         _updatedAt.Text = Strings.T("最終更新: 更新中");
     }
 
-    public void UpdateSnapshot(UsageSnapshot snapshot, UsageSnapshot? lastSuccessfulSnapshot)
+    public void UpdateSnapshot(UsageSnapshot snapshot, UsageSnapshot? lastSuccessfulSnapshot, DailyCostsView? dailyCosts)
     {
         var claude = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Claude");
         var codex = snapshot.Services.FirstOrDefault(service => service.ServiceName == "Codex");
@@ -243,8 +243,8 @@ internal sealed class StatusForm : Form
             ? codex
             : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Codex" && service.Status == ProviderStatus.Available);
 
-        _claudeCard.Update(claude, fallbackClaude);
-        _codexCard.Update(codex, fallbackCodex);
+        _claudeCard.Update(claude, fallbackClaude, dailyCosts?.ClaudeJpy);
+        _codexCard.Update(codex, fallbackCodex, dailyCosts?.CodexJpy);
         _compactClaude.Update(claude, fallbackClaude);
         _compactCodex.Update(codex, fallbackCodex);
         _minimumPanel.Update(fallbackClaude, fallbackCodex, _showClaude, _showCodex);
@@ -433,12 +433,14 @@ internal sealed class StatusForm : Form
         private readonly Label _badge;
         private readonly Label _statusMessage;
         private readonly Label _shortWindowLabel;
+        private readonly Label _shortResetInline;
         private readonly Label _shortPercent;
         private readonly UsageBarControl _shortBar;
-        private readonly Label _shortReset;
         private readonly Label _weeklyLabel;
+        private readonly Label _weeklyResetInline;
         private readonly Label _weeklyPercent;
         private readonly UsageBarControl _weeklyBar;
+        private readonly Label _dailyCost;
         private readonly LinkLabel _detailToggle;
         private readonly TextBox _detailBox;
         private bool _detailExpanded;
@@ -513,16 +515,38 @@ internal sealed class StatusForm : Form
                 Visible = false
             };
 
+            // The window labels keep AutoSize=false but shrink to the measured
+            // text width so the inline reset label can start right after them
+            // without overlap in either language ("5時間" vs "5-hour").
+            var windowLabelFont = new Font("Segoe UI", 9.5F);
+            var inlineFont = new Font("Segoe UI", 8.5F);
+            var shortLabelText = Strings.T("5時間");
+            var shortLabelWidth = TextRenderer.MeasureText(shortLabelText, windowLabelFont).Width;
             _shortWindowLabel = new Label
             {
-                Text = Strings.T("5時間"),
+                Text = shortLabelText,
                 AutoSize = false,
-                Size = new Size(140, 22),
+                Size = new Size(shortLabelWidth, 22),
                 Location = new Point(14, 46),
                 ForeColor = SecondaryText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
-                Font = new Font("Segoe UI", 9.5F)
+                Font = windowLabelFont
+            };
+
+            // Remaining time + reset clock, inline next to the 5h label. Spans up
+            // to the percent number (x=254) and ellipsizes if it ever gets long.
+            var shortInlineX = 14 + shortLabelWidth + 6;
+            _shortResetInline = new Label
+            {
+                AutoSize = false,
+                Size = new Size(254 - shortInlineX - 4, 18),
+                Location = new Point(shortInlineX, 49),
+                ForeColor = MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Font = inlineFont
             };
 
             _shortPercent = new Label
@@ -545,35 +569,39 @@ internal sealed class StatusForm : Form
                 UseGradient = true
             };
 
-            _shortReset = new Label
-            {
-                AutoSize = false,
-                Size = new Size(340, 18),
-                Location = new Point(14, 92),
-                ForeColor = MutedText,
-                BackColor = Color.Transparent,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Font = new Font("Segoe UI", 8.5F),
-                Text = "—"
-            };
-
+            var weeklyLabelText = Strings.T("週次");
+            var weeklyLabelWidth = TextRenderer.MeasureText(weeklyLabelText, windowLabelFont).Width;
             _weeklyLabel = new Label
             {
-                Text = Strings.T("週次"),
+                Text = weeklyLabelText,
                 AutoSize = false,
-                Size = new Size(120, 22),
-                Location = new Point(14, 122),
+                Size = new Size(weeklyLabelWidth, 22),
+                Location = new Point(14, 96),
                 ForeColor = SecondaryText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
-                Font = new Font("Segoe UI", 9.5F)
+                Font = windowLabelFont
+            };
+
+            // Weekly inline shows the reset datetime only (no remaining time).
+            var weeklyInlineX = 14 + weeklyLabelWidth + 6;
+            _weeklyResetInline = new Label
+            {
+                AutoSize = false,
+                Size = new Size(254 - weeklyInlineX - 4, 18),
+                Location = new Point(weeklyInlineX, 99),
+                ForeColor = MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Font = inlineFont
             };
 
             _weeklyPercent = new Label
             {
                 AutoSize = false,
                 Size = new Size(100, 22),
-                Location = new Point(254, 122),
+                Location = new Point(254, 96),
                 ForeColor = MutedText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleRight,
@@ -586,10 +614,25 @@ internal sealed class StatusForm : Form
             // the 5h window stays the visual focus of the card.
             _weeklyBar = new UsageBarControl
             {
-                Location = new Point(14, 148),
+                Location = new Point(14, 122),
                 Size = new Size(340, 5),
                 BackColor = Color.Transparent,
                 UseGradient = true
+            };
+
+            // Today's local-session spend (e.g. "¥1,234 (daily)"), per service.
+            // Hidden while the cost is unknown; deliberately NOT reset on
+            // SetLoading so it doesn't blink on every refresh.
+            _dailyCost = new Label
+            {
+                AutoSize = false,
+                Size = new Size(200, 18),
+                Location = new Point(14, 134),
+                ForeColor = SecondaryText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = inlineFont,
+                Visible = false
             };
 
             _detailToggle = new LinkLabel
@@ -632,12 +675,14 @@ internal sealed class StatusForm : Form
             Controls.Add(_badge);
             Controls.Add(_statusMessage);
             Controls.Add(_shortWindowLabel);
+            Controls.Add(_shortResetInline);
             Controls.Add(_shortPercent);
             Controls.Add(_shortBar);
-            Controls.Add(_shortReset);
             Controls.Add(_weeklyLabel);
+            Controls.Add(_weeklyResetInline);
             Controls.Add(_weeklyPercent);
             Controls.Add(_weeklyBar);
+            Controls.Add(_dailyCost);
             Controls.Add(_detailToggle);
             Controls.Add(_detailBox);
         }
@@ -651,14 +696,17 @@ internal sealed class StatusForm : Form
             _shortPercent.Text = "—";
             _shortPercent.ForeColor = MutedText;
             _shortBar.SetValue(null);
-            _shortReset.Text = Strings.T("更新中");
+            _shortResetInline.Text = string.Empty;
             _weeklyPercent.Text = "—";
             _weeklyPercent.ForeColor = MutedText;
             _weeklyBar.SetValue(null);
+            _weeklyResetInline.Text = string.Empty;
+            // _dailyCost is intentionally left as-is: the cost is recomputed on
+            // its own cadence and clearing it here would blink on every refresh.
             UpdateDiagnostics(string.Empty);
         }
 
-        public void Update(ServiceUsage? current, ServiceUsage? fallback)
+        public void Update(ServiceUsage? current, ServiceUsage? fallback, decimal? dailyCostJpy)
         {
             var status = current?.Status ?? ProviderStatus.Unknown;
             _badge.Text = ProviderStatusPresenter.BadgeText(status);
@@ -687,12 +735,25 @@ internal sealed class StatusForm : Form
             _shortPercent.ForeColor = UsageAccentColor(shortWindow?.UsedPercent);
             _shortBar.AccentColor = UsageAccentColor(shortWindow?.UsedPercent);
             _shortBar.SetValue(shortWindow?.UsedPercent);
-            _shortReset.Text = ResetTimeFormatter.Format(shortWindow);
+            _shortResetInline.Text = ResetTimeFormatter.FormatShortInline(shortWindow);
 
             _weeklyPercent.Text = FormatPercent(weekly);
             _weeklyPercent.ForeColor = UsageAccentColor(weekly?.UsedPercent);
             _weeklyBar.AccentColor = UsageAccentColor(weekly?.UsedPercent);
             _weeklyBar.SetValue(weekly?.UsedPercent);
+            _weeklyResetInline.Text = ResetTimeFormatter.FormatWeeklyResetOnly(weekly);
+
+            // Today's spend: hidden when unknown (cost reading failed or no
+            // session data); shown otherwise. Rounding is left to N0 formatting.
+            if (dailyCostJpy is null)
+            {
+                _dailyCost.Visible = false;
+            }
+            else
+            {
+                _dailyCost.Text = Strings.Tf("¥{0:N0} (daily)", dailyCostJpy.Value);
+                _dailyCost.Visible = true;
+            }
 
             var debug = ProviderStatusPresenter.BuildDebugSummary(_displayName, current, fallback);
             var masked = ProviderStatusPresenter.SafeDiagnostics(current?.Message);

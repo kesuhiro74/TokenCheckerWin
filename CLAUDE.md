@@ -90,13 +90,21 @@ git config core.hooksPath .githooks
 
 両プロバイダとも PATH に CLI が無ければ `NotInstalled`（PATH 探索は `CommandLineProbe`、Windows では `.cmd` 等の PATHEXT を考慮）。
 
+### 日次コスト表示（通常モードの「¥nnn (daily)」）
+
+- **Core** `LocalCost/`: `ClaudeDailyCostReader`（`~/.claude/projects/**/*.jsonl`、`CLAUDE_CONFIG_DIR` 上書き可）と `CodexDailyCostReader`（`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME` 上書き可）が当日（ローカル0:00起点）のトークン数を集計し、`ModelPricing`（**単価の唯一の真実**。USD/MTok、decimal 演算のみ、最長前方一致）でコスト化。ログからは**数値・モデル名・重複排除用 ID のみ**抽出し、本文・cwd・パスは保持しない。追記中ファイル対策で `FileShare.ReadWrite | Delete` で開く（`File.ReadLines` 禁止）。
+- **為替**: `UsdJpyRateProvider` が `api.frankfurter.dev`（USD→JPY）を**1日1回**取得。失敗時は 150 円フォールバック（30分後に再試行）。キャッシュは**メモリのみ・永続化しない**。
+- **App**: `DailyCostService`（TTL 10分、手動更新で強制再計算、**例外を一切漏らさず** `(null, null)` に集約＝使用率表示を巻き込まない）→ `StatusForm.UpdateSnapshot` 第3引数 `DailyCostsView` → 通常モードカードの `_dailyCost` ラベル（計算不能時は非表示）。Compact/Minimum には出さない。
+- 確認: `dotnet run --project src/TokenChecker.Poc -- --daily-cost`（日付・数値のみの JSON を出力）。
+
 ## 重要な規約・不変条件
 
 ### プライバシー（最重要・絶対に破らない）
 
 - トークン・OAuth 認証情報・メールアドレス・絶対パス全体を、UI・ツールチップ・ログ・保存ファイルのいずれにも**書き出さない**。
 - 診断文字列は「詳細を表示」内だけに出し、必ずマスクする（email→`<email>`、path→`<path>`、`token=`/`secret=`/`key=`/`bearer=` 等→`<redacted>`、長い英数字塊→`<redacted>`）。マスクは **`TokenChecker.Core.DiagnosticMasker.Mask(value, maxLength)` に一元化**（唯一の真実）。Core のプロバイダも App の `ProviderStatusPresenter.SafeDiagnostics` もこれに委譲する。マスク規則を変える時はこの1箇所だけを直す（コピーを増やさない）。`maxLength` だけ用途別（プロバイダ要約=160 / UI 詳細=400）。
-- アプリが書き込むのは `settings.json`（設定のみ）、`last_usage.json`（数値の使用率のみ。診断 `Message` は `null` にしてから保存）、`copilot_usage.json`（Copilot の月次/9:00 ベースライン追跡。数値と日付のみ。トークン・ログイン・パス・メールは持たない）の3ファイルだけ。資格情報ファイルやクレデンシャルストアへは**書かない**。
+- アプリが書き込むのは `settings.json`（設定のみ）、`last_usage.json`（数値の使用率のみ。診断 `Message` は `null` にしてから保存）、`copilot_usage.json`（Copilot の月次/9:00 ベースライン追跡。数値と日付のみ。トークン・ログイン・パス・メールは持たない）の3ファイルだけ。資格情報ファイルやクレデンシャルストアへは**書かない**。日次コストの為替レート・集計結果も**永続化しない**（メモリのみ）。
+- ローカルのセッションログ（`~/.claude/projects` / `~/.codex/sessions`）は**読むだけ**。抽出するのは数値・モデル名・重複排除用 ID のみで、会話本文・cwd・パスを変数に保持・出力しない（`LocalCost/` 各 Reader のコメント参照）。
 - 機能追加でこれらに反する可能性があるときは、実装前にユーザーへ確認する。
 
 ### 80% / 95% の閾値は UsageTheme の定数を参照する

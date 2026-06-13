@@ -81,6 +81,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private readonly Dictionary<string, ServiceUsage> _lastSuccessfulServices = new(StringComparer.OrdinalIgnoreCase);
     private readonly CopilotUsageTracker _copilotTracker = new();
+    // Today's local-session spend (Claude/Codex, JPY) for the status cards.
+    // Internally cached (10 min); forced on explicit user refresh only.
+    private readonly DailyCostService _dailyCostService = new();
     // Last computed Copilot today's-burn percent (of the monthly allowance), cached
     // from UpdateCopilotWindow's tracker.Observe so UpdateTrayIcons can drive the
     // burn warning mark without re-running Observe (which would skew the 09:00
@@ -98,7 +101,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         => _lastSnapshot?.Services.FirstOrDefault(s => string.Equals(s.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase))?.Status
             ?? ProviderStatus.Unknown;
 
-    public Task RefreshUsageAsync() => RefreshAsync();
+    public Task RefreshUsageAsync() => RefreshAsync(forceCosts: true);
 
     public TrayApplicationContext()
     {
@@ -181,7 +184,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // ----- Context menu (5 items): 今すぐ更新 / Claude·Codex 表示モード /
         // GitHub Copilot 表示モード / 設定 / 終了. Login, first-time-setup, and the
         // window-show items live in the settings dialog instead.
-        _refreshMenuItem = new ToolStripMenuItem(Strings.T("今すぐ更新"), null, async (_, _) => await RefreshAsync().ConfigureAwait(true));
+        _refreshMenuItem = new ToolStripMenuItem(Strings.T("今すぐ更新"), null, async (_, _) => await RefreshAsync(forceCosts: true).ConfigureAwait(true));
 
         _modeNormalItem = new ToolStripMenuItem(Strings.T("通常モード"), null, (_, _) => SetDisplayMode(DisplayMode.Normal));
         _modeCompactItem = new ToolStripMenuItem(Strings.T("コンパクトモード"), null, (_, _) => SetDisplayMode(DisplayMode.Compact));
@@ -229,7 +232,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _ = RefreshAsync();
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(bool forceCosts = false)
     {
         if (_disposed || _shutdown.IsCancellationRequested)
         {
@@ -247,6 +250,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _statusForm.SetLoading();
             _copilotWindow.SetLoading();
             UpdateTrayIcons(null, loading: true);
+
+            // Kick off the daily-cost computation in parallel with the provider
+            // fetch. GetAsync never throws (it collapses every failure to a
+            // (null, null) view), so this task is safe even on early return.
+            var costTask = _dailyCostService.GetAsync(forceCosts, _shutdown.Token);
 
             UsageSnapshot snapshot;
             try
@@ -287,8 +295,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
             }
 
             _lastSnapshot = snapshot;
+            // Reached on the error-snapshot path too (the catch above falls
+            // through), so the cards always receive the costs argument.
+            var costs = await costTask.ConfigureAwait(true);
             var fallbackSnapshot = BuildFallbackSnapshot(snapshot.CapturedAtUtc);
-            _statusForm.UpdateSnapshot(snapshot, fallbackSnapshot);
+            _statusForm.UpdateSnapshot(snapshot, fallbackSnapshot, costs);
             UpdateCopilotWindow(snapshot, fallbackSnapshot);
             var iconSnapshot = fallbackSnapshot ?? snapshot;
             UpdateTrayIcons(iconSnapshot, loading: false);
