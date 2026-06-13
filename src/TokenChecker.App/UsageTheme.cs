@@ -353,7 +353,9 @@ internal static class UsageTheme
         }
     }
 
-    private static bool FontFamilyInstalled(string name)
+    // Internal (not private): also used by StatusLineFonts to probe the
+    // minimum-mode status-line faces (Cascadia Mono / Symbols Nerd Font).
+    internal static bool FontFamilyInstalled(string name)
     {
         try
         {

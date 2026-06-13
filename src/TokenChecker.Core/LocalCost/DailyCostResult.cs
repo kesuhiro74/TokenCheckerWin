@@ -2,8 +2,9 @@ namespace TokenChecker.Core.LocalCost;
 
 // Aggregated token counts and estimated cost for one provider's local session
 // logs over a single day (or any UTC half-open interval). Contains only
-// numeric totals — never conversation content, paths, or identifiers — so it
-// is always safe to display or serialize (privacy invariant).
+// numeric totals — model ids and message/request ids are read transiently for
+// pricing lookups and dedup, never returned — so it is always safe to display
+// or serialize (privacy invariant).
 public sealed record DailyCostResult(
     decimal CostUsd,
     long InputTokens,          // uncached input (billed at base input rate)

@@ -60,8 +60,9 @@ internal sealed class StatusForm : Form
     private const int CompactPanelGap = 8;
 
     // Minimum mode dimensions — the popup hugs the card with no outer padding.
-    // Wide enough that a serif service name ("Claude") isn't clipped.
-    private const int MinimumFormWidth = 232;
+    // The width follows the composed status-line content (LayoutMinimum), with
+    // this floor so a sparse line still reads as a card.
+    private const int MinimumFormMinWidth = 180;
     private const int MinimumPanelHeight = 46;
 
     private const int FooterHeight = 22;
@@ -230,6 +231,12 @@ internal sealed class StatusForm : Form
         _compactCodex.SetLoading();
         _minimumPanel.SetLoading();
         _updatedAt.Text = Strings.T("最終更新: 更新中");
+
+        // The minimum strip width follows its (possibly placeholder) content.
+        if (_displayMode == DisplayMode.Minimum)
+        {
+            RecalculateLayout();
+        }
     }
 
     public void UpdateSnapshot(UsageSnapshot snapshot, UsageSnapshot? lastSuccessfulSnapshot, DailyCostsView? dailyCosts)
@@ -247,8 +254,15 @@ internal sealed class StatusForm : Form
         _codexCard.Update(codex, fallbackCodex, dailyCosts?.CodexJpy);
         _compactClaude.Update(claude, fallbackClaude);
         _compactCodex.Update(codex, fallbackCodex);
-        _minimumPanel.Update(fallbackClaude, fallbackCodex, _showClaude, _showCodex);
+        _minimumPanel.Update(fallbackClaude, fallbackCodex, _showClaude, _showCodex, dailyCosts);
         _updatedAt.Text = Strings.Tf("最終更新: {0}", snapshot.CapturedAtUtc.ToLocalTime().ToString("HH:mm:ss"));
+
+        // The minimum strip is sized to its content, which may have just changed
+        // (reset stamps, cost); re-fit the window in that mode only.
+        if (_displayMode == DisplayMode.Minimum)
+        {
+            RecalculateLayout();
+        }
     }
 
     private void ApplyVisibilityForMode()
@@ -342,9 +356,45 @@ internal sealed class StatusForm : Form
     {
         // No outer padding: the card fills the whole popup window (it paints square;
         // the window's rounded corners come from DWM — see OnHandleCreated).
+        // The width follows the composed status-line content, clamped between a
+        // floor and the working area so the popup never overflows the screen.
+        var area = GetWorkingArea();
+        var maxWidth = Math.Max(MinimumFormMinWidth, area.Width - 32);
+        var width = Math.Clamp(_minimumPanel.PreferredContentWidth, MinimumFormMinWidth, maxWidth);
+
         _minimumPanel.Location = new Point(0, 0);
-        _minimumPanel.Size = new Size(MinimumFormWidth, MinimumPanelHeight);
-        ClientSize = new Size(MinimumFormWidth, MinimumPanelHeight);
+        _minimumPanel.Size = new Size(width, MinimumPanelHeight);
+        ClientSize = new Size(width, MinimumPanelHeight);
+        KeepMinimumOnScreen(area);
+    }
+
+    private Rectangle GetWorkingArea()
+    {
+        try
+        {
+            return Screen.FromControl(this).WorkingArea;
+        }
+        catch
+        {
+            // Screen resolution can fail before the handle exists / during
+            // display changes; fall back to a conservative desktop size.
+            return new Rectangle(0, 0, 1280, 720);
+        }
+    }
+
+    // When a refresh widens the minimum strip while the popup is visible, the
+    // window can grow past the right edge of the screen; nudge it back left.
+    private void KeepMinimumOnScreen(Rectangle area)
+    {
+        if (_displayMode != DisplayMode.Minimum || !Visible)
+        {
+            return;
+        }
+
+        if (Right > area.Right)
+        {
+            Left = Math.Max(area.Left, area.Right - Width);
+        }
     }
 
     // Rounded corners for the borderless popup come from the Win11 DWM compositor
@@ -366,11 +416,6 @@ internal sealed class StatusForm : Form
     // lives in exactly one place (CLAUDE.md). These thin wrappers keep the rest
     // of StatusForm unchanged.
     private static Color UsageAccentColor(double? value) => UsageTheme.AccentColor(value);
-
-    // Like UsageAccentColor, but keeps the service brand color in the normal
-    // range so the minimum strip carries each service's identity (blue/purple)
-    // while still escalating to amber/red as usage climbs.
-    private static Color BrandUsageColor(Color brand, double? value) => UsageTheme.BrandUsageColor(brand, value);
 
     private static RateLimitWindow? FindFiveHourWindow(ServiceUsage? service)
     {
@@ -925,7 +970,8 @@ internal sealed class StatusForm : Form
     }
 
     // ----- MinimumStripPanel (minimum mode) --------------------------------
-    // Two stacked rows ("● Claude ▰▰▰▱▱ 45%") inside a single rounded card.
+    // Two stacked one-line status rows ("<icon> Claude | <clock> 5h 38% ...")
+    // inside a single rounded card.
     private sealed class MinimumStripPanel : Panel
     {
         private const int RowHeight = 21;
@@ -936,42 +982,105 @@ internal sealed class StatusForm : Form
         private readonly MinimumServiceRow _claude;
         private readonly MinimumServiceRow _codex;
 
+        // Service visibility is tracked explicitly (not read back via
+        // Control.Visible): Visible reflects ancestor visibility too, so it
+        // reads false whenever the popup itself is hidden — which is exactly
+        // when the refresh timer often runs Update/layout.
+        private bool _showClaude = true;
+        private bool _showCodex = true;
+
         public MinimumStripPanel()
         {
             BackColor = Card;
             DoubleBuffered = true;
 
-            _claude = new MinimumServiceRow("Claude", ClaudeBrand,
-                CreateTitleFont(ClaudeTitleFontFamily, 9.5F, ClaudeTitleFontStyle));
-            _codex = new MinimumServiceRow("Codex", CodexBrand,
-                CreateTitleFont(CodexTitleFontFamily, 9.5F, CodexTitleFontStyle));
+            _claude = new MinimumServiceRow("Claude", StatusLineGlyphs.Claude, ClaudeBrand);
+            _codex = new MinimumServiceRow("Codex", StatusLineGlyphs.Codex, CodexBrand);
 
             Controls.Add(_claude);
             Controls.Add(_codex);
+        }
+
+        // Width the strip wants for its widest visible status line, including
+        // the side insets. LayoutMinimum clamps this into the screen.
+        public int PreferredContentWidth
+        {
+            get
+            {
+                var width = 0;
+                if (_showClaude)
+                {
+                    width = Math.Max(width, _claude.PreferredWidth);
+                }
+
+                if (_showCodex)
+                {
+                    width = Math.Max(width, _codex.PreferredWidth);
+                }
+
+                return width + SideInset * 2;
+            }
         }
 
         public void SetLoading()
         {
             _claude.SetLoading();
             _codex.SetLoading();
+            AlignSeparators();
         }
 
-        public void Update(ServiceUsage? claude, ServiceUsage? codex, bool showClaude, bool showCodex)
+        public void Update(ServiceUsage? claude, ServiceUsage? codex, bool showClaude, bool showCodex, DailyCostsView? dailyCosts)
         {
+            _showClaude = showClaude;
+            _showCodex = showCodex;
             _claude.Visible = showClaude;
             _codex.Visible = showCodex;
 
             if (showClaude)
             {
-                _claude.SetWindow(FindFiveHourWindow(claude));
+                _claude.SetData(
+                    FindFiveHourWindow(claude),
+                    FindWeeklyWindow(claude),
+                    dailyCosts?.ClaudeJpy);
             }
 
             if (showCodex)
             {
-                _codex.SetWindow(FindFiveHourWindow(codex));
+                _codex.SetData(
+                    FindFiveHourWindow(codex),
+                    FindWeeklyWindow(codex),
+                    dailyCosts?.CodexJpy);
             }
 
+            AlignSeparators();
             LayoutRows();
+        }
+
+        // Pins each separator column at the element-wise max of the two rows'
+        // natural separator positions so the "|" columns line up vertically.
+        // With a single visible row there is nothing to align: its SetData has
+        // already reset the row to its natural positions. Claude's third
+        // (cost) separator has no Codex counterpart, so its target equals its
+        // own natural X and the pin is a no-op there.
+        private void AlignSeparators()
+        {
+            if (!_showClaude || !_showCodex)
+            {
+                return;
+            }
+
+            var claudeXs = _claude.NaturalSeparatorXs;
+            var codexXs = _codex.NaturalSeparatorXs;
+            var targets = new int[Math.Max(claudeXs.Count, codexXs.Count)];
+            for (var i = 0; i < targets.Length; i++)
+            {
+                var claudeX = i < claudeXs.Count ? claudeXs[i] : 0;
+                var codexX = i < codexXs.Count ? codexXs[i] : 0;
+                targets[i] = Math.Max(claudeX, codexX);
+            }
+
+            _claude.ApplySeparatorTargets(targets);
+            _codex.ApplySeparatorTargets(targets);
         }
 
         protected override void OnResize(EventArgs eventargs)
@@ -1004,7 +1113,7 @@ internal sealed class StatusForm : Form
         {
             var rowWidth = Width - SideInset * 2;
 
-            if (_claude.Visible && _codex.Visible)
+            if (_showClaude && _showCodex)
             {
                 var stackHeight = RowHeight * 2 + RowGap;
                 var top = Math.Max(0, (Height - stackHeight) / 2);
@@ -1013,12 +1122,12 @@ internal sealed class StatusForm : Form
                 _codex.Location = new Point(SideInset, top + RowHeight + RowGap);
                 _codex.Size = new Size(rowWidth, RowHeight);
             }
-            else if (_claude.Visible)
+            else if (_showClaude)
             {
                 _claude.Location = new Point(SideInset, (Height - RowHeight) / 2);
                 _claude.Size = new Size(rowWidth, RowHeight);
             }
-            else if (_codex.Visible)
+            else if (_showCodex)
             {
                 _codex.Location = new Point(SideInset, (Height - RowHeight) / 2);
                 _codex.Size = new Size(rowWidth, RowHeight);
@@ -1038,124 +1147,215 @@ internal sealed class StatusForm : Form
         }
     }
 
-    // A single linear row: brand dot + service name + usage bar + percent.
+    // A single owner-drawn status line, e.g.
+    //   <svcIcon> Claude | <clock> 5h 38% <reset> 10:50 | <cal> 7d 39% <reset> 6/17 18:00 | <money> ¥46 (daily)
+    // Text runs render in the monospaced status-line face, icon runs in the
+    // Nerd Font face; when the Nerd Font is not installed the icon runs are
+    // skipped entirely (measured nor drawn), leaving a clean text-only line.
     private sealed class MinimumServiceRow : Panel
     {
-        private const int DotSize = 8;
-        private const int Gap = 7;
-        // Wide enough for a serif name (Georgia "Claude") at this size.
-        private const int LabelWidth = 66;
-        private const int PercentWidth = 42;
-        private const int BarHeight = 6;
+        // Gap between adjacent runs; separators breathe a little wider.
+        private const int RunGap = 4;
+        private const int SeparatorGap = 6;
 
+        private const TextFormatFlags RunFlags =
+            TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
+
+        private readonly string _serviceName;
+        private readonly string _iconGlyph;
         private readonly Color _brand;
-        private readonly Label _name;
-        private readonly UsageBarControl _bar;
-        private readonly Label _percent;
-        private bool _hasValue;
 
-        public MinimumServiceRow(string displayName, Color brand, Font nameFont)
+        private IReadOnlyList<MinimumRun> _runs = Array.Empty<MinimumRun>();
+        private IReadOnlyList<int>? _separatorTargets;
+        private bool _hasData;
+
+        public MinimumServiceRow(string serviceName, string iconGlyph, Color brand)
         {
+            _serviceName = serviceName;
+            _iconGlyph = iconGlyph;
             _brand = brand;
             BackColor = Card;
-            DoubleBuffered = true;
-
-            _name = new Label
-            {
-                Text = displayName,
-                AutoSize = false,
-                ForeColor = PrimaryText,
-                BackColor = Color.Transparent,
-                Font = nameFont,
-                TextAlign = ContentAlignment.MiddleLeft,
-                AutoEllipsis = true
-            };
-
-            _bar = new UsageBarControl
-            {
-                BackColor = Card,
-                AccentColor = brand
-            };
-
-            _percent = new Label
-            {
-                Text = "—",
-                AutoSize = false,
-                ForeColor = MutedText,
-                BackColor = Color.Transparent,
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                TextAlign = ContentAlignment.MiddleRight
-            };
-
-            Controls.Add(_name);
-            Controls.Add(_bar);
-            Controls.Add(_percent);
+            SetStyle(
+                ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer
+                | ControlStyles.UserPaint
+                | ControlStyles.ResizeRedraw,
+                true);
         }
 
+        // Width this row's full line wants (run widths + gaps + separator
+        // pinning), kept in sync with the current runs and targets so
+        // LayoutMinimum can size the window.
+        public int PreferredWidth { get; private set; }
+
+        // X of each separator with no pinning applied, in run order. The strip
+        // takes the element-wise max across rows to build the pin targets.
+        public IReadOnlyList<int> NaturalSeparatorXs { get; private set; } = Array.Empty<int>();
+
+        public void SetData(RateLimitWindow? fiveHour, RateLimitWindow? weekly, decimal? dailyCostJpy)
+        {
+            _hasData = true;
+            SetRuns(MinimumLineComposer.Compose(_serviceName, _iconGlyph, fiveHour, weekly, dailyCostJpy));
+        }
+
+        // No-op once real data has been shown: re-showing the placeholder on
+        // every refresh would make the line blink. The "5h n/a | 7d n/a"
+        // placeholder appears only before the first snapshot arrives.
         public void SetLoading()
         {
-            _hasValue = false;
-            _bar.SetValue(null);
-            _percent.Text = "—";
-            _percent.ForeColor = MutedText;
-            Invalidate();
-            LayoutChildren();
-        }
-
-        public void SetWindow(RateLimitWindow? window)
-        {
-            var value = window?.UsedPercent;
-            if (UsageRingRenderer.TryClampPercent(value, out var pct))
+            if (_hasData)
             {
-                _hasValue = true;
-                _bar.AccentColor = BrandUsageColor(_brand, value);
-                _bar.SetValue(value);
-                _percent.Text = $"{Math.Round(pct):0}%";
-                _percent.ForeColor = PrimaryText;
-            }
-            else
-            {
-                _hasValue = false;
-                _bar.SetValue(null);
-                _percent.Text = "n/a";
-                _percent.ForeColor = MutedText;
+                return;
             }
 
+            SetRuns(MinimumLineComposer.Compose(_serviceName, _iconGlyph, null, null, null));
+        }
+
+        // Pins separator k at max(natural X, targets[k]) — the gap before the
+        // separator widens — and refreshes PreferredWidth accordingly. Targets
+        // beyond this row's separator count are ignored; missing targets leave
+        // the remaining separators at their natural positions.
+        public void ApplySeparatorTargets(IReadOnlyList<int>? targets)
+        {
+            _separatorTargets = targets;
+            PreferredWidth = LayoutRuns(_runs, targets, naturalSeparatorXs: null, visit: null);
             Invalidate();
-            LayoutChildren();
         }
 
-        protected override void OnResize(EventArgs eventargs)
+        private void SetRuns(IReadOnlyList<MinimumRun> runs)
         {
-            base.OnResize(eventargs);
-            LayoutChildren();
+            _runs = runs;
+            // New runs invalidate previously pinned columns; the strip
+            // re-applies fresh targets via ApplySeparatorTargets right after.
+            _separatorTargets = null;
+            var naturals = new List<int>();
+            PreferredWidth = LayoutRuns(runs, separatorTargets: null, naturals, visit: null);
+            NaturalSeparatorXs = naturals;
+            Invalidate();
         }
 
-        private void LayoutChildren()
+        // The single layout walk shared by measurement and painting, so the
+        // two can never disagree: gap accumulation, separator pinning and run
+        // widths are all decided here. Returns the total line width, reports
+        // each visible run's resolved X and measured width to the optional
+        // visitor, and optionally collects the unpinned separator positions.
+        private static int LayoutRuns(
+            IReadOnlyList<MinimumRun> runs,
+            IReadOnlyList<int>? separatorTargets,
+            List<int>? naturalSeparatorXs,
+            Action<MinimumRun, int, int>? visit)
         {
-            var nameX = DotSize + Gap;
-            _name.Location = new Point(nameX, 0);
-            _name.Size = new Size(LabelWidth, Height);
+            var x = 0;
+            var separatorIndex = 0;
+            var first = true;
+            var previousKind = MinimumRunKind.ServiceIcon;
+            foreach (var run in VisibleRuns(runs))
+            {
+                if (!first)
+                {
+                    x += GapBefore(previousKind, run.Kind);
+                }
 
-            var barX = nameX + LabelWidth + Gap;
-            var percentX = Width - PercentWidth;
-            var barWidth = Math.Max(16, percentX - Gap - barX);
-            _bar.Location = new Point(barX, (Height - BarHeight) / 2);
-            _bar.Size = new Size(barWidth, BarHeight);
+                if (run.Kind == MinimumRunKind.Separator)
+                {
+                    naturalSeparatorXs?.Add(x);
+                    if (separatorTargets is not null && separatorIndex < separatorTargets.Count)
+                    {
+                        x = Math.Max(x, separatorTargets[separatorIndex]);
+                    }
 
-            _percent.Location = new Point(percentX, 0);
-            _percent.Size = new Size(PercentWidth, Height);
+                    separatorIndex++;
+                }
+
+                var width = TextRenderer.MeasureText(run.Text, FontFor(run), Size.Empty, RunFlags).Width;
+                visit?.Invoke(run, x, width);
+                x += width;
+                previousKind = run.Kind;
+                first = false;
+            }
+
+            return x;
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            var dotColor = _hasValue ? _brand : MutedText;
-            var dotY = (Height - DotSize) / 2f;
-            using var brush = new SolidBrush(dotColor);
-            e.Graphics.FillEllipse(brush, 0, dotY, DotSize, DotSize);
+            var g = e.Graphics;
+
+            // All runs share the text font's baseline (icons included), so the
+            // line never wobbles when the two faces have different cell heights.
+            var textFont = StatusLineFonts.Text;
+            var textTop = (Height - textFont.GetHeight(g)) / 2f;
+            var baseline = textTop + TextMetrics.AscentPx(g, textFont);
+
+            var clipped = false;
+            LayoutRuns(_runs, _separatorTargets, naturalSeparatorXs: null, (run, x, width) =>
+            {
+                if (clipped || x >= Width)
+                {
+                    clipped = true;
+                    return;
+                }
+
+                var font = FontFor(run);
+                var runTop = (int)Math.Round(baseline - TextMetrics.AscentPx(g, font));
+                var color = ColorFor(run);
+
+                if (x + width <= Width)
+                {
+                    TextRenderer.DrawText(g, run.Text, font, new Point(x, runTop), color, RunFlags);
+                    return;
+                }
+
+                // Out of horizontal room: ellipsize a text run into what is
+                // left (an icon run is just dropped) and stop drawing.
+                if (!IsIconRun(run.Kind))
+                {
+                    var rect = new Rectangle(x, runTop, Width - x, Height - runTop);
+                    TextRenderer.DrawText(g, run.Text, font, rect, color, RunFlags | TextFormatFlags.EndEllipsis);
+                }
+
+                clipped = true;
+            });
         }
+
+        // Single place that maps run kinds to colors. Percent rides the shared
+        // 80/95 severity escalation via UsageTheme.AccentColor (no literals).
+        private Color ColorFor(MinimumRun run) => run.Kind switch
+        {
+            MinimumRunKind.ServiceIcon or MinimumRunKind.ServiceName => _brand,
+            MinimumRunKind.Separator => SubtleText,
+            MinimumRunKind.SegmentIcon or MinimumRunKind.ResetIcon or MinimumRunKind.ResetText => MutedText,
+            MinimumRunKind.WindowLabel => SecondaryText,
+            MinimumRunKind.Percent => UsageTheme.AccentColor(run.PercentValue),
+            _ => SecondaryText // Cost
+        };
+
+        // Icon runs exist only when the Nerd Font face is installed; without it
+        // they are excluded from both measurement and drawing.
+        private static IEnumerable<MinimumRun> VisibleRuns(IReadOnlyList<MinimumRun> runs)
+        {
+            foreach (var run in runs)
+            {
+                if (!StatusLineFonts.IconAvailable && IsIconRun(run.Kind))
+                {
+                    continue;
+                }
+
+                yield return run;
+            }
+        }
+
+        private static bool IsIconRun(MinimumRunKind kind)
+            => kind is MinimumRunKind.ServiceIcon or MinimumRunKind.SegmentIcon or MinimumRunKind.ResetIcon;
+
+        private static Font FontFor(MinimumRun run)
+            => IsIconRun(run.Kind) ? StatusLineFonts.Icon! : StatusLineFonts.Text;
+
+        private static int GapBefore(MinimumRunKind previous, MinimumRunKind next)
+            => previous == MinimumRunKind.Separator || next == MinimumRunKind.Separator
+                ? SeparatorGap
+                : RunGap;
     }
 
     // ----- Drawing primitives ----------------------------------------------

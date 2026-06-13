@@ -94,6 +94,11 @@ internal static class Strings
         // ----- Status window (StatusForm) -----
         ["5時間"] = "5-hour",
         ["週次"] = "Weekly",
+        // Minimum-mode status line window labels (identity entries: the line is
+        // deliberately language-neutral, but routing through T() keeps the
+        // "every UI string goes through Strings" convention auditable).
+        ["5h"] = "5h",
+        ["7d"] = "7d",
         ["詳細を表示"] = "Show details",
         ["詳細を隠す"] = "Hide details",
         ["更新中"] = "Updating",

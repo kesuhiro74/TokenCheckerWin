@@ -8,9 +8,10 @@ namespace TokenChecker.Core.LocalCost;
 // (~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl) and prices it with
 // ModelPricing.
 //
-// Privacy invariant: only numeric token counts and model ids are ever read
-// into variables. Conversation content, cwd values, and file paths are never
-// captured or returned.
+// Privacy invariant: only numeric token counts and model ids (used transiently
+// for pricing lookups) are ever read into variables; of these, only the
+// numeric totals are returned. Conversation content, cwd values, and file
+// paths are never captured or returned.
 public static class CodexDailyCostReader
 {
     // Codex uses this model when a rollout carries no turn_context line.

@@ -7,9 +7,11 @@ namespace TokenChecker.Core.LocalCost;
 // Aggregates today's token usage from the local Claude Code session logs
 // (~/.claude/projects/**/*.jsonl) and prices it with ModelPricing.
 //
-// Privacy invariant: only numeric token counts, model ids, and message/request
-// ids (used transiently for dedup) are ever read into variables. Conversation
-// content, cwd values, and file paths are never captured or returned.
+// Privacy invariant: only numeric token counts, model ids (used transiently
+// for pricing lookups), and message/request ids (used transiently for dedup)
+// are ever read into variables; of these, only the numeric totals are
+// returned. Conversation content, cwd values, and file paths are never
+// captured or returned.
 public static class ClaudeDailyCostReader
 {
     // Mirrors the config-dir resolution in ClaudeUsageProvider: CLAUDE_CONFIG_DIR
@@ -105,6 +107,8 @@ public static class ClaudeDailyCostReader
                             continue;
                         }
 
+                        var model = GetString(message?["model"]);
+
                         // Streaming updates re-emit the same assistant message;
                         // dedup on message id + request id. Rows with neither id
                         // are counted as-is (no key to dedup on).
@@ -119,7 +123,7 @@ public static class ClaudeDailyCostReader
                             }
                         }
 
-                        var price = ModelPricing.Find(GetString(message?["model"]));
+                        var price = ModelPricing.Find(model);
                         if (price is null)
                         {
                             unknownModelEvents++;
