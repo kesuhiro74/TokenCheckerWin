@@ -781,7 +781,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 return;
             }
 
+            var previous = _settings;
             _settings = form.ToSettings(_settings);
+            // Language and theme are applied only at process startup, so a change
+            // to either needs a restart to show (see RestartCoordinator).
+            var restartNeeded = RestartCoordinator.RequiresRestart(previous, _settings);
 
             // Rebuild the aggregator (cheap, stateless) so only enabled windows/
             // services have providers, then reconcile window visibility and icons.
@@ -798,10 +802,42 @@ internal sealed class TrayApplicationContext : ApplicationContext
             AutoStartManager.Apply(_settings.AutoStartEnabled);
             ApplyRefreshInterval();
             _ = RefreshAsync();
+
+            // The new language/theme is already saved; offer to restart now so it
+            // actually takes effect (a manual relaunch would just be swallowed by
+            // the single-instance guard).
+            if (restartNeeded)
+            {
+                OfferRestart();
+            }
         }
         finally
         {
             _settingsForm = null;
+        }
+    }
+
+    // Asks whether to restart now so a just-saved language/theme change takes
+    // effect. On yes, launch a replacement that waits for this instance to exit
+    // (freeing the single-instance gate) and then exit. If the relaunch can't be
+    // started we stay running — the setting still applies on the next manual
+    // restart (it is already saved).
+    private void OfferRestart()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            Strings.T("言語やテーマの変更を反映するには再起動が必要です。今すぐ再起動しますか？"),
+            Strings.T("再起動の確認"),
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+
+        if (answer == DialogResult.Yes && RestartCoordinator.LaunchReplacement())
+        {
+            ExitThread();
         }
     }
 

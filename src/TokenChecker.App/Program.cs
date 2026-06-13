@@ -8,6 +8,15 @@ internal static class Program
         var showStatusRequested = args.Any(arg => string.Equals(arg, "--show-status", StringComparison.OrdinalIgnoreCase));
         var showSettingsRequested = args.Any(arg => string.Equals(arg, "--show-settings", StringComparison.OrdinalIgnoreCase));
 
+        // A self-restart (after a language/theme change) relaunches us with
+        // "--await-exit <pid>": wait for that previous instance to terminate so
+        // the single-instance mutex is free and we become the primary, instead
+        // of just surfacing the old instance and exiting.
+        if (RestartCoordinator.TryParseAwaitExitPid(args) is int previousPid)
+        {
+            RestartCoordinator.WaitForPreviousExit(previousPid, TimeSpan.FromSeconds(10));
+        }
+
         // One tray instance per session. A second launch wakes the running
         // instance (surfacing its status or settings window) and then exits, so
         // we never end up with two tray icons.

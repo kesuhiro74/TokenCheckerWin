@@ -118,6 +118,8 @@ internal static class Strings
         ["GitHubCopilot表示モード"] = "GitHub Copilot display mode",
         ["設定"] = "Settings",
         ["終了"] = "Exit",
+        ["言語やテーマの変更を反映するには再起動が必要です。今すぐ再起動しますか？"] = "Applying the language or theme change requires a restart. Restart now?",
+        ["再起動の確認"] = "Restart",
         ["TokenCheckerWin 更新中"] = "TokenCheckerWin updating",
         ["GitHub Copilot 更新中"] = "GitHub Copilot updating",
         ["未取得"] = "No data",
