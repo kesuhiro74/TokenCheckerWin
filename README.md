@@ -8,6 +8,7 @@ The app stores **no credentials or tokens** (see [Privacy](#privacy)). Claude Co
 
 ## Screenshots
 
+<img width="549" height="46" alt="image" src="https://github.com/user-attachments/assets/db761a6d-1c9e-4194-9b0a-7c03ca277b16" /><br>
 <img width="413" height="102" alt="image" src="https://github.com/user-attachments/assets/affc94d4-e3e7-4d96-95c2-1580b17e4362" /><br>
 <img width="302" height="203" alt="image" src="https://github.com/user-attachments/assets/405f7698-9996-42fc-ad0c-c8f446e7d955" />
 <img width="302" height="206" alt="image" src="https://github.com/user-attachments/assets/bec22e93-53f7-4c57-b703-23d9e3c552da" />
