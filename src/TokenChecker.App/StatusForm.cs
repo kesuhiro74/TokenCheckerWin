@@ -250,8 +250,8 @@ internal sealed class StatusForm : Form
             ? codex
             : lastSuccessfulSnapshot?.Services.FirstOrDefault(service => service.ServiceName == "Codex" && service.Status == ProviderStatus.Available);
 
-        _claudeCard.Update(claude, fallbackClaude, dailyCosts?.ClaudeJpy);
-        _codexCard.Update(codex, fallbackCodex, dailyCosts?.CodexJpy);
+        _claudeCard.Update(claude, fallbackClaude, dailyCosts?.Claude);
+        _codexCard.Update(codex, fallbackCodex, dailyCosts?.Codex);
         _compactClaude.Update(claude, fallbackClaude);
         _compactCodex.Update(codex, fallbackCodex);
         _minimumPanel.Update(fallbackClaude, fallbackCodex, _showClaude, _showCodex, dailyCosts);
@@ -751,7 +751,7 @@ internal sealed class StatusForm : Form
             UpdateDiagnostics(string.Empty);
         }
 
-        public void Update(ServiceUsage? current, ServiceUsage? fallback, decimal? dailyCostJpy)
+        public void Update(ServiceUsage? current, ServiceUsage? fallback, DailyCost? dailyCost)
         {
             var status = current?.Status ?? ProviderStatus.Unknown;
             _badge.Text = ProviderStatusPresenter.BadgeText(status);
@@ -789,14 +789,14 @@ internal sealed class StatusForm : Form
             _weeklyResetInline.Text = ResetTimeFormatter.FormatWeeklyResetOnly(weekly);
 
             // Today's spend: hidden when unknown (cost reading failed or no
-            // session data); shown otherwise. Rounding is left to N0 formatting.
-            if (dailyCostJpy is null)
+            // session data); shown otherwise as ¥ or $ per the UI language.
+            if (dailyCost is null)
             {
                 _dailyCost.Visible = false;
             }
             else
             {
-                _dailyCost.Text = Strings.Tf("¥{0:N0} (daily)", dailyCostJpy.Value);
+                _dailyCost.Text = DailyCostText.Format(dailyCost);
                 _dailyCost.Visible = true;
             }
 
@@ -1041,7 +1041,7 @@ internal sealed class StatusForm : Form
                 _claude.SetData(
                     FindFiveHourWindow(claude),
                     FindWeeklyWindow(claude),
-                    dailyCosts?.ClaudeJpy);
+                    dailyCosts?.Claude);
             }
 
             if (showCodex)
@@ -1049,7 +1049,7 @@ internal sealed class StatusForm : Form
                 _codex.SetData(
                     FindFiveHourWindow(codex),
                     FindWeeklyWindow(codex),
-                    dailyCosts?.CodexJpy);
+                    dailyCosts?.Codex);
             }
 
             AlignSeparators();
@@ -1192,10 +1192,10 @@ internal sealed class StatusForm : Form
         // takes the element-wise max across rows to build the pin targets.
         public IReadOnlyList<int> NaturalSeparatorXs { get; private set; } = Array.Empty<int>();
 
-        public void SetData(RateLimitWindow? fiveHour, RateLimitWindow? weekly, decimal? dailyCostJpy)
+        public void SetData(RateLimitWindow? fiveHour, RateLimitWindow? weekly, DailyCost? dailyCost)
         {
             _hasData = true;
-            SetRuns(MinimumLineComposer.Compose(_serviceName, _iconGlyph, fiveHour, weekly, dailyCostJpy));
+            SetRuns(MinimumLineComposer.Compose(_serviceName, _iconGlyph, fiveHour, weekly, dailyCost));
         }
 
         // No-op once real data has been shown: re-showing the placeholder on

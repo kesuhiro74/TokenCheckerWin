@@ -2,10 +2,14 @@ using TokenChecker.Core.LocalCost;
 
 namespace TokenChecker.App;
 
-// Per-service today's spend in JPY for the status cards. Null = unknown (no
-// session data for the day, or the cost computation failed) -> the card hides
-// its daily-cost label.
-internal sealed record DailyCostsView(decimal? ClaudeJpy, decimal? CodexJpy);
+// One service's today's spend in both currencies, so the UI shows ¥ (Japanese)
+// or $ (English) per the active language without re-fetching the FX rate.
+internal sealed record DailyCost(decimal Usd, decimal Jpy);
+
+// Per-service today's spend for the status cards/line. A null field = unknown
+// (no session data for the day, or the cost computation failed) -> the UI hides
+// that service's daily-cost label.
+internal sealed record DailyCostsView(DailyCost? Claude, DailyCost? Codex);
 
 // Computes today's local-session spend (Claude projects logs + Codex session
 // logs, both read by TokenChecker.Core.LocalCost) converted to JPY. The log
@@ -88,10 +92,11 @@ internal sealed class DailyCostService
         await Task.WhenAll(claudeTask, codexTask, rateTask).ConfigureAwait(false);
 
         var rate = rateTask.Result;
-        return new DailyCostsView(ToJpy(claudeTask.Result, rate), ToJpy(codexTask.Result, rate));
+        return new DailyCostsView(ToCost(claudeTask.Result, rate), ToCost(codexTask.Result, rate));
     }
 
-    // No rounding here: display formatting (N0) owns the rounding.
-    private static decimal? ToJpy(DailyCostResult result, UsdJpyRate rate)
-        => result.HasData ? result.CostUsd * rate.RateJpy : null;
+    // Carries both currencies (USD straight from the reader, JPY via the rate);
+    // display formatting owns the rounding.
+    private static DailyCost? ToCost(DailyCostResult result, UsdJpyRate rate)
+        => result.HasData ? new DailyCost(result.CostUsd, result.CostUsd * rate.RateJpy) : null;
 }

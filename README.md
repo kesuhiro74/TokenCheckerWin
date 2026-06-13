@@ -18,7 +18,7 @@ The app stores **no credentials or tokens** (see [Privacy](#privacy)). Claude Co
 - Resides in the Windows notification area; per-window tray icons render a vertical % bar in code (no external image).
 - **Claude Code / Codex**: 5-hour and weekly rate limits, time remaining until reset, per-service brand colors (Claude = blue, Codex = purple).
 - Three display modes for the Claude / Codex window: **Normal** (detailed cards), **Compact** (side-by-side doughnuts), **Minimum** (a Nerd Font one-line status per service).
-- **Today's estimated spend** (`¥N (daily)`): today's tokens from the local Claude / Codex session logs, priced with a built-in per-model table and converted to JPY (a public USD→JPY rate fetched once a day). Shown on the Normal cards and the Minimum line; hidden when it cannot be computed.
+- **Today's estimated spend**: today's tokens from the local Claude / Codex session logs, priced with a built-in per-model table, shown in the UI language's currency — US dollars (`$N.NN (daily)`) in English, Japanese yen (`¥N (daily)`, via a public USD→JPY rate fetched once a day) in Japanese. On the Normal cards and the Minimum line; hidden when it cannot be computed.
 - **GitHub Copilot**: current-month AI Credits consumption in a dedicated window (opt-in), with today's-burn pace and a 100%-reach date estimate.
 - Color escalation at **80% (amber) / 95% (red)** across the icons, numbers, and bars.
 - Title-bar-less rounded flyouts: drag anywhere to move, `Esc` to close, position remembered.

@@ -5,6 +5,7 @@ namespace TokenChecker.App.Tests;
 
 // Locks down the UI localization infrastructure: language resolution, the
 // English string table (parity / fallback), and the Language setting.
+[Collection("StringsLanguage")]
 public class LocalizationTests
 {
     [Theory]

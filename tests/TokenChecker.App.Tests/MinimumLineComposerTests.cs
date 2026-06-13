@@ -11,6 +11,7 @@ namespace TokenChecker.App.Tests;
 // are timezone-independent. The "5h"/"7d" labels and the cost template are
 // language-neutral (identity entries in the English map), so the tests do not
 // depend on the active Strings language either.
+[Collection("StringsLanguage")]
 public class MinimumLineComposerTests
 {
     private static readonly DateTimeOffset FiveHourReset = new(2026, 6, 12, 1, 50, 0, TimeSpan.Zero);
@@ -50,13 +51,16 @@ public class MinimumLineComposerTests
     [Fact]
     public void Compose_FullData_EmitsExpectedRunSequence()
     {
-        var runs = MinimumLineComposer.Compose(
-            "Claude", StatusLineGlyphs.Claude,
-            FiveHour(38.0, FiveHourReset),
-            Weekly(39.0, WeeklyReset),
-            46m);
+        Strings.Apply(japanese: true);
+        try
+        {
+            var runs = MinimumLineComposer.Compose(
+                "Claude", StatusLineGlyphs.Claude,
+                FiveHour(38.0, FiveHourReset),
+                Weekly(39.0, WeeklyReset),
+                new DailyCost(0.29m, 46m));
 
-        AssertRuns(runs,
+            AssertRuns(runs,
             (MinimumRunKind.ServiceIcon, StatusLineGlyphs.Claude),
             (MinimumRunKind.ServiceName, "Claude"),
             (MinimumRunKind.Separator, "|"),
@@ -74,6 +78,11 @@ public class MinimumLineComposerTests
             (MinimumRunKind.Separator, "|"),
             (MinimumRunKind.SegmentIcon, StatusLineGlyphs.Money),
             (MinimumRunKind.Cost, "¥46 (daily)"));
+        }
+        finally
+        {
+            Strings.Apply(japanese: true);
+        }
     }
 
     [Fact]
@@ -93,7 +102,7 @@ public class MinimumLineComposerTests
             "Claude", StatusLineGlyphs.Claude,
             fiveHour: null,
             Weekly(39.0, WeeklyReset),
-            dailyCostJpy: null);
+            dailyCost: null);
 
         AssertRuns(runs,
             (MinimumRunKind.ServiceIcon, StatusLineGlyphs.Claude),
@@ -120,7 +129,7 @@ public class MinimumLineComposerTests
             "Claude", StatusLineGlyphs.Claude,
             FiveHour(42.0, resetAtUtc: null),
             weekly: null,
-            dailyCostJpy: null);
+            dailyCost: null);
 
         // The percent still renders; only the reset icon + stamp are dropped.
         var percent = runs.First(run => run.Kind == MinimumRunKind.Percent);
@@ -136,7 +145,7 @@ public class MinimumLineComposerTests
             "Claude", StatusLineGlyphs.Claude,
             FiveHour(38.0, FiveHourReset),
             Weekly(39.0, WeeklyReset),
-            dailyCostJpy: null);
+            dailyCost: null);
 
         // Ends on the weekly reset stamp: no money icon, no cost, and no
         // dangling third separator.
@@ -153,7 +162,7 @@ public class MinimumLineComposerTests
             "Claude", StatusLineGlyphs.Claude,
             FiveHour(96.0),
             weekly: null,
-            dailyCostJpy: null);
+            dailyCost: null);
 
         var percent = runs.First(run => run.Kind == MinimumRunKind.Percent);
         Assert.Equal("96%", percent.Text);
@@ -161,16 +170,17 @@ public class MinimumLineComposerTests
     }
 
     [Fact]
-    public void Compose_CostFormatting_UsesN0()
+    public void Compose_CostFormatting_JapaneseUsesYenN0()
     {
         // N0 grouping/rounding depends on the current culture; pin a known one
         // (per-thread, so this cannot leak into parallel tests).
         var original = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ja-JP");
+        Strings.Apply(japanese: true);
         try
         {
             var runs = MinimumLineComposer.Compose(
-                "Claude", StatusLineGlyphs.Claude, null, null, 1234.5m);
+                "Claude", StatusLineGlyphs.Claude, null, null, new DailyCost(8.5m, 1234.5m));
 
             var cost = Assert.Single(runs, run => run.Kind == MinimumRunKind.Cost);
             Assert.Equal("¥1,235 (daily)", cost.Text);
@@ -178,6 +188,26 @@ public class MinimumLineComposerTests
         finally
         {
             CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [Fact]
+    public void Compose_CostFormatting_EnglishUsesDollarsN2()
+    {
+        Strings.Apply(japanese: false);
+        try
+        {
+            // English mode shows USD with cents, invariant-culture grouping,
+            // independent of the JPY value.
+            var runs = MinimumLineComposer.Compose(
+                "Claude", StatusLineGlyphs.Claude, null, null, new DailyCost(1234.5m, 190000m));
+
+            var cost = Assert.Single(runs, run => run.Kind == MinimumRunKind.Cost);
+            Assert.Equal("$1,234.50 (daily)", cost.Text);
+        }
+        finally
+        {
+            Strings.Apply(japanese: true);
         }
     }
 

@@ -33,7 +33,7 @@ internal static class MinimumLineComposer
         string serviceIconGlyph,
         RateLimitWindow? fiveHour,
         RateLimitWindow? weekly,
-        decimal? dailyCostJpy)
+        DailyCost? dailyCost)
     {
         var runs = new List<MinimumRun>
         {
@@ -50,12 +50,12 @@ internal static class MinimumLineComposer
         AppendWindowSegment(runs, StatusLineGlyphs.Calendar, Strings.T("7d"), weekly, "M/d HH:mm");
 
         // Cost segment (icon + amount + its leading separator) is omitted as a
-        // whole when today's spend is unknown.
-        if (dailyCostJpy is not null)
+        // whole when today's spend is unknown. The amount is ¥ or $ per language.
+        if (dailyCost is not null)
         {
             runs.Add(new MinimumRun("|", MinimumRunKind.Separator));
             runs.Add(new MinimumRun(StatusLineGlyphs.Money, MinimumRunKind.SegmentIcon));
-            runs.Add(new MinimumRun(Strings.Tf("¥{0:N0} (daily)", dailyCostJpy.Value), MinimumRunKind.Cost));
+            runs.Add(new MinimumRun(DailyCostText.Format(dailyCost), MinimumRunKind.Cost));
         }
 
         return runs;
