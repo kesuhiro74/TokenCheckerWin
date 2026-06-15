@@ -8,10 +8,11 @@ The app stores **no credentials or tokens** (see [Privacy](#privacy)). Claude Co
 
 ## Screenshots
 
-<img width="549" height="46" alt="image" src="https://github.com/user-attachments/assets/db761a6d-1c9e-4194-9b0a-7c03ca277b16" /><br>
-<img width="413" height="102" alt="image" src="https://github.com/user-attachments/assets/affc94d4-e3e7-4d96-95c2-1580b17e4362" /><br>
-<img width="302" height="203" alt="image" src="https://github.com/user-attachments/assets/405f7698-9996-42fc-ad0c-c8f446e7d955" />
-<img width="302" height="206" alt="image" src="https://github.com/user-attachments/assets/bec22e93-53f7-4c57-b703-23d9e3c552da" />
+<img width="620" height="43" alt="image" src="https://github.com/user-attachments/assets/3046c2fa-10ad-4a96-b331-4e03bba7596b" /><br>
+<img width="407" height="98" alt="image" src="https://github.com/user-attachments/assets/b8277701-1950-4f4b-8a51-6967345447d4" /><br>
+<img width="385" height="432" alt="image" src="https://github.com/user-attachments/assets/67122aaa-72ee-4285-a2d7-66bab3362a99" /><br>
+<img width="301" height="214" alt="image" src="https://github.com/user-attachments/assets/c6ddf833-60ab-40cd-96a1-61f4cbbfbb2b" />
+<img width="301" height="216" alt="image" src="https://github.com/user-attachments/assets/6503145a-a8f4-4dbc-8ae6-f29edb2badc4" />
 
 ## Features
 
