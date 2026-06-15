@@ -67,7 +67,7 @@ Switch from the settings dialog or the tray menu; the choice is saved to `Displa
 
 - **Normal** — the most detailed layout, stacking the Claude / Codex cards. The `5h` usage is the hero (large number + wide bar) with the time until reset inline next to its label (e.g. `2h 18m (resets 11:50)`); `Weekly` sits below with its reset datetime inline (e.g. `(resets 6/17 18:00)`); then today's estimated spend (`¥46 (daily)`), a status badge, and a `Show details` link.
 - **Compact** — two side-by-side cards showing only the `5h` doughnut, badge, and reset text. The window shrinks to the number of visible services; the `Last updated` line is omitted.
-- **Minimum** — a single Nerd Font status line per service: `<icon> Claude | 5h 38% 10:50 | 7d 39% 6/17 18:00 | ¥46 (daily)` (service name; the 5-hour and weekly `%` each with their reset time; today's spend). Text is drawn in Cascadia Mono and the icons in Symbols Nerd Font (icon runs are skipped entirely when that font is absent); the `|` separators are aligned between the two rows and the window auto-fits the line width. A segment is dropped when its data is unknown (e.g. no reset time, or cost not computable).
+- **Minimum** — a single Nerd Font status line per service: `<icon> Claude | 5h 38% 4h39m 10:50 | 7d 39% 2d 6/17 18:00 | ¥46 (daily)` (service name; the 5-hour and weekly `%`, each followed by the time remaining and the reset time — `4h39m` / `2d`; today's spend). Text is drawn in Cascadia Mono and the icons in Symbols Nerd Font (icon runs are skipped entirely when that font is absent); the `|` separators are aligned between the two rows and the window auto-fits the line width. A segment is dropped when its data is unknown (e.g. no reset time, or cost not computable).
 
 ### Tray icon
 

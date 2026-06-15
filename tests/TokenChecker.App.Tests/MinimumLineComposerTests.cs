@@ -6,15 +6,21 @@ namespace TokenChecker.App.Tests;
 
 // Locks down the minimum-mode status-line composition (MinimumLineComposer):
 // run order, verbatim service name, n/a rendering, reset/cost omission rules
-// and the clamped PercentValue used for severity coloring. Expected reset
-// stamps are rebuilt from the same ToLocalTime() conversion so the assertions
-// are timezone-independent. The "5h"/"7d" labels and the cost template are
-// language-neutral (identity entries in the English map), so the tests do not
-// depend on the active Strings language either.
+// and the clamped PercentValue used for severity coloring. The reset run folds
+// a remaining-time token ("4h39m"/"2d") before the local reset clock; expected
+// stamps are rebuilt from the same ToLocalTime() conversion (timezone-independent)
+// and the remaining token is driven by an injected NowUtc (clock-independent).
+// The "5h"/"7d" labels and the cost template are language-neutral (identity
+// entries in the English map), so the tests do not depend on the active Strings
+// language either.
 [Collection("StringsLanguage")]
 public class MinimumLineComposerTests
 {
-    private static readonly DateTimeOffset FiveHourReset = new(2026, 6, 12, 1, 50, 0, TimeSpan.Zero);
+    // Fixed clock so the remaining-time token folded into the reset run is
+    // deterministic. Resets are pinned relative to it: 5h -> exactly 4h39m away,
+    // weekly -> 2d3h away (whole-day token "2d").
+    private static readonly DateTimeOffset NowUtc = new(2026, 6, 15, 6, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset FiveHourReset = new(2026, 6, 15, 10, 39, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset WeeklyReset = new(2026, 6, 17, 9, 0, 0, TimeSpan.Zero);
 
     private static RateLimitWindow FiveHour(double? usedPercent, DateTimeOffset? resetAtUtc = null) => new(
@@ -58,7 +64,8 @@ public class MinimumLineComposerTests
                 "Claude", StatusLineGlyphs.Claude,
                 FiveHour(38.0, FiveHourReset),
                 Weekly(39.0, WeeklyReset),
-                new DailyCost(0.29m, 46m));
+                new DailyCost(0.29m, 46m),
+                NowUtc);
 
             AssertRuns(runs,
             (MinimumRunKind.ServiceIcon, StatusLineGlyphs.Claude),
@@ -68,13 +75,13 @@ public class MinimumLineComposerTests
             (MinimumRunKind.WindowLabel, "5h"),
             (MinimumRunKind.Percent, "38%"),
             (MinimumRunKind.ResetIcon, StatusLineGlyphs.Reset),
-            (MinimumRunKind.ResetText, LocalStamp(FiveHourReset, "HH:mm")),
+            (MinimumRunKind.ResetText, $"4h39m {LocalStamp(FiveHourReset, "HH:mm")}"),
             (MinimumRunKind.Separator, "|"),
             (MinimumRunKind.SegmentIcon, StatusLineGlyphs.Calendar),
             (MinimumRunKind.WindowLabel, "7d"),
             (MinimumRunKind.Percent, "39%"),
             (MinimumRunKind.ResetIcon, StatusLineGlyphs.Reset),
-            (MinimumRunKind.ResetText, LocalStamp(WeeklyReset, "M/d HH:mm")),
+            (MinimumRunKind.ResetText, $"2d {LocalStamp(WeeklyReset, "M/d HH:mm")}"),
             (MinimumRunKind.Separator, "|"),
             (MinimumRunKind.SegmentIcon, StatusLineGlyphs.Money),
             (MinimumRunKind.Cost, "¥46 (daily)"));
@@ -102,7 +109,8 @@ public class MinimumLineComposerTests
             "Claude", StatusLineGlyphs.Claude,
             fiveHour: null,
             Weekly(39.0, WeeklyReset),
-            dailyCost: null);
+            dailyCost: null,
+            NowUtc);
 
         AssertRuns(runs,
             (MinimumRunKind.ServiceIcon, StatusLineGlyphs.Claude),
@@ -116,7 +124,7 @@ public class MinimumLineComposerTests
             (MinimumRunKind.WindowLabel, "7d"),
             (MinimumRunKind.Percent, "39%"),
             (MinimumRunKind.ResetIcon, StatusLineGlyphs.Reset),
-            (MinimumRunKind.ResetText, LocalStamp(WeeklyReset, "M/d HH:mm")));
+            (MinimumRunKind.ResetText, $"2d {LocalStamp(WeeklyReset, "M/d HH:mm")}"));
 
         var naRun = runs[5];
         Assert.Null(naRun.PercentValue);
@@ -145,7 +153,8 @@ public class MinimumLineComposerTests
             "Claude", StatusLineGlyphs.Claude,
             FiveHour(38.0, FiveHourReset),
             Weekly(39.0, WeeklyReset),
-            dailyCost: null);
+            dailyCost: null,
+            NowUtc);
 
         // Ends on the weekly reset stamp: no money icon, no cost, and no
         // dangling third separator.

@@ -104,6 +104,36 @@ internal static class ResetTimeFormatter
         return Strings.Tf("{0}時間{1:00}分（{2} リセット）", hours, minutes, localReset.ToString("HH:mm"));
     }
 
+    // Compact, language-neutral remaining-time token for the minimum-mode status
+    // line, shown right before the reset clock: short windows -> "4h39m" (or
+    // "39m" under an hour), the weekly window -> whole days "2d". Minutes are
+    // zero-padded to keep the column width steady in the monospaced face. The
+    // breakdown mirrors FormatShortInline/FormatWeekly (ceil to the minute), and
+    // a reset already in the past clamps to "0m"/"0d". Unknown reset time -> "".
+    public static string FormatCompactRemaining(RateLimitWindow? window)
+        => FormatCompactRemaining(window, DateTimeOffset.UtcNow);
+
+    // Test seam: nowUtc is injected so the breakdown is deterministic.
+    internal static string FormatCompactRemaining(RateLimitWindow? window, DateTimeOffset nowUtc)
+    {
+        if (window?.ResetAtUtc is null)
+        {
+            return string.Empty;
+        }
+
+        var totalMinutes = Math.Max(0, (int)Math.Ceiling((window.ResetAtUtc.Value - nowUtc).TotalMinutes));
+
+        // The weekly window reports remaining as whole days only.
+        if (window.WindowDurationMins == 10080)
+        {
+            return $"{totalMinutes / (24 * 60)}d";
+        }
+
+        var hours = totalMinutes / 60;
+        var minutes = totalMinutes % 60;
+        return hours > 0 ? $"{hours}h{minutes:00}m" : $"{minutes}m";
+    }
+
     // Weekly inline: the reset datetime only (e.g. （6/18 09:00 リセット）) — the
     // remaining time is intentionally omitted next to the weekly label. Unknown -> "".
     public static string FormatWeeklyResetOnly(RateLimitWindow? window)

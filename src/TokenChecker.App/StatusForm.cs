@@ -1148,7 +1148,7 @@ internal sealed class StatusForm : Form
     }
 
     // A single owner-drawn status line, e.g.
-    //   <svcIcon> Claude | <clock> 5h 38% <reset> 10:50 | <cal> 7d 39% <reset> 6/17 18:00 | <money> ¥46 (daily)
+    //   <svcIcon> Claude | <clock> 5h 38% <reset> 4h39m 10:50 | <cal> 7d 39% <reset> 2d 6/17 18:00 | <money> ¥46 (daily)
     // Text runs render in the monospaced status-line face, icon runs in the
     // Nerd Font face; when the Nerd Font is not installed the icon runs are
     // skipped entirely (measured nor drawn), leaving a clean text-only line.
