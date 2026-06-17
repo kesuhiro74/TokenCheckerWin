@@ -756,6 +756,56 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     public void ShowSettingsForm() => ShowSettings();
 
+    // ----- Copilot current-period baseline (settings-form calibration) ------
+
+    // The latest RAW (pre-baseline) Copilot monthly used, from the last successful
+    // fetch. The settings-form calibration subtracts the dashboard value from this
+    // to derive the offset to store. null = no successful Copilot fetch yet.
+    public long? CurrentCopilotRawUsed()
+        => _lastSuccessfulServices.TryGetValue(AppSettings.CopilotServiceName, out var service)
+            ? service.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200)?.Used
+            : null;
+
+    public (long? BaselineUsed, string? Month) CurrentCopilotBaseline()
+        => (_settings.CopilotPeriodBaselineUsed, _settings.CopilotPeriodBaselineMonth);
+
+    // Calibrates the current-period baseline: stores (rawUsed - dashboardCurrentUsed)
+    // tagged with the current UTC month, then persists and refreshes so the card
+    // immediately matches GitHub's dashboard. No-op when no raw used is known yet.
+    //
+    // Note: the card %, used/cap, and projection update correctly at once, but the
+    // "本日" (since-09:00) delta may read low until the next 09:00 window, because
+    // that day's baseline was recorded on the raw scale before the offset existed.
+    // This is transient (self-heals at the next 09:00) and never negative; left as
+    // is to avoid coupling the offset into the Core usage tracker for a sub-day
+    // cosmetic effect.
+    public void CalibrateCopilotBaseline(long dashboardCurrentUsed)
+    {
+        if (_disposed || CurrentCopilotRawUsed() is not long rawUsed)
+        {
+            return;
+        }
+
+        _settings.CopilotPeriodBaselineUsed = CopilotBaseline.ComputeBaselineUsed(rawUsed, Math.Max(0L, dashboardCurrentUsed));
+        _settings.CopilotPeriodBaselineMonth = CopilotBaseline.MonthKey(DateTimeOffset.UtcNow);
+        _settings.Normalize();
+        _settingsStore.Save(_settings);
+        _ = RefreshAsync();
+    }
+
+    public void ClearCopilotBaseline()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _settings.CopilotPeriodBaselineUsed = null;
+        _settings.CopilotPeriodBaselineMonth = null;
+        _settingsStore.Save(_settings);
+        _ = RefreshAsync();
+    }
+
     private void ShowSettings()
     {
         if (_disposed)
@@ -1019,7 +1069,45 @@ internal sealed class TrayApplicationContext : ApplicationContext
             string.Equals(s.ServiceName, AppSettings.CopilotServiceName, StringComparison.OrdinalIgnoreCase)
             && s.Status == ProviderStatus.Available);
         var window = service?.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200);
-        return window?.Used is long used ? Math.Min(100d, used / (double)cap * 100d) : null;
+        return window?.Used is long used
+            ? Math.Min(100d, EffectiveCopilotUsed(used) / (double)cap * 100d)
+            : null;
+    }
+
+    // Applies the manual current-period baseline (set after a mid-month plan
+    // change) to a raw monthly used. No baseline / a baseline for a past month ->
+    // the raw value (see CopilotBaseline). Centralized so the card, tray ring,
+    // tooltip, and tracker all show the same current-period number.
+    private long EffectiveCopilotUsed(long rawUsed)
+        => CopilotBaseline.EffectiveUsed(
+            rawUsed,
+            _settings.CopilotPeriodBaselineUsed,
+            _settings.CopilotPeriodBaselineMonth,
+            DateTimeOffset.UtcNow);
+
+    // Returns a copy of the service with its monthly Copilot window's Used replaced
+    // by the baseline-adjusted value, so downstream consumers (card + tracker) see
+    // the current-period figure without each re-applying the offset. Unchanged when
+    // there is no monthly window with a value.
+    private ServiceUsage? WithEffectiveCopilotUsed(ServiceUsage? service)
+    {
+        if (service is null)
+        {
+            return null;
+        }
+
+        var windows = service.Windows;
+        for (var i = 0; i < windows.Count; i++)
+        {
+            if (windows[i].WindowDurationMins == 43200 && windows[i].Used is long rawUsed)
+            {
+                var adjusted = windows.ToArray();
+                adjusted[i] = windows[i] with { Used = EffectiveCopilotUsed(rawUsed) };
+                return service with { Windows = adjusted };
+            }
+        }
+
+        return service;
     }
 
     private void UpdateCopilotWindow(UsageSnapshot snapshot, UsageSnapshot? fallbackSnapshot)
@@ -1034,11 +1122,17 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var allowance = _settings.CopilotCreditAllowance();
 
+        // Apply the manual current-period baseline once here so the card AND the
+        // tracker (today's delta / projection) both work off the current-period
+        // used, not the raw calendar-month total.
+        var copilotAdjusted = WithEffectiveCopilotUsed(copilot);
+        var fallbackAdjusted = WithEffectiveCopilotUsed(fallbackCopilot);
+
         // Track + project ONLY on a genuinely fresh Available sample (current
         // snapshot); fallback values do not update the tracker (insights stay null).
         CopilotInsights? insights = null;
-        if (copilot?.Status == ProviderStatus.Available
-            && copilot.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200)?.Used is long usedNow)
+        if (copilotAdjusted?.Status == ProviderStatus.Available
+            && copilotAdjusted.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200)?.Used is long usedNow)
         {
             insights = _copilotTracker.Observe(usedNow, allowance, snapshot.CapturedAtUtc);
         }
@@ -1051,7 +1145,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _copilotTodayPercent = insights.TodayDeltaPercent;
         }
 
-        _copilotWindow.Update(_settings.CopilotPlanTitle(), copilot, fallbackCopilot, allowance, insights);
+        _copilotWindow.Update(_settings.CopilotPlanTitle(), copilotAdjusted, fallbackAdjusted, allowance, insights);
     }
 
     // ----- Tooltips ---------------------------------------------------------
@@ -1101,11 +1195,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var allowance = _settings.CopilotCreditAllowance();
         if (used is long u && allowance is int cap && cap > 0)
         {
-            var percent = Math.Min(100d, u / (double)cap * 100d);
-            return $"{Math.Round(percent):0}% ({u:N0}/{cap:N0})";
+            var effective = EffectiveCopilotUsed(u);
+            var percent = Math.Min(100d, effective / (double)cap * 100d);
+            return $"{Math.Round(percent):0}% ({effective:N0}/{cap:N0})";
         }
 
-        return used is long u2 ? $"{u2:N0} credits" : "n/a";
+        return used is long u2 ? $"{EffectiveCopilotUsed(u2):N0} credits" : "n/a";
     }
 
     private static string FormatTooltipService(ServiceUsage? service)

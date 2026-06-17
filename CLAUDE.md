@@ -59,7 +59,7 @@ Stop-Process -Name TokenChecker -Force -ErrorAction SilentlyContinue   # exe ロ
 dotnet test
 ```
 
-本スイートはアプリの不変条件を固定している（**80%/95% 閾値**＝`UsageTheme.AccentColor`、**プライバシー masking**＝`DiagnosticMasker`、**Copilot allowance（Free=200 ほか）**＝`AppSettings.CopilotCreditAllowance`、**100%予測/本日9:00増分**＝`CopilotUsageTracker`、**設定マイグレーション**＝`SettingsStore.ApplyLegacyMigrations`、**プロバイダ失敗の分離**＝`UsageAggregator`、**Normalize/Clone**）。これらの領域を変更したらテストを更新し緑を維持する。テスト容易化のための内部シーム（`CopilotUsageStore`/`CopilotUsageTracker` の `internal` ctor、`SettingsStore.ApplyLegacyMigrations` の `internal` 化、App の `InternalsVisibleTo`）以外で本番コードのテスト用改変はしない。
+本スイートはアプリの不変条件を固定している（**80%/95% 閾値**＝`UsageTheme.AccentColor`、**プライバシー masking**＝`DiagnosticMasker`、**Copilot allowance（Free=200 ほか）**＝`AppSettings.CopilotCreditAllowance`、**100%予測/本日9:00増分**＝`CopilotUsageTracker`、**Copilot 現在期間ベースライン（プラン変更時の手動補正）**＝`CopilotBaseline`、**設定マイグレーション**＝`SettingsStore.ApplyLegacyMigrations`、**プロバイダ失敗の分離**＝`UsageAggregator`、**Normalize/Clone**）。これらの領域を変更したらテストを更新し緑を維持する。テスト容易化のための内部シーム（`CopilotUsageStore`/`CopilotUsageTracker` の `internal` ctor、`SettingsStore.ApplyLegacyMigrations` の `internal` 化、App の `InternalsVisibleTo`）以外で本番コードのテスト用改変はしない。
 
 **ローカルゲート（pre-push フック）**: `git push` の直前に `dotnet test` を自動実行し、失敗したら push を中止する。リポジトリの `.githooks/pre-push` がそれを行う。**クローンごとに一度だけ**有効化する:
 

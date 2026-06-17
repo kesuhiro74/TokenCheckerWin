@@ -68,6 +68,15 @@ internal sealed class AppSettings
     // explicitly-saved older value (e.g. "Green") is preserved.
     public CopilotAccent CopilotAccent { get; set; } = CopilotAccent.Blue;
 
+    // Manual current-period baseline (set after a mid-month plan change). GitHub's
+    // billing API returns the whole calendar month, but a plan change resets its
+    // dashboard counter; the user calibrates once and this stores the pre-period
+    // cumulative AI credits to subtract, tagged with the UTC month it applies to.
+    // Numbers and a yyyy-MM tag only (no tokens/paths/logins). See CopilotBaseline.
+    public long? CopilotPeriodBaselineUsed { get; set; }
+
+    public string? CopilotPeriodBaselineMonth { get; set; }
+
     public bool IsServiceVisible(string serviceName)
         => VisibleServices?.Any(service => string.Equals(service, serviceName, StringComparison.OrdinalIgnoreCase)) == true;
 
@@ -176,6 +185,20 @@ internal sealed class AppSettings
 
         CopilotCustomCredits = Math.Max(0, CopilotCustomCredits);
 
+        // Drop an invalid/incomplete current-period baseline: a negative offset
+        // can never apply, and a month tag without a value (or vice versa) is not a
+        // usable pair (see CopilotBaseline.EffectiveUsed).
+        if (CopilotPeriodBaselineUsed is < 0)
+        {
+            CopilotPeriodBaselineUsed = null;
+        }
+
+        if (CopilotPeriodBaselineUsed is null || string.IsNullOrWhiteSpace(CopilotPeriodBaselineMonth))
+        {
+            CopilotPeriodBaselineUsed = null;
+            CopilotPeriodBaselineMonth = null;
+        }
+
         // CompactMode is a derived back-compat write only (see SettingsStore.Load
         // for the one-shot CompactMode -> DisplayMode migration).
         CompactMode = DisplayMode == DisplayMode.Compact;
@@ -199,6 +222,8 @@ internal sealed class AppSettings
             CopilotPlan = CopilotPlan,
             CopilotCustomCredits = CopilotCustomCredits,
             CopilotWindowLocation = CopilotWindowLocation,
-            CopilotAccent = CopilotAccent
+            CopilotAccent = CopilotAccent,
+            CopilotPeriodBaselineUsed = CopilotPeriodBaselineUsed,
+            CopilotPeriodBaselineMonth = CopilotPeriodBaselineMonth
         };
 }

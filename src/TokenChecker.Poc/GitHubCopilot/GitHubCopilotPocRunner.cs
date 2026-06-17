@@ -101,8 +101,7 @@ internal static class GitHubCopilotPocRunner
             var probe = await ProbeAsync(url, token, cts.Token).ConfigureAwait(false);
             PrintProbe(Label(url, encoded, login), probe);
 
-            var items = GitHubBillingUsageParser.ParseUsageItems(SafeParse(probe.Body));
-            PrintItems(items);
+            PrintUsageSchema(SafeParse(probe.Body));
         }
 
         return 0;
@@ -156,22 +155,90 @@ internal static class GitHubCopilotPocRunner
         // are surfaced (see PrintItems).
     }
 
-    private static void PrintItems(IReadOnlyList<GitHubBillingUsageParser.GitHubBillingUsageItem> items)
+    // Diagnostic schema dump for the billing usage response. Prints the DISTINCT
+    // property-name set across all usageItems (schema discovery — names only, so
+    // repositoryName/organizationName *values* never leak) and, per row, the
+    // `date` (not PII — the field needed to tell a pre-plan-change row from a
+    // post-change one) plus the masked product/sku/unitType, the numbers, and the
+    // AI-credit classification + credit value. This is what reveals how to scope
+    // the total to the current billing period after a mid-month plan change.
+    private static void PrintUsageSchema(JsonNode? root)
     {
-        Console.WriteLine($"  parsed usageItems: {items.Count}");
-        foreach (var item in items)
+        if (root?["usageItems"] is not JsonArray array)
         {
+            Console.WriteLine("  usageItems: (absent or not an array)");
+            return;
+        }
+
+        var keys = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var node in array)
+        {
+            if (node is JsonObject obj)
+            {
+                foreach (var pair in obj)
+                {
+                    keys.Add(pair.Key);
+                }
+            }
+        }
+
+        Console.WriteLine($"  usageItems: {array.Count}; keys: [{string.Join(", ", keys)}]");
+
+        decimal copilotTotal = 0m;
+        foreach (var node in array)
+        {
+            if (node is not JsonObject)
+            {
+                continue;
+            }
+
+            var item = new GitHubBillingUsageParser.GitHubBillingUsageItem(
+                Str(node["product"]), Str(node["sku"]), Str(node["unitType"]),
+                Dec(node["quantity"]), Dec(node["grossQuantity"]), Dec(node["grossAmount"]),
+                Dec(node["netQuantity"]), Dec(node["netAmount"]));
+
+            var isCopilot = GitHubBillingUsageParser.IsCopilotAiCreditUsage(item);
+            var credits = GitHubBillingUsageParser.CreditsForRow(item);
+            if (isCopilot)
+            {
+                copilotTotal += credits;
+            }
+
             Console.WriteLine(
-                $"    product={MaskField(item.Product)}; "
+                $"    date={Str(node["date"]) ?? "(null)"}; "
+                + $"product={MaskField(item.Product)}; "
                 + $"sku={MaskField(item.Sku)}; "
                 + $"unitType={MaskField(item.UnitType)}; "
-                + $"quantity={Format(item.Quantity)}; "
                 + $"grossQuantity={Format(item.GrossQuantity)}; "
                 + $"grossAmount={Format(item.GrossAmount)}; "
-                + $"netQuantity={Format(item.NetQuantity)}; "
-                + $"netAmount={Format(item.NetAmount)}; "
-                + $"copilot={GitHubBillingUsageParser.IsCopilotAiCreditUsage(item)}");
+                + $"copilot={isCopilot}; "
+                + $"credits={Format(credits)}");
         }
+
+        Console.WriteLine($"  copilot AI-credit total (all rows this calendar month): {Format(copilotTotal)}");
+    }
+
+    private static string? Str(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        return node.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : node.ToString();
+    }
+
+    private static decimal? Dec(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        var text = node.GetValueKind() == JsonValueKind.String ? node.GetValue<string>() : node.ToString();
+        return decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
     }
 
     // Mask the whitelisted string fields too. null/unset is kept as "(null)" (not

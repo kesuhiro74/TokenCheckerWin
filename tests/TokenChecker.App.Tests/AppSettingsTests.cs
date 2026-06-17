@@ -162,6 +162,41 @@ public class AppSettingsTests
     }
 
     [Fact]
+    public void Normalize_NegativeCopilotBaseline_DropsBaselineAndMonth()
+    {
+        var s = new AppSettings { CopilotPeriodBaselineUsed = -5, CopilotPeriodBaselineMonth = "2026-06" };
+        s.Normalize();
+        Assert.Null(s.CopilotPeriodBaselineUsed);
+        Assert.Null(s.CopilotPeriodBaselineMonth);
+    }
+
+    [Fact]
+    public void Normalize_BaselineMonthWithoutValue_DropsMonth()
+    {
+        var s = new AppSettings { CopilotPeriodBaselineUsed = null, CopilotPeriodBaselineMonth = "2026-06" };
+        s.Normalize();
+        Assert.Null(s.CopilotPeriodBaselineMonth);
+    }
+
+    [Fact]
+    public void Normalize_ValidCopilotBaseline_Preserved()
+    {
+        var s = new AppSettings { CopilotPeriodBaselineUsed = 5126, CopilotPeriodBaselineMonth = "2026-06" };
+        s.Normalize();
+        Assert.Equal(5126L, s.CopilotPeriodBaselineUsed);
+        Assert.Equal("2026-06", s.CopilotPeriodBaselineMonth);
+    }
+
+    [Fact]
+    public void Clone_CopiesCopilotBaseline()
+    {
+        var s = new AppSettings { CopilotPeriodBaselineUsed = 5126, CopilotPeriodBaselineMonth = "2026-06" };
+        var clone = s.Clone();
+        Assert.Equal(5126L, clone.CopilotPeriodBaselineUsed);
+        Assert.Equal("2026-06", clone.CopilotPeriodBaselineMonth);
+    }
+
+    [Fact]
     public void Clone_CopiesValues_AndArrayIsIndependent()
     {
         var s = new AppSettings

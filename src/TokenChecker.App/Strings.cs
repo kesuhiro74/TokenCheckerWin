@@ -155,6 +155,20 @@ internal static class Strings
         ["環境変数の設定方法を表示"] = "Show how to set the environment variable",
         ["接続テスト"] = "Connection test",
         ["閉じる"] = "Close",
+        // GitHub Copilot current-period baseline calibration (after a mid-month plan change).
+        ["利用量を補正"] = "Adjust usage",
+        ["Copilot 利用量の補正"] = "Adjust Copilot usage",
+        ["プランを月の途中で変更すると管理画面の利用量はリセットされますが、アプリの取得値は今月の累計のままです。管理画面の現在値を入力すると、それに合わせて表示します。"]
+            = "Changing your plan mid-month resets the usage shown on GitHub's dashboard, but the app's value stays the calendar-month total. Enter the current value from the dashboard and the app will match it.",
+        ["管理画面の現在値"] = "Dashboard's current value",
+        ["この値で補正"] = "Adjust to this value",
+        ["補正を解除"] = "Clear adjustment",
+        ["利用量をまだ取得できていません。少し待ってから再度お試しください。"]
+            = "Usage has not been read yet. Please wait a moment and try again.",
+        ["アプリ取得値（今月累計）: {0}"] = "App value (month to date): {0}",
+        ["アプリ取得値（今月累計）: 取得待ち"] = "App value (month to date): waiting",
+        ["現在: 変更前 {0} を差し引き中（{1}）"] = "Current: subtracting {0} from before the change ({1})",
+        ["現在: 補正なし"] = "Current: no adjustment",
         ["接続テスト中..."] = "Testing connection...",
         ["ブラウザを開けませんでした。GitHub の personal access token 作成ページを手動で開いてください。"]
             = "Could not open the browser. Please open the GitHub personal access token page manually.",

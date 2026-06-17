@@ -27,6 +27,7 @@ internal sealed class SettingsForm : Form
     private readonly ComboBox _copilotAccent = new();
     private readonly Button _copilotSetupBtn = new();
     private readonly Button _copilotTestBtn = new();
+    private readonly Button _copilotBaselineBtn = new();
 
     private readonly TrayApplicationContext? _host;
     private readonly Label _claudeStatusLabel;
@@ -272,6 +273,13 @@ internal sealed class SettingsForm : Form
         _copilotTestBtn.Size = new Size(110, 28);
         _copilotTestBtn.Click += async (_, _) => await RunCopilotTestAsync().ConfigureAwait(true);
 
+        // Calibrate the current-period baseline after a mid-month plan change so
+        // the card matches GitHub's (reset-on-change) dashboard. Always enabled.
+        _copilotBaselineBtn.Text = Strings.T("利用量を補正");
+        _copilotBaselineBtn.Location = new Point(250, 184);
+        _copilotBaselineBtn.Size = new Size(106, 28);
+        _copilotBaselineBtn.Click += (_, _) => OpenCopilotBaseline();
+
         gbCopilot.Controls.Add(_copilotWindowEnabled);
         gbCopilot.Controls.Add(planLabel);
         gbCopilot.Controls.Add(_copilotPlan);
@@ -283,6 +291,7 @@ internal sealed class SettingsForm : Form
         gbCopilot.Controls.Add(_copilotAccent);
         gbCopilot.Controls.Add(_copilotSetupBtn);
         gbCopilot.Controls.Add(_copilotTestBtn);
+        gbCopilot.Controls.Add(_copilotBaselineBtn);
 
         // ----- OK / Cancel --------------------------------------------------
         var okButton = new Button
@@ -489,6 +498,19 @@ internal sealed class SettingsForm : Form
     {
         using var wizard = new GitHubCopilotSetupForm(CurrentCopilotAllowance());
         wizard.ShowDialog(this);
+    }
+
+    // Opens the current-period baseline calibration (no-op without a host, e.g. in
+    // a standalone preview). The dialog applies changes immediately via the host.
+    private void OpenCopilotBaseline()
+    {
+        if (_host is null)
+        {
+            return;
+        }
+
+        using var dialog = new CopilotBaselineDialog(_host);
+        dialog.ShowDialog(this);
     }
 
     private async Task RunCopilotTestAsync()
