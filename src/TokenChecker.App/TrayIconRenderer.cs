@@ -77,9 +77,10 @@ internal static class TrayIconRenderer
     // bottom→top to `percent` with the shared 80/95 severity escalation. A null
     // percent (no plan/allowance or no data) or loading shows an empty track.
     //
-    // `burnMarkColor` is the today's-burn warning: when non-null (>=4% consumed
-    // today; see TrayApplicationContext) a large spark is overlaid on the bar in
-    // that color (amber at 4-5%, red at >=5%). Null means no mark (a calm day).
+    // `burnMarkColor` is the today's-burn warning: when non-null (today's burn has
+    // reached the prorated daily budget band; see TrayApplicationContext) a large
+    // spark is overlaid on the bar in that color (amber within 1 point below budget,
+    // red over budget). Null means no mark (a calm day, well under budget).
     public static Icon CreateCopilotIcon(
         double? percent, bool loading, Color? accentBase = null, Color? burnMarkColor = null, int size = 32)
     {
@@ -178,7 +179,8 @@ internal static class TrayIconRenderer
         // today's-burn warning mark: a large spark overlaid on top of the bar,
         // filling nearly the whole icon (the bar may end up mostly hidden — that is
         // intentional, the burn alert takes over the slot on a heavy day). Only when
-        // a severity color is supplied (>=4% today) and never while loading.
+        // a severity color is supplied (today's burn at/over the daily budget band)
+        // and never while loading.
         if (!loading && burnMarkColor is Color mark)
         {
             var inset = size * 0.04f;
@@ -235,10 +237,11 @@ internal static class TrayIconRenderer
         };
 
     // Maps a today's-burn severity to the tray warning-mark color, or null when the
-    // pace is Normal (<4% today) so no mark is drawn. The severity bands (4%/5%) and
-    // their colors are owned by CopilotWindow (GetTodayDeltaSeverity / SeverityIconColor)
-    // — the single source of truth shared with the status-card today-delta line; the
-    // tray must NOT duplicate those thresholds. internal for unit testing.
+    // pace is Normal (well under the prorated daily budget) so no mark is drawn. The
+    // severity bands (prorated daily budget) and their colors are owned by
+    // CopilotWindow (GetTodayDeltaSeverity / SeverityIconColor) — the single source of
+    // truth shared with the status-card today-delta line; the tray must NOT duplicate
+    // those thresholds. internal for unit testing.
     internal static Color? BurnMarkColor(DeltaSeverity severity)
         => severity == DeltaSeverity.Normal ? null : CopilotWindow.SeverityIconColor(severity);
 

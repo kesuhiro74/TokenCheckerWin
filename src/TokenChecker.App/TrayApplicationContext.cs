@@ -89,6 +89,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     // burn warning mark without re-running Observe (which would skew the 09:00
     // baseline). Null until the first fresh Available sample produces insights.
     private double? _copilotTodayPercent;
+    // The prorated per-weekday budget (% of the monthly allowance) cached alongside
+    // _copilotTodayPercent so the tray burn mark escalates against the SAME daily
+    // budget as the status-card spark icon (CopilotWindow.GetTodayDeltaSeverity).
+    private double? _copilotDailyBudgetPercent;
     private readonly AuthCommandService _authService = new();
     private AppSettings _settings;
     private bool _disposed;
@@ -1026,10 +1030,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (cpOn)
         {
             var percent = loading || snapshot is null ? null : CopilotPercent(snapshot);
-            // today's-burn mark: amber at 4-5% / red at >=5% (no mark below 4% or
-            // while loading). Reuses the cached percent from UpdateCopilotWindow and
-            // the shared severity/color logic in CopilotWindow.
-            var burnSeverity = CopilotWindow.GetTodayDeltaSeverity(loading ? null : _copilotTodayPercent);
+            // today's-burn mark: escalates against the PRORATED daily budget (red over
+            // budget, amber within 1 point below; no mark well under, or while loading).
+            // Reuses the percent + daily budget cached from UpdateCopilotWindow and the
+            // shared severity/color logic in CopilotWindow.
+            var burnSeverity = CopilotWindow.GetTodayDeltaSeverity(
+                loading ? null : _copilotTodayPercent,
+                loading ? null : _copilotDailyBudgetPercent);
             var burnMark = TrayIconRenderer.BurnMarkColor(burnSeverity);
             SetIcon(_copilot, TrayIconRenderer.CreateCopilotIcon(
                 percent, loading, _settings.CopilotAccentColor(), burnMark));
@@ -1131,8 +1138,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // Track + project ONLY on a genuinely fresh Available sample (current
         // snapshot); fallback values do not update the tracker (insights stay null).
         CopilotInsights? insights = null;
-        if (copilotAdjusted?.Status == ProviderStatus.Available
-            && copilotAdjusted.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200)?.Used is long usedNow)
+        var monthly = copilotAdjusted?.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200);
+        if (copilotAdjusted?.Status == ProviderStatus.Available && monthly?.Used is long usedNow)
         {
             insights = _copilotTracker.Observe(usedNow, allowance, snapshot.CapturedAtUtc);
         }
@@ -1143,6 +1150,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (insights is not null)
         {
             _copilotTodayPercent = insights.TodayDeltaPercent;
+            // Mirror the card's prorated daily budget (remaining allowance spread over
+            // the remaining weekdays until reset) so the tray mark and the spark icon
+            // escalate identically. Null when there is no allowance or no known reset.
+            var usedPercent = allowance is int cap && cap > 0 && monthly?.Used is long used
+                ? Math.Min(100d, used / (double)cap * 100d)
+                : (double?)null;
+            _copilotDailyBudgetPercent = monthly?.ResetAtUtc is { } resetUtc
+                ? CopilotWindow.DailyBudgetPercent(usedPercent, CopilotWindow.RemainingWeekdays(DateTime.Now, resetUtc.ToLocalTime().DateTime))
+                : null;
         }
 
         _copilotWindow.Update(_settings.CopilotPlanTitle(), copilotAdjusted, fallbackAdjusted, allowance, insights);

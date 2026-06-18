@@ -4,11 +4,11 @@ namespace TokenChecker.App.Tests;
 
 // The tray's Copilot today's-burn warning mark reuses the SAME severity bands and
 // colors as the status-card spark (CopilotWindow.GetTodayDeltaSeverity /
-// SeverityIconColor). These tests pin the tray-side mapping that drives the mark:
-// Normal => no mark (null), Alert (4-5%) => amber, Red (>=5%) => red — plus the
-// end-to-end today's-percent -> severity -> mark-color path the tray actually uses.
-// (UsageTheme.Warning/Bad are resolved through the same property at compare time, so
-// these assertions hold under either the light or dark palette.)
+// SeverityIconColor). Normal => no mark (null), Alert => amber, Red => red. The
+// severity is now driven by the prorated daily budget (see TodayDeltaSeverityTests);
+// these pin the severity -> mark-color mapping plus the end-to-end path the tray uses.
+// (UsageTheme.Warning/Bad resolve through the same property at compare time, so these
+// hold under either the light or dark palette.)
 public class TrayBurnMarkTests
 {
     [Fact]
@@ -23,25 +23,23 @@ public class TrayBurnMarkTests
     public void RedSeverity_IsRed()
         => Assert.Equal(UsageTheme.Bad, TrayIconRenderer.BurnMarkColor(DeltaSeverity.Red));
 
-    [Theory]
-    [InlineData(0d)]
-    [InlineData(3.9d)]
-    public void BelowFourPercent_NoMark(double todayPercent)
-        => Assert.Null(TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(todayPercent)));
-
-    [Theory]
-    [InlineData(4.0d)]
-    [InlineData(4.9d)]
-    public void FourUpToFivePercent_Amber(double todayPercent)
-        => Assert.Equal(UsageTheme.Warning, TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(todayPercent)));
-
-    [Theory]
-    [InlineData(5.0d)]
-    [InlineData(20d)]
-    public void FivePercentOrMore_Red(double todayPercent)
-        => Assert.Equal(UsageTheme.Bad, TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(todayPercent)));
+    [Fact]
+    public void OverBudget_RedMark()
+        => Assert.Equal(UsageTheme.Bad, TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(6.0d, 5.0d)));
 
     [Fact]
-    public void NullPercent_NoMark()
-        => Assert.Null(TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(null)));
+    public void WithinOnePointBelowBudget_AmberMark()
+        => Assert.Equal(UsageTheme.Warning, TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(4.5d, 5.0d)));
+
+    [Fact]
+    public void WellUnderBudget_NoMark()
+        => Assert.Null(TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(2.0d, 5.0d)));
+
+    [Fact]
+    public void NullDelta_NoMark()
+        => Assert.Null(TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(null, 5.0d)));
+
+    [Fact]
+    public void NullBudget_NoMark()
+        => Assert.Null(TrayIconRenderer.BurnMarkColor(CopilotWindow.GetTodayDeltaSeverity(10.0d, null)));
 }

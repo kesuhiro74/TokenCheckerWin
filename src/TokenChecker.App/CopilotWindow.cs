@@ -28,28 +28,70 @@ internal sealed class CopilotWindow : Form
     public const int CardDetailExtra = 88;
     private const int FormWidth = CardWidth + FormPadding * 2;
 
-    // Daily-burn thresholds for the today-delta ICON. This is ONE-DAY consumption
-    // pace, a DIFFERENT concept from the monthly 80% / 95% usage escalation
-    // (UsageTheme.WarningPercent / CriticalPercent) — do not conflate them.
-    private const double DailyAlertPercent = 4d; // >= 4% today -> amber alert
-    private const double DailyRedPercent = 5d;   // >= 5% today -> red
+    // Amber band width below the prorated daily budget, in percentage points: a
+    // today's-burn within this margin under budget warns (amber) before going red.
+    // This ONE-DAY pace concept is a DIFFERENT thing from the monthly 80% / 95%
+    // usage escalation (UsageTheme.WarningPercent / CriticalPercent) — don't conflate.
+    private const double DailyAmberMarginPercent = 1d;
 
-    // Maps today's delta percent (of the monthly allowance) to a severity band for
-    // the spark icon. internal (not private) so the boundaries can be unit-tested.
-    // null / non-finite -> Normal (we cannot judge a pace without a percentage).
-    internal static DeltaSeverity GetTodayDeltaSeverity(double? percent)
+    // Maps today's delta (% of the monthly allowance) to a severity band for the
+    // spark icon, comparing it against the PRORATED daily budget — the remaining
+    // allowance spread over the remaining weekdays until reset (DailyBudgetPercent).
+    // Over budget -> red; within 1 point below budget -> amber; otherwise green. A
+    // null / non-finite / non-positive delta, or a null budget (no allowance or
+    // unknown reset), -> green. internal so the bands can be unit-tested.
+    internal static DeltaSeverity GetTodayDeltaSeverity(double? percent, double? dailyBudgetPercent)
     {
-        if (percent is not double p || double.IsNaN(p) || double.IsInfinity(p))
+        if (percent is not double p || double.IsNaN(p) || double.IsInfinity(p) || p <= 0d)
         {
             return DeltaSeverity.Normal;
         }
 
-        return p switch
+        if (dailyBudgetPercent is not double budget || double.IsNaN(budget) || double.IsInfinity(budget))
         {
-            >= DailyRedPercent => DeltaSeverity.Red,
-            >= DailyAlertPercent => DeltaSeverity.Alert,
-            _ => DeltaSeverity.Normal
-        };
+            return DeltaSeverity.Normal;
+        }
+
+        if (p > budget)
+        {
+            return DeltaSeverity.Red;
+        }
+
+        return p >= budget - DailyAmberMarginPercent ? DeltaSeverity.Alert : DeltaSeverity.Normal;
+    }
+
+    // Weekdays (Mon-Fri) remaining in the current allowance period: from todayLocal
+    // (inclusive) up to, but excluding, resetLocalDate. Clamped to >= 1 so the last
+    // day's budget is all that remains and there is never a divide-by-zero. Public
+    // holidays are not modeled (no calendar available) — Mon-Fri only. Pure (operates
+    // on wall-clock dates), so unit-testable independent of the machine timezone.
+    internal static int RemainingWeekdays(DateTime todayLocal, DateTime resetLocalDate)
+    {
+        var count = 0;
+        for (var day = todayLocal.Date; day < resetLocalDate.Date; day = day.AddDays(1))
+        {
+            if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday))
+            {
+                count++;
+            }
+        }
+
+        return Math.Max(1, count);
+    }
+
+    // The prorated per-weekday budget as a percent of the monthly allowance: the
+    // remaining allowance (100 - usedPercent, never negative) spread over the
+    // remaining weekdays. null when there is no usage percentage to prorate (no
+    // allowance). The divisor is clamped to >= 1.
+    internal static double? DailyBudgetPercent(double? usedPercent, int remainingWeekdays)
+    {
+        if (usedPercent is not double used || double.IsNaN(used) || double.IsInfinity(used))
+        {
+            return null;
+        }
+
+        var remaining = Math.Max(0d, 100d - used);
+        return remaining / Math.Max(1, remainingWeekdays);
     }
 
     // The spark-icon color for a severity band (full-strength green / amber / red).
@@ -681,6 +723,7 @@ internal sealed class CopilotWindow : Form
             }
 
             var hasPlan = false;
+            double? dailyBudgetPercent = null;
             if (allowance is int cap && cap > 0 && used is long u)
             {
                 hasPlan = true;
@@ -695,6 +738,11 @@ internal sealed class CopilotWindow : Form
                 _valueColor = UsageTheme.PrimaryText;
                 _bar.AccentColor = UsageTheme.AccentColor(percent, _accent);
                 _bar.SetValue(percent);
+                // Prorate the remaining allowance over the remaining weekdays so the
+                // today's-burn icon escalates against a daily budget (not a fixed %).
+                dailyBudgetPercent = window?.ResetAtUtc is { } resetUtc
+                    ? DailyBudgetPercent(percent, RemainingWeekdays(DateTime.Now, resetUtc.ToLocalTime().DateTime))
+                    : null;
             }
             else
             {
@@ -711,7 +759,7 @@ internal sealed class CopilotWindow : Form
             _resetTop.Text = FormatResetShort(window);
 
             ApplyMainLineText();
-            ApplyInsights(insights);
+            ApplyInsights(insights, dailyBudgetPercent);
 
             // Visibility — the usage hero block (credit row, number, bar, today's
             // delta, projection) only makes sense once usage was actually fetched.
@@ -764,7 +812,7 @@ internal sealed class CopilotWindow : Form
         // the since-today's-09:00 delta. Null insights (non-Available / loading)
         // hide both. These lines are static — they never change on hover, so they
         // do not affect the no-jitter main-line swap.
-        private void ApplyInsights(CopilotInsights? insights)
+        private void ApplyInsights(CopilotInsights? insights, double? dailyBudgetPercent)
         {
             if (insights is null)
             {
@@ -818,7 +866,7 @@ internal sealed class CopilotWindow : Form
                 _todayLine.SetContent(
                     label,
                     Strings.Tf("+{0}（+{1}%）", delta.ToString("N0"), percentToday.ToString("0.0")),
-                    SeverityIconColor(GetTodayDeltaSeverity(percentToday)));
+                    SeverityIconColor(GetTodayDeltaSeverity(percentToday, dailyBudgetPercent)));
             }
         }
 
