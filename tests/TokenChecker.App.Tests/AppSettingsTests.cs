@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Xunit;
 
 namespace TokenChecker.App.Tests;
@@ -216,5 +218,45 @@ public class AppSettingsTests
         Assert.NotSame(s.VisibleServices, clone.VisibleServices);
         clone.VisibleServices[0] = "Codex";
         Assert.Equal("Claude", s.VisibleServices[0]);
+    }
+
+    [Fact]
+    public void StatusAlwaysOnTop_DefaultsTrue()
+        => Assert.True(new AppSettings().StatusAlwaysOnTop);
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Clone_CopiesStatusAlwaysOnTop(bool value)
+        => Assert.Equal(value, new AppSettings { StatusAlwaysOnTop = value }.Clone().StatusAlwaysOnTop);
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Normalize_PreservesStatusAlwaysOnTop(bool value)
+    {
+        var s = new AppSettings { StatusAlwaysOnTop = value };
+        s.Normalize();
+        Assert.Equal(value, s.StatusAlwaysOnTop);
+    }
+
+    // An older settings.json predating the toggle has no StatusAlwaysOnTop key;
+    // it must load as true so existing users keep the always-on-top behavior.
+    [Fact]
+    public void Deserialize_LegacyJsonWithoutField_DefaultsToTrue()
+    {
+        const string legacy = """{"DisplayMode":"Normal","Theme":"System"}""";
+        var options = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } };
+        var settings = JsonSerializer.Deserialize<AppSettings>(legacy, options);
+        Assert.NotNull(settings);
+        Assert.True(settings!.StatusAlwaysOnTop);
+    }
+
+    [Fact]
+    public void Deserialize_ExplicitFalse_RoundTrips()
+    {
+        var settings = JsonSerializer.Deserialize<AppSettings>("""{"StatusAlwaysOnTop":false}""");
+        Assert.NotNull(settings);
+        Assert.False(settings!.StatusAlwaysOnTop);
     }
 }

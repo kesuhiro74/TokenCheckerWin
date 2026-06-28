@@ -50,6 +50,12 @@ internal sealed class AppSettings
 
     public WindowDisplayMode ClaudeCodexDisplayMode { get; set; } = WindowDisplayMode.Always;
 
+    // Keep the status window above other windows while in Always (常時表示) mode.
+    // No effect in HoverPreview mode (the preview must stay topmost to surface).
+    // Default true preserves the long-standing always-on-top behavior; an older
+    // settings.json without this key deserializes to true (no migration needed).
+    public bool StatusAlwaysOnTop { get; set; } = true;
+
     // ----- GitHub Copilot window (opt-in; default off) ----------------------
 
     public bool CopilotWindowEnabled { get; set; }
@@ -217,6 +223,7 @@ internal sealed class AppSettings
             StatusFormLocation = StatusFormLocation,
             ClaudeCodexWindowEnabled = ClaudeCodexWindowEnabled,
             ClaudeCodexDisplayMode = ClaudeCodexDisplayMode,
+            StatusAlwaysOnTop = StatusAlwaysOnTop,
             CopilotWindowEnabled = CopilotWindowEnabled,
             CopilotDisplayMode = CopilotDisplayMode,
             CopilotPlan = CopilotPlan,

@@ -15,6 +15,7 @@ internal sealed class SettingsForm : Form
     // Claude / Codex
     private readonly CheckBox _ccWindowEnabled = new();
     private readonly ComboBox _ccDisplayMode = new();
+    private readonly CheckBox _ccAlwaysOnTop = new();
     private readonly ComboBox _displayMode = new();
     private readonly CheckBox _showClaude = new();
     private readonly CheckBox _showCodex = new();
@@ -48,7 +49,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(404, 786);
+        Size = new Size(404, 818);
         Font = new Font("Segoe UI", 9F);
 
         // ----- 共通設定 -----------------------------------------------------
@@ -110,7 +111,7 @@ internal sealed class SettingsForm : Form
         {
             Text = Strings.T("Claude / Codex 設定"),
             Location = new Point(12, 188),
-            Size = new Size(368, 272)
+            Size = new Size(368, 304)
         };
 
         _ccWindowEnabled.Text = Strings.T("Claude / Codex ウィンドウを表示");
@@ -124,59 +125,44 @@ internal sealed class SettingsForm : Form
         _ccDisplayMode.Size = new Size(170, 24);
         _ccDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.Always));
         _ccDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.HoverPreview));
+        _ccDisplayMode.SelectedIndexChanged += (_, _) => UpdateEnabledStates();
 
-        var displayModeLabel = new Label { Text = Strings.T("表示モード"), AutoSize = true, Location = new Point(14, 88) };
+        _ccAlwaysOnTop.Text = Strings.T("ウィンドウを常に最前面に表示");
+        _ccAlwaysOnTop.AutoSize = true;
+        _ccAlwaysOnTop.Location = new Point(14, 84);
+
+        var displayModeLabel = new Label { Text = Strings.T("表示モード"), AutoSize = true, Location = new Point(14, 120) };
         _displayMode.DropDownStyle = ComboBoxStyle.DropDownList;
-        _displayMode.Location = new Point(110, 84);
+        _displayMode.Location = new Point(110, 116);
         _displayMode.Size = new Size(170, 24);
         _displayMode.Items.Add(new DisplayModeOption(DisplayMode.Normal));
         _displayMode.Items.Add(new DisplayModeOption(DisplayMode.Compact));
         _displayMode.Items.Add(new DisplayModeOption(DisplayMode.Minimum));
 
-        var servicesLabel = new Label { Text = Strings.T("表示対象"), AutoSize = true, Location = new Point(14, 120) };
+        var servicesLabel = new Label { Text = Strings.T("表示対象"), AutoSize = true, Location = new Point(14, 152) };
         _showClaude.Text = "Claude Code";
         _showClaude.AutoSize = true;
-        _showClaude.Location = new Point(110, 118);
+        _showClaude.Location = new Point(110, 150);
         _showCodex.Text = "Codex";
         _showCodex.AutoSize = true;
-        _showCodex.Location = new Point(235, 118);
+        _showCodex.Location = new Point(235, 150);
 
         var authLabel = new Label
         {
             Text = Strings.T("ログイン状態"),
             AutoSize = true,
             Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-            Location = new Point(14, 150)
+            Location = new Point(14, 182)
         };
 
         var claudeName = new Label
         {
             Text = "Claude Code",
             AutoSize = true,
-            Location = new Point(14, 178),
-            Font = new Font("Segoe UI", 9F, FontStyle.Bold)
-        };
-        _claudeStatusLabel = new Label
-        {
-            AutoSize = false,
-            Size = new Size(80, 22),
-            Location = new Point(104, 176),
-            TextAlign = ContentAlignment.MiddleLeft,
-            Text = Strings.T("確認中")
-        };
-        _claudeLoginBtn = new Button { Text = Strings.T("ログイン"), Location = new Point(188, 172), Size = new Size(70, 28) };
-        _claudeLoginBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchClaudeLogin);
-        _claudeLogoutBtn = new Button { Text = Strings.T("ログアウト"), Location = new Point(262, 172), Size = new Size(84, 28) };
-        _claudeLogoutBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchClaudeLogout);
-
-        var codexName = new Label
-        {
-            Text = "Codex",
-            AutoSize = true,
             Location = new Point(14, 210),
             Font = new Font("Segoe UI", 9F, FontStyle.Bold)
         };
-        _codexStatusLabel = new Label
+        _claudeStatusLabel = new Label
         {
             AutoSize = false,
             Size = new Size(80, 22),
@@ -184,17 +170,38 @@ internal sealed class SettingsForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             Text = Strings.T("確認中")
         };
-        _codexLoginBtn = new Button { Text = Strings.T("ログイン"), Location = new Point(188, 204), Size = new Size(70, 28) };
+        _claudeLoginBtn = new Button { Text = Strings.T("ログイン"), Location = new Point(188, 204), Size = new Size(70, 28) };
+        _claudeLoginBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchClaudeLogin);
+        _claudeLogoutBtn = new Button { Text = Strings.T("ログアウト"), Location = new Point(262, 204), Size = new Size(84, 28) };
+        _claudeLogoutBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchClaudeLogout);
+
+        var codexName = new Label
+        {
+            Text = "Codex",
+            AutoSize = true,
+            Location = new Point(14, 242),
+            Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+        };
+        _codexStatusLabel = new Label
+        {
+            AutoSize = false,
+            Size = new Size(80, 22),
+            Location = new Point(104, 240),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Text = Strings.T("確認中")
+        };
+        _codexLoginBtn = new Button { Text = Strings.T("ログイン"), Location = new Point(188, 236), Size = new Size(70, 28) };
         _codexLoginBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchCodexLogin);
-        _codexLogoutBtn = new Button { Text = Strings.T("ログアウト"), Location = new Point(262, 204), Size = new Size(84, 28) };
+        _codexLogoutBtn = new Button { Text = Strings.T("ログアウト"), Location = new Point(262, 236), Size = new Size(84, 28) };
         _codexLogoutBtn.Click += (_, _) => RunAuth(host is null ? null : host.AuthService.LaunchCodexLogout);
 
-        _refreshAuthBtn = new Button { Text = Strings.T("認証状態を再確認"), Location = new Point(188, 236), Size = new Size(158, 28) };
+        _refreshAuthBtn = new Button { Text = Strings.T("認証状態を再確認"), Location = new Point(188, 268), Size = new Size(158, 28) };
         _refreshAuthBtn.Click += async (_, _) => await RefreshAuthAsync().ConfigureAwait(true);
 
         gbClaudeCodex.Controls.Add(_ccWindowEnabled);
         gbClaudeCodex.Controls.Add(ccMethodLabel);
         gbClaudeCodex.Controls.Add(_ccDisplayMode);
+        gbClaudeCodex.Controls.Add(_ccAlwaysOnTop);
         gbClaudeCodex.Controls.Add(displayModeLabel);
         gbClaudeCodex.Controls.Add(_displayMode);
         gbClaudeCodex.Controls.Add(servicesLabel);
@@ -215,7 +222,7 @@ internal sealed class SettingsForm : Form
         var gbCopilot = new GroupBox
         {
             Text = Strings.T("GitHub Copilot 設定"),
-            Location = new Point(12, 468),
+            Location = new Point(12, 500),
             Size = new Size(368, 224)
         };
 
@@ -298,14 +305,14 @@ internal sealed class SettingsForm : Form
         {
             Text = "OK",
             DialogResult = DialogResult.OK,
-            Location = new Point(224, 702),
+            Location = new Point(224, 734),
             Size = new Size(76, 28)
         };
         var cancelButton = new Button
         {
             Text = Strings.T("キャンセル"),
             DialogResult = DialogResult.Cancel,
-            Location = new Point(306, 702),
+            Location = new Point(306, 734),
             Size = new Size(76, 28)
         };
 
@@ -315,7 +322,7 @@ internal sealed class SettingsForm : Form
             Text = $"TokenCheckerWin v{AppVersion()}",
             AutoSize = true,
             ForeColor = SystemColors.GrayText,
-            Location = new Point(16, 708)
+            Location = new Point(16, 740)
         };
 
         Controls.Add(gbCommon);
@@ -401,6 +408,7 @@ internal sealed class SettingsForm : Form
 
         settings.ClaudeCodexWindowEnabled = _ccWindowEnabled.Checked;
         settings.ClaudeCodexDisplayMode = (_ccDisplayMode.SelectedItem as WindowDisplayModeOption)?.Mode ?? current.ClaudeCodexDisplayMode;
+        settings.StatusAlwaysOnTop = _ccAlwaysOnTop.Checked;
         settings.DisplayMode = (_displayMode.SelectedItem as DisplayModeOption)?.Mode ?? current.DisplayMode;
 
         var visible = new List<string>();
@@ -435,6 +443,7 @@ internal sealed class SettingsForm : Form
 
         _ccWindowEnabled.Checked = settings.ClaudeCodexWindowEnabled;
         _ccDisplayMode.SelectedIndex = IndexOf(_ccDisplayMode, o => (o as WindowDisplayModeOption)?.Mode == settings.ClaudeCodexDisplayMode);
+        _ccAlwaysOnTop.Checked = settings.StatusAlwaysOnTop;
         _displayMode.SelectedIndex = IndexOf(_displayMode, o => (o as DisplayModeOption)?.Mode == settings.DisplayMode);
         _showClaude.Checked = settings.IsServiceVisible("Claude");
         _showCodex.Checked = settings.IsServiceVisible("Codex");
@@ -469,6 +478,9 @@ internal sealed class SettingsForm : Form
         _displayMode.Enabled = cc;
         _showClaude.Enabled = cc;
         _showCodex.Enabled = cc;
+        // Always-on-top only matters in Always mode; gray it out otherwise.
+        _ccAlwaysOnTop.Enabled = cc
+            && (_ccDisplayMode.SelectedItem as WindowDisplayModeOption)?.Mode == WindowDisplayMode.Always;
 
         var cp = _copilotWindowEnabled.Checked;
         _copilotPlan.Enabled = cp;

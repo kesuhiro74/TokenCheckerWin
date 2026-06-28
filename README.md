@@ -92,8 +92,9 @@ Badges follow the UI language (`OK` / `Not installed` / `Not logged in` / `Auth 
 
 ### Saved settings
 
-`settings.json` (under the user's `AppData` folder) stores **app settings only**: refresh interval (`30 s` / `1 min` / `5 min` / `10 min`), auto-start, theme (`ThemeMode`), UI language (`Language`), `DisplayMode`, each window's ON/OFF and display method, the visible Claude / Codex services, the Copilot plan / custom cap, accent color, and window positions. It never stores tokens, credentials, login, URLs, paths, or email. A corrupted file falls back to defaults.
+`settings.json` (under the user's `AppData` folder) stores **app settings only**: refresh interval (`30 s` / `1 min` / `5 min` / `10 min`), auto-start, theme (`ThemeMode`), UI language (`Language`), `DisplayMode`, each window's ON/OFF and display method, whether the status window stays always on top, the visible Claude / Codex services, the Copilot plan / custom cap, accent color, and window positions. It never stores tokens, credentials, login, URLs, paths, or email. A corrupted file falls back to defaults.
 
+- **Keep the status window always on top** (default ON) only takes effect when its display method is `Always show`; turning it OFF lets other apps cover it. In `Hover preview` it always stays on top (so the preview surfaces).
 - **Theme** (Light / Dark / System-linked) and **UI language** (System / English / Japanese) are applied **at startup**; when you change either, the app offers to **restart now** (it relaunches itself cleanly) so the change takes effect. `System` follows the Windows color mode / display language.
 - An off-screen saved window position is corrected back into the visible area on open.
 - Auto-start uses the `TokenCheckerWin` value under the current user's Run key (the published exe path, or the `dotnet "<app dll>"` form for a dev run).

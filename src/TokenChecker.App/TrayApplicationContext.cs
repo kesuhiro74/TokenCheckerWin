@@ -576,6 +576,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _status.Mode = _settings.ClaudeCodexDisplayMode;
         _status.Enabled = _settings.ClaudeCodexWindowEnabled;
+        // Keep the status window topmost in HoverPreview (so the preview surfaces);
+        // in Always mode honor the user's StatusAlwaysOnTop choice.
+        _statusForm.TopMost = _status.Mode == WindowDisplayMode.Always
+            ? _settings.StatusAlwaysOnTop
+            : true;
         _copilot.Mode = _settings.CopilotDisplayMode;
         _copilot.Enabled = _settings.CopilotWindowEnabled;
 

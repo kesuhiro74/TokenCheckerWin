@@ -92,8 +92,9 @@ dotnet publish src/TokenChecker.App/TokenChecker.App.csproj -c Release -r win-x6
 
 ### 保存される設定
 
-`settings.json`(ユーザーの `AppData` フォルダ配下)には**アプリ設定のみ**を保存します: 更新間隔(`30秒` / `1分` / `5分` / `10分`)・自動起動・テーマ(`ThemeMode`)・UI 言語(`Language`)・`DisplayMode`・各ウィンドウの ON/OFF と表示方法・Claude / Codex の表示対象サービス・Copilot のプラン / Custom 上限・配色・各ウィンドウの位置。トークン・認証情報・login・URL・パス・メールは一切保存しません。破損していればデフォルトで起動します。
+`settings.json`(ユーザーの `AppData` フォルダ配下)には**アプリ設定のみ**を保存します: 更新間隔(`30秒` / `1分` / `5分` / `10分`)・自動起動・テーマ(`ThemeMode`)・UI 言語(`Language`)・`DisplayMode`・各ウィンドウの ON/OFF と表示方法・ステータス窓を常に最前面にするか・Claude / Codex の表示対象サービス・Copilot のプラン / Custom 上限・配色・各ウィンドウの位置。トークン・認証情報・login・URL・パス・メールは一切保存しません。破損していればデフォルトで起動します。
 
+- **ステータス窓を常に最前面に表示**(既定 ON)は、表示方法が `常時表示` のときだけ効きます。OFF にすると他アプリの背面に回せます。`ホバー表示` のときは常に最前面のままです(ホバーで前面に出すため)。
 - **テーマ**(ライト / ダーク / システム連動)と **UI 言語**(System / English / 日本語)は**起動時に反映**されます。どちらかを変更すると「今すぐ再起動しますか？」と確認し、はいでアプリがクリーンに自動再起動して反映します。`System` は Windows の色モード / 表示言語に追従します。
 - 保存位置が画面外なら、表示領域内に補正して開きます。
 - 自動起動は現在ユーザーの Run キーの `TokenCheckerWin` 値で管理します(publish 済み exe のパス、または開発実行では `dotnet "<app dll>"` 形式)。

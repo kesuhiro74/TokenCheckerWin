@@ -260,6 +260,7 @@ internal static class Strings
         ["Claude / Codex 設定"] = "Claude / Codex settings",
         ["Claude / Codex ウィンドウを表示"] = "Show the Claude / Codex window",
         ["表示方法"] = "Display method",
+        ["ウィンドウを常に最前面に表示"] = "Keep window always on top",
         ["表示モード"] = "Display mode",
         ["表示対象"] = "Shown services",
         ["ログイン状態"] = "Auth status",
