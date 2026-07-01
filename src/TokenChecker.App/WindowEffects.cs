@@ -70,4 +70,38 @@ internal static class WindowEffects
             // dwmapi missing / attribute unsupported: no border.
         }
     }
+
+    // ----- Keep-on-top (re-assert the always-on-top z-order) -----------------
+
+    private static readonly nint HWND_TOPMOST = new(-1);
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOACTIVATE = 0x0010;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    // Re-insert the window at the top of the always-on-top band WITHOUT activating it
+    // (SWP_NOACTIVATE leaves keyboard focus where it is). Called periodically while an
+    // Always ("常時表示") popup that opts into topmost is visible, so a click on the
+    // taskbar — itself a topmost window that rises when clicked — can't bury the part
+    // of the popup overlapping it. No-op on a zero handle or if user32 rejects it.
+    public static void ReassertTopMost(nint handle)
+    {
+        if (handle == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            SetWindowPos(handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+        catch
+        {
+            // user32 missing / call failed: leave the window's z-order as-is.
+        }
+    }
 }

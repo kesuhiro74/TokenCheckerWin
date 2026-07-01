@@ -94,9 +94,9 @@ Badges follow the UI language (`OK` / `Not installed` / `Not logged in` / `Auth 
 
 `settings.json` (under the user's `AppData` folder) stores **app settings only**: refresh interval (`30 s` / `1 min` / `5 min` / `10 min`), auto-start, theme (`ThemeMode`), UI language (`Language`), `DisplayMode`, each window's ON/OFF and display method, whether the status window stays always on top, the visible Claude / Codex services, the Copilot plan / custom cap, accent color, and window positions. It never stores tokens, credentials, login, URLs, paths, or email. A corrupted file falls back to defaults.
 
-- **Keep the status window always on top** (default ON) only takes effect when its display method is `Always show`; turning it OFF lets other apps cover it. In `Hover preview` it always stays on top (so the preview surfaces).
+- **Keep the status window always on top** (default ON) only takes effect when its display method is `Always show`; turning it OFF lets other apps cover it. In `Hover preview` it always stays on top (so the preview surfaces). With `Always show` + always-on-top you can park the window over the taskbar, and it pops back to the front when you click the taskbar or another app.
 - **Theme** (Light / Dark / System-linked) and **UI language** (System / English / Japanese) are applied **at startup**; when you change either, the app offers to **restart now** (it relaunches itself cleanly) so the change takes effect. `System` follows the Windows color mode / display language.
-- An off-screen saved window position is corrected back into the visible area on open.
+- The window position is remembered (including a spot overlapping the taskbar); an off-screen saved position is corrected back onto a physical monitor on open (clamped to the full monitor, not the taskbar-free work area, so a taskbar-overlapping position is kept).
 - Auto-start uses the `TokenCheckerWin` value under the current user's Run key (the published exe path, or the `dotnet "<app dll>"` form for a dev run).
 
 ### Last-successful-value fallback

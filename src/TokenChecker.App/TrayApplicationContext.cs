@@ -72,6 +72,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     // hovered (un-pinned) window once the cursor leaves it.
     private readonly System.Windows.Forms.Timer _fadeInTimer = new();
     private readonly System.Windows.Forms.Timer _hoverLeaveTimer = new();
+    // While an Always ("常時表示") + topmost popup is visible, re-assert its topmost
+    // z-order on a gentle interval so a click on the taskbar (also topmost) can't bury
+    // the overlapping part. Self-stops once no such popup is shown (see KeepPopupsOnTop).
+    private readonly System.Windows.Forms.Timer _keepOnTopTimer = new();
     private Form? _fadeTarget;
     // Outside-click dismissal for a pinned HoverPreview window (either popup):
     // briefly suppress the Deactivate-driven hide around an icon's own click and
@@ -219,6 +223,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _fadeInTimer.Tick += (_, _) => FadeInStep();
         _hoverLeaveTimer.Interval = 150;
         _hoverLeaveTimer.Tick += (_, _) => HoverLeaveCheck();
+        _keepOnTopTimer.Interval = 500;
+        _keepOnTopTimer.Tick += (_, _) => KeepPopupsOnTop();
 
         UpdateTrayIcons(null, loading: true);
         SyncContextMenuState();
@@ -515,6 +521,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         UpdateCopilotPinnedAppearance();
+        MaybeStartKeepOnTop();
     }
 
     private void HidePopup(PopupSlot slot)
@@ -600,6 +607,56 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 // HoverPreview appears on hover only.
                 HidePopup(slot);
             }
+        }
+
+        MaybeStartKeepOnTop();
+    }
+
+    // ----- Keep an Always + topmost popup above the taskbar ------------------
+
+    // A popup we must keep re-raised: enabled, Always ("常時表示"), currently shown,
+    // and opting into topmost. For the status window that means StatusAlwaysOnTop is on
+    // (ApplyWindowModes mirrors it into Form.TopMost); the Copilot window is always
+    // topmost. When topmost is off the user chose NOT to float above others, so we
+    // leave its z-order alone.
+    internal static bool ShouldKeepOnTop(bool enabled, WindowDisplayMode mode, bool visible, bool topMost)
+        => enabled && mode == WindowDisplayMode.Always && visible && topMost;
+
+    private static bool KeepsOnTop(PopupSlot slot)
+        => ShouldKeepOnTop(slot.Enabled, slot.Mode, slot.Form.Visible, slot.Form.TopMost);
+
+    // Start the keep-on-top timer if any popup currently needs it. Called after a
+    // popup is shown or its mode/topmost changes; Start() on a running timer is a no-op.
+    private void MaybeStartKeepOnTop()
+    {
+        foreach (var slot in _slots)
+        {
+            if (KeepsOnTop(slot))
+            {
+                _keepOnTopTimer.Start();
+                return;
+            }
+        }
+    }
+
+    // Timer tick: re-assert topmost for every qualifying popup, and self-stop once
+    // none qualify (all hidden or switched out of Always) so the timer isn't running
+    // for nothing.
+    private void KeepPopupsOnTop()
+    {
+        var any = false;
+        foreach (var slot in _slots)
+        {
+            if (KeepsOnTop(slot))
+            {
+                WindowEffects.ReassertTopMost(slot.Form.Handle);
+                any = true;
+            }
+        }
+
+        if (!any)
+        {
+            _keepOnTopTimer.Stop();
         }
     }
 
@@ -743,23 +800,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private static bool TryClampToVisibleScreen(Point location, Size size, out Point visibleLocation)
+        // Clamp against each monitor's FULL bounds (not WorkingArea), so a window the
+        // user dragged over the taskbar keeps that position on re-show. The taskbar-free
+        // default is applied only to a brand-new window (see Get*Location fallbacks).
+        => TryClampToScreens(Array.ConvertAll(Screen.AllScreens, s => s.Bounds), location, size, out visibleLocation);
+
+    // Pure clamping core (screen list injected for testability): return `location`
+    // nudged so the (location, size) rectangle sits fully inside whichever screen
+    // rectangle it intersects. Returns false when it intersects no monitor (fully
+    // off-screen) so the caller can fall back to a default position.
+    internal static bool TryClampToScreens(IReadOnlyList<Rectangle> screens, Point location, Size size, out Point clamped)
     {
-        foreach (var screen in Screen.AllScreens)
+        foreach (var area in screens)
         {
-            var area = screen.WorkingArea;
             var formBounds = new Rectangle(location, size);
             if (!area.IntersectsWith(formBounds))
             {
                 continue;
             }
 
-            visibleLocation = new Point(
+            clamped = new Point(
                 Math.Clamp(location.X, area.Left, Math.Max(area.Left, area.Right - size.Width)),
                 Math.Clamp(location.Y, area.Top, Math.Max(area.Top, area.Bottom - size.Height)));
             return true;
         }
 
-        visibleLocation = Point.Empty;
+        clamped = Point.Empty;
         return false;
     }
 
@@ -1289,6 +1355,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _refreshTimer.Stop();
         _fadeInTimer.Stop();
         _hoverLeaveTimer.Stop();
+        _keepOnTopTimer.Stop();
         Application.Idle -= OnApplicationIdle;
 
         foreach (var slot in _slots)
@@ -1313,6 +1380,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _refreshTimer.Dispose();
         _fadeInTimer.Dispose();
         _hoverLeaveTimer.Dispose();
+        _keepOnTopTimer.Dispose();
         _shutdown.Dispose();
         _refreshLock.Dispose();
         base.ExitThreadCore();
