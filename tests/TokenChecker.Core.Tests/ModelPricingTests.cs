@@ -12,7 +12,13 @@ public class ModelPricingTests
     [Theory]
     [InlineData("claude-opus-4-8", "5", "25")]
     [InlineData("claude-sonnet-4-6", "3", "15")]
+    [InlineData("claude-opus-5-5", "4", "20")]
+    [InlineData("claude-opus-5", "5", "25")]
+    [InlineData("claude-sonnet-5", "2", "10")]
     [InlineData("gpt-5.5", "5", "30")]
+    [InlineData("gpt-5.6-sol", "4", "20")]
+    [InlineData("gpt-5.6-terra", "2", "12")]
+    [InlineData("gpt-5.6-luna", "0.2", "1.2")]
     // gpt-5.1-codex has no dedicated entry and must fall back to "gpt-5".
     [InlineData("gpt-5.1-codex", "1.25", "10")]
     // The legacy full id is caught by the "claude-opus-4-2" prefix entry.
@@ -37,6 +43,24 @@ public class ModelPricingTests
         Assert.Equal("gpt-5.4-mini", price.IdPrefix);
         Assert.Equal(0.75m, price.InputUsdPerMTok);
         Assert.Equal(4.5m, price.OutputUsdPerMTok);
+    }
+
+    // Point releases share a prefix with their base model but not its cache-read
+    // rate, so the more specific entry must win.
+    [Theory]
+    [InlineData("claude-opus-5-5", "claude-opus-5-5", "0.2")]
+    [InlineData("claude-opus-5", "claude-opus-5", "0.5")]
+    [InlineData("claude-fable-5-1", "claude-fable-5-1", "0.25")]
+    [InlineData("claude-fable-5", "claude-fable-5", "1")]
+    [InlineData("claude-mythos-5-1", "claude-mythos-5-1", "0.25")]
+    [InlineData("claude-mythos-5", "claude-mythos", "1")]
+    public void Find_PointReleases_UseTheirOwnCacheReadRate(string modelId, string expectedPrefix, string expectedCacheRead)
+    {
+        var price = ModelPricing.Find(modelId);
+
+        Assert.NotNull(price);
+        Assert.Equal(expectedPrefix, price.IdPrefix);
+        Assert.Equal(decimal.Parse(expectedCacheRead, CultureInfo.InvariantCulture), price.CacheReadUsdPerMTok);
     }
 
     [Fact]
