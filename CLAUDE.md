@@ -4,9 +4,9 @@ TokenCheckerWin で作業する Claude Code 向けのガイドです。ユーザ
 
 ## 作業モード（モデル・effort）
 
-- **モデル**: 最新の Claude Opus を使用する（現行の最新は Opus 4.8）。実際の選択は Claude Code の `/model` か `settings.json` の `model` で行うこと。CLAUDE.md からモデルは強制できないため、ここでは方針として明記する。
-- **ultracode（xhigh effort + 自動ワークフロー編成）**: 複数ファイルにまたがる変更や横断的な作業では `/effort ultracode` を使う。具体例: 80%/95% 閾値を3箇所で揃える、プロバイダ実装（`ClaudeUsageProvider`/`CodexUsageProvider`）の追加・改修、データフローの変更、プライバシー不変条件（後述）に関わる設計判断。Claude Code v2.1.154 以降が必要。Max/Team では既定でオンのことが多い。
-- ルーティンの編集（リネーム・1行修正・文言変更）に ultracode は使わない。重く、レート制限を圧迫する（このアプリが監視している当の対象でもある）。軽作業は `/effort medium`、通常作業は `/effort high` で十分。**ultracode を使った作業が終わったら `/effort high` に戻す。**
+- **モデル**: モデルと effort の既定はユーザー全体設定（`~/.claude/CLAUDE.md` と `settings.json`）に従う。CLAUDE.md からモデルは強制できない。
+- **ultracode（xhigh effort + 自動ワークフロー編成）**: 複数ファイルにまたがる変更や横断的な作業では `/effort ultracode` を使う。具体例: 80%/95% 閾値を3箇所で揃える、プロバイダ実装（`ClaudeUsageProvider`/`CodexUsageProvider`）の追加・改修、データフローの変更、プライバシー不変条件（後述）に関わる設計判断。
+- ルーティンの編集（リネーム・1行修正・文言変更）に ultracode は重すぎ、レート制限を圧迫する（このアプリが監視している当の対象でもある）。軽作業は `/effort medium`、通常作業は `/effort high` で十分。effort の切替はユーザーが行うので、作業規模と合っていないと判断したら切替を提案する（ultracode での作業が終わったら `/effort high` に戻すよう促す）。
 
 ## このアプリは何か
 
@@ -141,8 +141,5 @@ git config core.hooksPath .githooks
 ## Git
 
 - 既定ブランチ `main`。コミット/プッシュはユーザーが明示したときだけ行う。
-- コミットメッセージ末尾に付与:
-  ```
-  Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
-  ```
+- コミットメッセージ末尾には、Claude Code が指示する `Co-Authored-By:` 行（実行中のモデル名入り）を付与する。
 - `bin/` `obj/` `publish/` `.claude/` `.codex/` は `.gitignore` 済み。
