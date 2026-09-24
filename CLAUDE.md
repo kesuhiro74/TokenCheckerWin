@@ -142,4 +142,5 @@ git config core.hooksPath .githooks
 
 - 既定ブランチ `main`。コミット/プッシュはユーザーが明示したときだけ行う。
 - コミットメッセージ末尾には、Claude Code が指示する `Co-Authored-By:` 行（実行中のモデル名入り）を付与する。
+- リリースは Claude が最後まで行う: 版上げ、README（日英）更新、リリースノート（英日併記）、publish/zip、GitHub Release 作成まで。権限チェックで止まった工程があれば、どこで止まったかをユーザーに報告する。
 - `bin/` `obj/` `publish/` `.claude/` `.codex/` は `.gitignore` 済み。
