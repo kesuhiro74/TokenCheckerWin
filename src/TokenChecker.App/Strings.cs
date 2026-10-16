@@ -108,11 +108,7 @@ internal static class Strings
         // Spend amounts (DailyCostText). Only the Japanese (yen) templates are
         // looked up here — the dollar forms are invariant-culture literals in
         // DailyCostText — so these entries exist for table parity.
-        ["¥{0:N0} (daily)"] = "¥{0:N0} (daily)",
         ["¥{0:N0}"] = "¥{0:N0}",
-        ["月¥{0:N0}"] = "mo ¥{0:N0}",
-        ["今日"] = "Today",
-        ["今月"] = "This month",
         ["今月合計（API換算） {0}"] = "Month total (API est.) {0}",
         ["今月のモデル別内訳"] = "This month by model",
         ["API換算の推定額（ローカルログから計算）"] = "Estimated at API rates (computed from local logs)",

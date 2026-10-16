@@ -1092,7 +1092,7 @@ internal sealed class StatusForm : Form
             }
         }
 
-        // "今日 ¥1,898    今月 ¥3,360" — each label/amount pair is laid out from
+        // "Today ¥1,898    This month ¥3,360" — each label/amount pair is laid out from
         // its measured width, and the smaller label sits on the amount's baseline.
         private void LayoutMoneyRow(int top)
         {
@@ -1519,7 +1519,7 @@ internal sealed class StatusForm : Form
     }
 
     // A single owner-drawn status line, e.g.
-    //   <svcIcon> Claude | <clock> 5h 38% <reset> 4h39m 10:50 | <cal> 7d 39% <reset> 2d 6/17 18:00 | <money> ¥46 / 月¥1,234
+    //   <svcIcon> Claude | <clock> 5h 38% <reset> 4h39m 10:50 | <cal> 7d 39% <reset> 2d 6/17 18:00 | <money> ¥46 <today> / ¥1,234 <month>
     // Text runs render in the monospaced status-line face, icon runs in the
     // Nerd Font face; when the Nerd Font is not installed the icon runs are
     // skipped entirely (measured nor drawn), leaving a clean text-only line.

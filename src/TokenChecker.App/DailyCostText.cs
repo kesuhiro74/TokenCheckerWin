@@ -17,26 +17,13 @@ internal static class DailyCostText
             ? Strings.Tf("¥{0:N0}", cost.Jpy)
             : string.Format(CultureInfo.InvariantCulture, "${0:N2}", cost.Usd);
 
-    // Today's spend with the legacy "(daily)" qualifier, kept for the
-    // minimum-mode line when this month's figure is unknown.
-    public static string Format(DailyCost cost)
-        => Strings.IsJapanese
-            ? Strings.Tf("¥{0:N0} (daily)", cost.Jpy)
-            : string.Format(CultureInfo.InvariantCulture, "${0:N2} (daily)", cost.Usd);
-
     // Row labels for the card's money row (colored separately from the amount,
-    // hence exposed as plain text rather than a composed string).
-    public static string TodayLabel => Strings.T("今日");
+    // hence exposed as plain text rather than a composed string). These stay
+    // English in both UI languages, by user preference. The minimum-mode line
+    // tags its amounts with calendar icons instead (MinimumLineComposer).
+    public static string TodayLabel => "Today";
 
-    public static string MonthLabel => Strings.T("今月");
-
-    // Minimum-mode trailing cost run: "¥1,234 / 月¥23,456" ("$12.34 / mo
-    // $123.45"). With no month figure it degrades to the previous today-only
-    // form so the line never shows a dangling separator.
-    public static string MinimumCost(DailyCost today, DailyCost? month)
-        => month is null
-            ? Format(today)
-            : $"{Amount(today)} / {MonthPrefixed(month)}";
+    public static string MonthLabel => "This month";
 
     // The status window's footer total, flagged as an API-rate estimate.
     public static string FooterTotal(DailyCost total)
@@ -58,10 +45,4 @@ internal static class DailyCostText
             lines.Select(line => $"{line.Label}  {Amount(line.Cost)}"));
         return $"{Strings.T("今月のモデル別内訳")}{Environment.NewLine}{body}{Environment.NewLine}{Environment.NewLine}{note}";
     }
-
-    // Compact "this month" form used inline next to today's amount.
-    private static string MonthPrefixed(DailyCost cost)
-        => Strings.IsJapanese
-            ? Strings.Tf("月¥{0:N0}", cost.Jpy)
-            : string.Format(CultureInfo.InvariantCulture, "mo ${0:N2}", cost.Usd);
 }

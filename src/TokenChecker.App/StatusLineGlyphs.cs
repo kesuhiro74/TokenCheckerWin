@@ -11,4 +11,6 @@ internal static class StatusLineGlyphs
     public const string Reset    = "\uF0E2";     // nf-fa-undo (rotate-left arrow)
     public const string Calendar = "\uEAB0";     // nf-cod-calendar
     public const string Money    = "\uEFCA";     // nf-md-cash-multiple
+    public const string CalendarToday = "\U000F00F6"; // nf-md-calendar_today (marks today's spend)
+    public const string CalendarMonth = "\U000F0E17"; // nf-md-calendar_month (marks this month's spend)
 }

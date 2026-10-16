@@ -93,7 +93,7 @@ git config core.hooksPath .githooks
 
 両プロバイダとも PATH に CLI が無ければ `NotInstalled`（PATH 探索は `CommandLineProbe`、Windows では `.cmd` 等の PATHEXT を考慮）。
 
-### 金額表示（通常モードの「今日 ¥n / 今月 ¥n」とフッター合計）
+### 金額表示（通常モードの「Today ¥n / This month ¥n」とフッター合計）
 
 - **Core** `LocalCost/`: `ClaudeDailyCostReader`（`~/.claude/projects/**/*.jsonl`、`CLAUDE_CONFIG_DIR` 上書き可）と `CodexDailyCostReader`（`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME` 上書き可）がトークン数を集計し、`ModelPricing`（**単価の唯一の真実**。USD/MTok、decimal 演算のみ、最長前方一致）でコスト化。ログからは**数値・モデル名・重複排除用 ID のみ**抽出し、本文・cwd・パスは保持しない。追記中ファイル対策で `FileShare.ReadWrite | Delete` で開く（`File.ReadLines` 禁止）。
 - **複数区間の1回走査**: `ComputeMany(dir, IReadOnlyList<CostInterval>)` が UTC 半開区間ごとの結果を**1回のファイル走査**で返す（当日＋当月をまとめて出す用途。戻り値は引数と同順）。単一区間の `Compute` はそのラッパー。重複排除は走査全体で1つの集合（同一イベントは含まれる各区間で1回ずつ計上されるので、当日⊆当月が常に成立）、LastWriteTime 足切りと Codex の日付ディレクトリ走査は**最も早い開始／最も遅い終了**を使う。
@@ -102,7 +102,7 @@ git config core.hooksPath .githooks
 - **App**: `DailyCostService`（当日＋当月を `ComputeMany` で1回走査、TTL 10分、手動更新で強制再計算、**例外を一切漏らさず** `DailyCostsView.Empty` に集約＝使用率表示を巻き込まない）→ `StatusForm.UpdateSnapshot` 第3引数 `DailyCostsView`（サービスごとに `ServiceCostView{Today, Month, MonthByModel}`）。
 - **金額文字列の唯一の真実は `DailyCostText`**（`Amount` / `MinimumCost` / `FooterTotal` / `MonthBreakdownTooltip`）。日本語は ¥（N0）、英語は $（N2、InvariantCulture）。他所で通貨記号や書式を組み立てない。
 - モデル別内訳は `CostBreakdown`（純粋関数）: 生のモデル id から末尾の日付サフィックス（`-20250514`）を落として合算し、降順・上位5件＋「その他」。money 行の ToolTip に出す。
-- 表示先: 通常モードカードの**金額行**（`今日` / `今月`、ラベルは補助色・金額は Segoe UI Semibold 11pt）と**ウィンドウ下端のフッター合計**（表示中サービスの当月合計＝`MonthlyTotal.Sum`。どちらも不明なら非表示）。ミニマムモードは行末の `Cost` ラン1つに「¥1,234 / 月¥23,456」（当月不明なら従来の `¥1,234 (daily)`）。**Compact とトレイのツールチップには出さない。**
+- 表示先: 通常モードカードの**金額行**（`Today` / `This month`＝ユーザー希望で両言語とも英語固定、ラベルは補助色・金額は Segoe UI Semibold 11pt）と**ウィンドウ下端のフッター合計**（表示中サービスの当月合計＝`MonthlyTotal.Sum`。どちらも不明なら非表示）。ミニマムモードは行末の `Cost` ラン1つに「¥1,234 <nf-md-calendar_today> / ¥23,456 <nf-md-calendar_month>」（金額はアイコンで区別。当月不明なら今日の分だけ。`/` は Cost ランで Separator ではない）。**Compact とトレイのツールチップには出さない。**
 - 確認: `dotnet run --project src/TokenChecker.Poc -- --daily-cost`（日付・数値・モデル名のみの JSON。当日と当月、モデル別内訳を出力）。
 
 ## 重要な規約・不変条件

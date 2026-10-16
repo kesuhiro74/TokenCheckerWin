@@ -85,7 +85,8 @@ public class MinimumLineComposerTests
             (MinimumRunKind.ResetText, $"2d {LocalStamp(WeeklyReset, "M/d HH:mm")}"),
             (MinimumRunKind.Separator, "|"),
             (MinimumRunKind.SegmentIcon, StatusLineGlyphs.Money),
-            (MinimumRunKind.Cost, "¥46 (daily)"));
+            (MinimumRunKind.Cost, "¥46"),
+            (MinimumRunKind.SegmentIcon, StatusLineGlyphs.CalendarToday));
         }
         finally
         {
@@ -195,7 +196,7 @@ public class MinimumLineComposerTests
                 "Claude", StatusLineGlyphs.Claude, null, null, new DailyCost(8.5m, 1234.5m));
 
             var cost = Assert.Single(runs, run => run.Kind == MinimumRunKind.Cost);
-            Assert.Equal("¥1,235 (daily)", cost.Text);
+            Assert.Equal("¥1,235", cost.Text);
         }
         finally
         {
@@ -215,7 +216,7 @@ public class MinimumLineComposerTests
                 "Claude", StatusLineGlyphs.Claude, null, null, new DailyCost(1234.5m, 190000m));
 
             var cost = Assert.Single(runs, run => run.Kind == MinimumRunKind.Cost);
-            Assert.Equal("$1,234.50 (daily)", cost.Text);
+            Assert.Equal("$1,234.50", cost.Text);
         }
         finally
         {
@@ -224,7 +225,7 @@ public class MinimumLineComposerTests
     }
 
     [Fact]
-    public void Compose_WithMonthCost_FoldsBothAmountsIntoTheSameCostRun()
+    public void Compose_WithMonthCost_TagsEachAmountWithItsCalendarIcon()
     {
         var original = CultureInfo.CurrentCulture;
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ja-JP");
@@ -236,11 +237,22 @@ public class MinimumLineComposerTests
                 new DailyCost(8m, 1234m),
                 new DailyCost(156m, 23456m));
 
-            // Both amounts ride in ONE Cost run, so the month figure adds no
-            // separator and the two rows' alignment columns are unaffected
-            // (3 = the two window separators plus the cost segment's own).
-            var cost = Assert.Single(runs, run => run.Kind == MinimumRunKind.Cost);
-            Assert.Equal("¥1,234 / 月¥23,456", cost.Text);
+            // "¥1,234 <today> / ¥23,456 <month>" after the money icon.
+            var moneyIndex = runs.ToList().FindIndex(run => run.Text == StatusLineGlyphs.Money);
+            Assert.Equal(
+                new[]
+                {
+                    (MinimumRunKind.Cost, "¥1,234"),
+                    (MinimumRunKind.SegmentIcon, StatusLineGlyphs.CalendarToday),
+                    (MinimumRunKind.Cost, "/"),
+                    (MinimumRunKind.Cost, "¥23,456"),
+                    (MinimumRunKind.SegmentIcon, StatusLineGlyphs.CalendarMonth)
+                },
+                runs.Skip(moneyIndex + 1).Select(run => (run.Kind, run.Text)).ToArray());
+
+            // The "/" is a Cost run, so the month figure adds no separator and
+            // the two rows' alignment columns are unaffected (3 = the two
+            // window separators plus the cost segment's own).
             Assert.Equal(3, runs.Count(run => run.Kind == MinimumRunKind.Separator));
         }
         finally
@@ -263,7 +275,9 @@ public class MinimumLineComposerTests
                 monthCost: null);
 
             var cost = Assert.Single(runs, run => run.Kind == MinimumRunKind.Cost);
-            Assert.Equal("¥1,234 (daily)", cost.Text);
+            Assert.Equal("¥1,234", cost.Text);
+            Assert.Equal(StatusLineGlyphs.CalendarToday, runs[^1].Text);
+            Assert.DoesNotContain(runs, run => run.Text == StatusLineGlyphs.CalendarMonth);
         }
         finally
         {

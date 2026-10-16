@@ -10,30 +10,23 @@ namespace TokenChecker.App.Tests;
 public class DailyCostTextTests
 {
     [Fact]
-    public void Format_Japanese_ShowsYenNoDecimals()
+    public void Amount_Japanese_RoundsYenToWholeUnits()
     {
-        var original = CultureInfo.CurrentCulture;
-        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ja-JP");
-        Strings.Apply(japanese: true);
-        try
+        WithJapaneseCulture(() =>
         {
-            Assert.Equal("¥1,235 (daily)", DailyCostText.Format(new DailyCost(8.5m, 1234.5m)));
-        }
-        finally
-        {
-            CultureInfo.CurrentCulture = original;
-        }
+            Strings.Apply(japanese: true);
+            Assert.Equal("¥1,235", DailyCostText.Amount(new DailyCost(8.5m, 1234.5m)));
+        });
     }
 
     [Fact]
-    public void Format_English_ShowsDollarsWithCents()
+    public void Amount_English_ShowsDollarsWithCents()
     {
         Strings.Apply(japanese: false);
         try
         {
             // USD value drives the dollar form; the JPY value is ignored.
-            Assert.Equal("$12.34 (daily)", DailyCostText.Format(new DailyCost(12.34m, 1900m)));
-            Assert.Equal("$1,234.50 (daily)", DailyCostText.Format(new DailyCost(1234.5m, 190000m)));
+            Assert.Equal("$1,234.50", DailyCostText.Amount(new DailyCost(1234.5m, 190000m)));
         }
         finally
         {
@@ -62,11 +55,11 @@ public class DailyCostTextTests
     }
 
     [Fact]
-    public void Labels_FollowTheUiLanguage()
+    public void Labels_StayEnglishInBothLanguages()
     {
         Strings.Apply(japanese: true);
-        Assert.Equal("今日", DailyCostText.TodayLabel);
-        Assert.Equal("今月", DailyCostText.MonthLabel);
+        Assert.Equal("Today", DailyCostText.TodayLabel);
+        Assert.Equal("This month", DailyCostText.MonthLabel);
 
         Strings.Apply(japanese: false);
         try
@@ -98,40 +91,6 @@ public class DailyCostTextTests
         {
             Strings.Apply(japanese: true);
         }
-    }
-
-    [Fact]
-    public void MinimumCost_WithMonth_AppendsTheMonthlyTotal()
-    {
-        WithJapaneseCulture(() =>
-        {
-            Strings.Apply(japanese: true);
-            Assert.Equal(
-                "¥1,234 / 月¥23,456",
-                DailyCostText.MinimumCost(new DailyCost(8m, 1234m), new DailyCost(156m, 23456m)));
-        });
-
-        Strings.Apply(japanese: false);
-        try
-        {
-            Assert.Equal(
-                "$12.34 / mo $123.45",
-                DailyCostText.MinimumCost(new DailyCost(12.34m, 1900m), new DailyCost(123.45m, 19000m)));
-        }
-        finally
-        {
-            Strings.Apply(japanese: true);
-        }
-    }
-
-    [Fact]
-    public void MinimumCost_WithoutMonth_KeepsTheTodayOnlyForm()
-    {
-        WithJapaneseCulture(() =>
-        {
-            Strings.Apply(japanese: true);
-            Assert.Equal("¥1,234 (daily)", DailyCostText.MinimumCost(new DailyCost(8m, 1234m), null));
-        });
     }
 
     [Fact]
