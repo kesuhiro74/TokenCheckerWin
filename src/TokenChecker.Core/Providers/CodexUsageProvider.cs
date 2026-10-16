@@ -78,13 +78,18 @@ public sealed class CodexUsageProvider : IUsageProvider
             var decision = CodexAccountClassifier.Classify(
                 accountState.AccountIsNull, accountState.AccountType, accountState.RequiresOpenAiAuth);
 
+            // The plan label is known as soon as account/read returns, so it
+            // survives a later rate-limit read failure.
+            var planExtras = BuildPlanExtras(accountState.PlanType);
+
             if (!decision.CanProceed)
             {
                 return new ServiceUsage(
                     ServiceName,
                     decision.Status,
                     $"{decision.Message} {accountState.ToDebugMessage()}",
-                    Array.Empty<RateLimitWindow>());
+                    Array.Empty<RateLimitWindow>(),
+                    planExtras);
             }
 
             JsonNode rateLimits;
@@ -92,7 +97,12 @@ public sealed class CodexUsageProvider : IUsageProvider
             {
                 rateLimits = await client.SendRequestAsync(
                     "account/rateLimits/read",
-                    null,
+                    // Asking for the credit details is what populates
+                    // rateLimitResetCredits.credits, which carries the expiry
+                    // of each unused reset credit. Reading them is harmless;
+                    // account/rateLimitResetCredit/consume (which would SPEND
+                    // one) is never called.
+                    new { excludeResetCreditDetails = false },
                     timeout.Token).ConfigureAwait(false);
             }
             catch (CodexAppServerException ex)
@@ -101,10 +111,13 @@ public sealed class CodexUsageProvider : IUsageProvider
                     ServiceName,
                     ProviderStatus.Error,
                     $"Codex rate limits could not be read. {accountState.ToDebugMessage()} error={ex.SafeSummary}",
-                    Array.Empty<RateLimitWindow>());
+                    Array.Empty<RateLimitWindow>(),
+                    planExtras);
             }
 
             var windows = ParseRateLimitWindows(rateLimits).ToArray();
+            var parsedExtras = CodexRateLimitsExtrasParser.Parse(rateLimits, accountState.PlanType);
+            var extras = parsedExtras.IsEmpty ? null : parsedExtras;
 
             return new ServiceUsage(
                 ServiceName,
@@ -112,7 +125,8 @@ public sealed class CodexUsageProvider : IUsageProvider
                 windows.Length > 0
                     ? $"Codex usage data was read. {accountState.ToDebugMessage()}"
                     : $"Codex rate limits were not present in the app-server response. {accountState.ToDebugMessage()}",
-                windows);
+                windows,
+                extras);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -142,9 +156,18 @@ public sealed class CodexUsageProvider : IUsageProvider
         var requiresOpenAiAuth = response["requiresOpenaiAuth"]?.GetValue<bool>() ?? false;
         var accountIsNull = IsJsonNull(account);
         var accountType = accountIsNull ? null : GetString(account?["type"]);
-        var planTypePresent = !accountIsNull && !IsJsonNull(account?["planType"]);
+        // planType is a plan enum (free/plus/pro/team/...), never an identity.
+        // No other field of `account` is read; the email in particular is not.
+        var planType = accountIsNull ? null : GetString(account?["planType"]);
+        var planTypePresent = planType is not null;
 
-        return new AccountState(accountIsNull, accountType, requiresOpenAiAuth, planTypePresent);
+        return new AccountState(accountIsNull, accountType, requiresOpenAiAuth, planTypePresent, planType);
+    }
+
+    private static ServiceExtras? BuildPlanExtras(string? planType)
+    {
+        var planLabel = CodexPlanLabel.From(planType);
+        return planLabel is null ? null : new ServiceExtras(PlanLabel: planLabel);
     }
 
     private static IEnumerable<RateLimitWindow> ParseRateLimitWindows(JsonNode response)
@@ -234,8 +257,10 @@ public sealed class CodexUsageProvider : IUsageProvider
         return unixSeconds is null ? null : DateTimeOffset.FromUnixTimeSeconds(unixSeconds.Value);
     }
 
+    // Tolerant on purpose: a non-string value (or null) yields null rather
+    // than throwing, so one unexpected field kind cannot abort the whole read.
     private static string? GetString(JsonNode? node)
-        => IsJsonNull(node) ? null : node?.GetValue<string>();
+        => node is null || node.GetValueKind() != JsonValueKind.String ? null : node.GetValue<string>();
 
     private static long? GetLong(JsonNode? node)
     {
@@ -282,7 +307,8 @@ public sealed class CodexUsageProvider : IUsageProvider
         bool AccountIsNull,
         string? AccountType,
         bool RequiresOpenAiAuth,
-        bool PlanTypePresent)
+        bool PlanTypePresent,
+        string? PlanType)
     {
         public string ToDebugMessage()
             => $"accountNull={AccountIsNull.ToString(CultureInfo.InvariantCulture).ToLowerInvariant()}; "

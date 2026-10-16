@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using TokenChecker.Core;
 using Xunit;
 
@@ -65,6 +65,7 @@ public class MinimumLineComposerTests
                 FiveHour(38.0, FiveHourReset),
                 Weekly(39.0, WeeklyReset),
                 new DailyCost(0.29m, 46m),
+                monthCost: null,
                 NowUtc);
 
             AssertRuns(runs,
@@ -110,6 +111,7 @@ public class MinimumLineComposerTests
             fiveHour: null,
             Weekly(39.0, WeeklyReset),
             dailyCost: null,
+            monthCost: null,
             NowUtc);
 
         AssertRuns(runs,
@@ -154,6 +156,7 @@ public class MinimumLineComposerTests
             FiveHour(38.0, FiveHourReset),
             Weekly(39.0, WeeklyReset),
             dailyCost: null,
+            monthCost: null,
             NowUtc);
 
         // Ends on the weekly reset stamp: no money icon, no cost, and no
@@ -217,6 +220,54 @@ public class MinimumLineComposerTests
         finally
         {
             Strings.Apply(japanese: true);
+        }
+    }
+
+    [Fact]
+    public void Compose_WithMonthCost_FoldsBothAmountsIntoTheSameCostRun()
+    {
+        var original = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ja-JP");
+        Strings.Apply(japanese: true);
+        try
+        {
+            var runs = MinimumLineComposer.Compose(
+                "Claude", StatusLineGlyphs.Claude, null, null,
+                new DailyCost(8m, 1234m),
+                new DailyCost(156m, 23456m));
+
+            // Both amounts ride in ONE Cost run, so the month figure adds no
+            // separator and the two rows' alignment columns are unaffected
+            // (3 = the two window separators plus the cost segment's own).
+            var cost = Assert.Single(runs, run => run.Kind == MinimumRunKind.Cost);
+            Assert.Equal("¥1,234 / 月¥23,456", cost.Text);
+            Assert.Equal(3, runs.Count(run => run.Kind == MinimumRunKind.Separator));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [Fact]
+    public void Compose_MonthCostUnknown_KeepsTheTodayOnlyCostRun()
+    {
+        var original = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ja-JP");
+        Strings.Apply(japanese: true);
+        try
+        {
+            var runs = MinimumLineComposer.Compose(
+                "Claude", StatusLineGlyphs.Claude, null, null,
+                new DailyCost(8m, 1234m),
+                monthCost: null);
+
+            var cost = Assert.Single(runs, run => run.Kind == MinimumRunKind.Cost);
+            Assert.Equal("¥1,234 (daily)", cost.Text);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
         }
     }
 

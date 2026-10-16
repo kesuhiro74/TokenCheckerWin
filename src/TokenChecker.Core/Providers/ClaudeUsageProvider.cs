@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -19,6 +18,11 @@ public sealed class ClaudeUsageProvider : IUsageProvider
     {
         Timeout = Timeout.InfiniteTimeSpan
     };
+
+    // In-memory only (never persisted): after a 429 the endpoint is left alone
+    // until this instant, per the Retry-After header. Written and read from
+    // the single refresh path, so no extra synchronization is needed.
+    private DateTimeOffset? _rateLimitedUntilUtc;
 
     public string ServiceName => "Claude";
 
@@ -57,14 +61,18 @@ public sealed class ClaudeUsageProvider : IUsageProvider
                 ServiceName,
                 ProviderStatus.Available,
                 $"{message} usageApi=available;",
-                usageResult.Windows);
+                usageResult.Windows,
+                usageResult.Extras);
         }
 
         return new ServiceUsage(
             ServiceName,
             usageResult.Status,
             $"{message} usageApi={usageResult.SafeSummary};",
-            Array.Empty<RateLimitWindow>());
+            Array.Empty<RateLimitWindow>(),
+            // The plan label comes from the credentials file, so it is known
+            // even when the usage call itself failed.
+            usageResult.Extras);
     }
 
     private static async Task<bool> HasVersionAsync(string claudeCommand, CancellationToken cancellationToken)
@@ -178,7 +186,7 @@ public sealed class ClaudeUsageProvider : IUsageProvider
         }
     }
 
-    private static async Task<ClaudeUsageReadResult> TryReadUsageWindowsAsync(
+    private async Task<ClaudeUsageReadResult> TryReadUsageWindowsAsync(
         string configDirectory,
         CancellationToken cancellationToken)
     {
@@ -186,7 +194,13 @@ public sealed class ClaudeUsageProvider : IUsageProvider
 
         try
         {
-            var accessToken = await TryReadAccessTokenAsync(configDirectory, cancellationToken).ConfigureAwait(false);
+            // One read of the credentials file per refresh: it yields the
+            // access token plus the only two non-secret values we use (the
+            // plan tier fields behind the plan label).
+            var credentials = await ReadCredentialShapeAsync(configDirectory, cancellationToken).ConfigureAwait(false);
+            var planExtras = BuildPlanExtras(credentials);
+            var accessToken = credentials.AccessToken;
+
             if (string.IsNullOrWhiteSpace(accessToken))
             {
                 // .credentials.json exists but contains no usable access token.
@@ -195,7 +209,16 @@ public sealed class ClaudeUsageProvider : IUsageProvider
                 // we expect. Treat it as "not logged in" so the UI can prompt
                 // the user to log in instead of mislabeling it as a transient
                 // error or rate-limit event.
-                return ClaudeUsageReadResult.Failed(ProviderStatus.NotLoggedIn, "accessTokenPresent=false");
+                return ClaudeUsageReadResult.Failed(ProviderStatus.NotLoggedIn, "accessTokenPresent=false", planExtras);
+            }
+
+            // Honor a Retry-After cooldown from an earlier 429 before issuing
+            // any HTTP at all, so a rate-limited account is not hammered by
+            // the refresh timer.
+            var now = DateTimeOffset.UtcNow;
+            if (_rateLimitedUntilUtc is { } until && until > now)
+            {
+                return ClaudeUsageReadResult.Failed(ProviderStatus.RateLimited, "rateLimited;cooldown", planExtras);
             }
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -210,20 +233,31 @@ public sealed class ClaudeUsageProvider : IUsageProvider
 
             if (ClaudeUsageStatusMapper.Classify(response.StatusCode) is { } httpFailure)
             {
-                return ClaudeUsageReadResult.Failed(httpFailure.Status, httpFailure.SafeSummary);
+                if (httpFailure.Status == ProviderStatus.RateLimited)
+                {
+                    StartRateLimitCooldown(response);
+                }
+
+                return ClaudeUsageReadResult.Failed(httpFailure.Status, httpFailure.SafeSummary, planExtras);
             }
+
+            // A success clears any stale cooldown.
+            _rateLimitedUntilUtc = null;
 
             var body = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
             var root = JsonNode.Parse(body);
             if (root is null)
             {
-                return ClaudeUsageReadResult.Failed(ProviderStatus.Error, "invalidJson");
+                return ClaudeUsageReadResult.Failed(ProviderStatus.Error, "invalidJson", planExtras);
             }
 
-            var windows = ParseUsageWindows(root).ToArray();
-            return windows.Length > 0
-                ? ClaudeUsageReadResult.Available(windows)
-                : ClaudeUsageReadResult.Failed(ProviderStatus.Error, "unexpectedJson");
+            var parsed = ClaudeUsageResponseParser.Parse(root, credentials.SubscriptionType, credentials.RateLimitTier);
+            // An all-empty Extras carries nothing, so hand back null instead
+            // and keep it out of the serialized snapshot entirely.
+            var extras = parsed.Extras.IsEmpty ? null : parsed.Extras;
+            return parsed.Windows.Count > 0
+                ? ClaudeUsageReadResult.Available(parsed.Windows, extras)
+                : ClaudeUsageReadResult.Failed(ProviderStatus.Error, "unexpectedJson", extras);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -243,22 +277,152 @@ public sealed class ClaudeUsageProvider : IUsageProvider
         }
     }
 
-    private static async Task<string?> TryReadAccessTokenAsync(string configDirectory, CancellationToken cancellationToken)
+    private void StartRateLimitCooldown(HttpResponseMessage response)
+    {
+        var headerValue = response.Headers.TryGetValues("Retry-After", out var values)
+            ? values.FirstOrDefault()
+            : null;
+
+        var cooldown = ClaudeRetryAfter.Parse(headerValue, DateTimeOffset.UtcNow);
+        _rateLimitedUntilUtc = cooldown > TimeSpan.Zero
+            ? DateTimeOffset.UtcNow + cooldown
+            : null;
+    }
+
+    // Plan label only: it comes from the credentials file, so it is available
+    // regardless of whether the usage call succeeds.
+    private static ServiceExtras? BuildPlanExtras(CredentialShape credentials)
+    {
+        var planLabel = ClaudePlanLabel.From(credentials.SubscriptionType, credentials.RateLimitTier);
+        return planLabel is null ? null : new ServiceExtras(PlanLabel: planLabel);
+    }
+
+    // Diagnostic-only probe used by TokenChecker.Poc's --usage-shape mode to
+    // inspect the *shape* of the Claude usage API response (key paths and
+    // value kinds, never raw secret values) ahead of implementing per-model
+    // weekly limits / extra_usage / limits[] parsing. It reuses this
+    // provider's own credential directory resolution and HTTP call (same
+    // endpoint, same headers, same bearer token source) instead of the
+    // caller duplicating any of that. It does not change, and is not called
+    // by, GetUsageAsync/TryReadUsageWindowsAsync above.
+    public async Task<ClaudeUsageShapeProbe> ProbeUsageShapeAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var config = GetConfigDirectory();
+        if (!CredentialsFileExists(config.Directory))
+        {
+            return ClaudeUsageShapeProbe.NoCredentials();
+        }
+
+        var credentialShape = await ReadCredentialShapeAsync(config.Directory, cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(credentialShape.AccessToken))
+        {
+            return new ClaudeUsageShapeProbe(
+                CredentialsPresent: true,
+                OauthKeys: credentialShape.OauthKeys,
+                SubscriptionType: credentialShape.SubscriptionType,
+                RateLimitTier: credentialShape.RateLimitTier,
+                AccessTokenPresent: false,
+                HttpStatusCode: null,
+                ResponseHeaders: new Dictionary<string, string>(),
+                Body: null,
+                ErrorSummary: "accessTokenMissing");
+        }
+
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(UsageTimeout);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, UsageEndpoint);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credentialShape.AccessToken);
+            request.Headers.TryAddWithoutValidation("anthropic-beta", OAuthBetaHeader);
+
+            using var response = await HttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
+                .ConfigureAwait(false);
+
+            var headers = new Dictionary<string, string>();
+            foreach (var header in response.Headers)
+            {
+                if (header.Key.StartsWith("anthropic-ratelimit-", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(header.Key, "retry-after", StringComparison.OrdinalIgnoreCase))
+                {
+                    headers[header.Key] = string.Join(",", header.Value);
+                }
+            }
+
+            JsonNode? body = null;
+            var statusCode = (int)response.StatusCode;
+            if (statusCode is >= 200 and <= 299)
+            {
+                var text = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
+                body = JsonNode.Parse(text);
+            }
+
+            return new ClaudeUsageShapeProbe(
+                CredentialsPresent: true,
+                OauthKeys: credentialShape.OauthKeys,
+                SubscriptionType: credentialShape.SubscriptionType,
+                RateLimitTier: credentialShape.RateLimitTier,
+                AccessTokenPresent: true,
+                HttpStatusCode: statusCode,
+                ResponseHeaders: headers,
+                Body: body,
+                ErrorSummary: null);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return new ClaudeUsageShapeProbe(
+                true, credentialShape.OauthKeys, credentialShape.SubscriptionType, credentialShape.RateLimitTier,
+                true, null, new Dictionary<string, string>(), null, "timeout");
+        }
+        catch (JsonException)
+        {
+            return new ClaudeUsageShapeProbe(
+                true, credentialShape.OauthKeys, credentialShape.SubscriptionType, credentialShape.RateLimitTier,
+                true, null, new Dictionary<string, string>(), null, "invalidJson");
+        }
+        catch
+        {
+            return new ClaudeUsageShapeProbe(
+                true, credentialShape.OauthKeys, credentialShape.SubscriptionType, credentialShape.RateLimitTier,
+                true, null, new Dictionary<string, string>(), null, "usageReadFailed");
+        }
+    }
+
+    private sealed record CredentialShape(
+        IReadOnlyList<string> OauthKeys,
+        string? SubscriptionType,
+        string? RateLimitTier,
+        string? AccessToken);
+
+    private static async Task<CredentialShape> ReadCredentialShapeAsync(string configDirectory, CancellationToken cancellationToken)
     {
         try
         {
             var credentialsPath = Path.Combine(configDirectory, CredentialsFileName);
             await using var stream = File.OpenRead(credentialsPath);
             var root = await JsonNode.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
-            if (root is null)
-            {
-                return null;
-            }
+            var oauth = root?["claudeAiOauth"] as JsonObject;
 
-            return GetString(root["claudeAiOauth"]?["accessToken"])
-                ?? GetString(root["claudeAiOauth"]?["access_token"])
-                ?? GetString(root["accessToken"])
-                ?? GetString(root["access_token"]);
+            var keys = oauth is null
+                ? Array.Empty<string>()
+                : oauth.Select(pair => pair.Key).ToArray();
+
+            var subscriptionType = oauth is null ? null : GetString(oauth["subscriptionType"]);
+            var rateLimitTier = oauth is null ? null : GetString(oauth["rateLimitTier"]);
+            var accessToken = GetString(oauth?["accessToken"])
+                ?? GetString(oauth?["access_token"])
+                ?? GetString(root?["accessToken"])
+                ?? GetString(root?["access_token"]);
+
+            return new CredentialShape(keys, subscriptionType, rateLimitTier, accessToken);
         }
         catch (OperationCanceledException)
         {
@@ -266,87 +430,18 @@ public sealed class ClaudeUsageProvider : IUsageProvider
         }
         catch
         {
-            return null;
+            return new CredentialShape(Array.Empty<string>(), null, null, null);
         }
-    }
-
-    private static IEnumerable<RateLimitWindow> ParseUsageWindows(JsonNode root)
-    {
-        var fiveHour = ParseUsageWindow(root["five_hour"], "Claude 5h", 300);
-        if (fiveHour is not null)
-        {
-            yield return fiveHour;
-        }
-
-        var sevenDay = ParseUsageWindow(root["seven_day"], "Claude Weekly", 10080);
-        if (sevenDay is not null)
-        {
-            yield return sevenDay;
-        }
-    }
-
-    private static RateLimitWindow? ParseUsageWindow(JsonNode? node, string name, long durationMins)
-    {
-        if (node is null || node.GetValueKind() == JsonValueKind.Null)
-        {
-            return null;
-        }
-
-        var usedPercent = GetDouble(node["utilization"]);
-        if (usedPercent is null)
-        {
-            return null;
-        }
-
-        usedPercent = Math.Clamp(usedPercent.Value, 0, 100);
-        var resetAt = GetDateTimeOffset(node["resets_at"]);
-        var used = (long)Math.Round(usedPercent.Value, MidpointRounding.AwayFromZero);
-        var remaining = Math.Max(0, 100 - (long)Math.Ceiling(usedPercent.Value));
-
-        return new RateLimitWindow(
-            name,
-            resetAt,
-            used,
-            100,
-            remaining,
-            usedPercent,
-            durationMins);
     }
 
     private static string? GetString(JsonNode? node)
     {
-        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+        if (node is null || node.GetValueKind() != JsonValueKind.String)
         {
             return null;
         }
 
         return node.GetValue<string>();
-    }
-
-    private static double? GetDouble(JsonNode? node)
-    {
-        if (node is null || node.GetValueKind() == JsonValueKind.Null)
-        {
-            return null;
-        }
-
-        if (node.GetValueKind() == JsonValueKind.Number)
-        {
-            return node.GetValue<double>();
-        }
-
-        var text = node.GetValue<string>();
-        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : null;
-    }
-
-    private static DateTimeOffset? GetDateTimeOffset(JsonNode? node)
-    {
-        var text = GetString(node);
-        return DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
-            ? parsed.ToUniversalTime()
-            : null;
     }
 
     private static string BuildMessage(bool claudeFound, bool versionPresent, bool credentialsPresent, string configDirSource)
@@ -367,12 +462,13 @@ public sealed class ClaudeUsageProvider : IUsageProvider
     private sealed record ClaudeUsageReadResult(
         ProviderStatus Status,
         string SafeSummary,
-        IReadOnlyList<RateLimitWindow> Windows)
+        IReadOnlyList<RateLimitWindow> Windows,
+        ServiceExtras? Extras)
     {
-        public static ClaudeUsageReadResult Available(IReadOnlyList<RateLimitWindow> windows)
-            => new(ProviderStatus.Available, "available", windows);
+        public static ClaudeUsageReadResult Available(IReadOnlyList<RateLimitWindow> windows, ServiceExtras? extras)
+            => new(ProviderStatus.Available, "available", windows, extras);
 
-        public static ClaudeUsageReadResult Failed(ProviderStatus status, string safeSummary)
-            => new(status, safeSummary, Array.Empty<RateLimitWindow>());
+        public static ClaudeUsageReadResult Failed(ProviderStatus status, string safeSummary, ServiceExtras? extras = null)
+            => new(status, safeSummary, Array.Empty<RateLimitWindow>(), extras);
     }
 }

@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using TokenChecker.Core;
 using TokenChecker.Core.Providers;
+using TokenChecker.Poc.ClaudeUsage;
 using TokenChecker.Poc.GitHubCopilot;
 using TokenChecker.Poc.LocalCost;
 
@@ -17,6 +18,14 @@ if (args.Any(a => string.Equals(a, "--github-copilot", StringComparison.OrdinalI
 if (args.Any(a => string.Equals(a, "--daily-cost", StringComparison.OrdinalIgnoreCase)))
 {
     return await DailyCostPocRunner.RunAsync();
+}
+
+// Opt-in investigation probe for the Claude usage API response shape. Calls
+// the live endpoint at most once per run. Without this flag the default
+// Claude + Codex output below is unchanged.
+if (args.Any(a => string.Equals(a, "--usage-shape", StringComparison.OrdinalIgnoreCase)))
+{
+    return await ClaudeUsageShapePocRunner.RunAsync();
 }
 
 var providers = new IUsageProvider[]

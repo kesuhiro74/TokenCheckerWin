@@ -19,6 +19,10 @@ public class ModelPricingTests
     [InlineData("gpt-5.6-sol", "4", "20")]
     [InlineData("gpt-5.6-terra", "2", "12")]
     [InlineData("gpt-5.6-luna", "0.2", "1.2")]
+    [InlineData("gpt-6-astra", "10", "50")]
+    [InlineData("gpt-6.1-sol", "2", "10")]
+    [InlineData("gpt-6-sol", "2", "10")]
+    [InlineData("gpt-6-luna", "0.1", "0.5")]
     // gpt-5.1-codex has no dedicated entry and must fall back to "gpt-5".
     [InlineData("gpt-5.1-codex", "1.25", "10")]
     // The legacy full id is caught by the "claude-opus-4-2" prefix entry.
@@ -54,6 +58,11 @@ public class ModelPricingTests
     [InlineData("claude-fable-5", "claude-fable-5", "1")]
     [InlineData("claude-mythos-5-1", "claude-mythos-5-1", "0.25")]
     [InlineData("claude-mythos-5", "claude-mythos", "1")]
+    // gpt-6-sol and gpt-6.1-sol share the same input/output/cache-write rates
+    // but differ on cached-input (cache read); neither id is a prefix of the
+    // other, so both must resolve to their own distinct entry.
+    [InlineData("gpt-6.1-sol", "gpt-6.1-sol", "0.1")]
+    [InlineData("gpt-6-sol", "gpt-6-sol", "0.2")]
     public void Find_PointReleases_UseTheirOwnCacheReadRate(string modelId, string expectedPrefix, string expectedCacheRead)
     {
         var price = ModelPricing.Find(modelId);

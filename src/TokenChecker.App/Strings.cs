@@ -105,7 +105,32 @@ internal static class Strings
         ["最終更新: 更新中"] = "Last updated: updating",
         ["最終更新: {0}"] = "Last updated: {0}",
         ["{0}: リセット時刻不明"] = "{0}: reset time unknown",
+        // Spend amounts (DailyCostText). Only the Japanese (yen) templates are
+        // looked up here — the dollar forms are invariant-culture literals in
+        // DailyCostText — so these entries exist for table parity.
         ["¥{0:N0} (daily)"] = "¥{0:N0} (daily)",
+        ["¥{0:N0}"] = "¥{0:N0}",
+        ["月¥{0:N0}"] = "mo ¥{0:N0}",
+        ["今日"] = "Today",
+        ["今月"] = "This month",
+        ["今月合計（API換算） {0}"] = "Month total (API est.) {0}",
+        ["今月のモデル別内訳"] = "This month by model",
+        ["API換算の推定額（ローカルログから計算）"] = "Estimated at API rates (computed from local logs)",
+        ["実際の請求額ではなく、API 単価で換算した推定額です"]
+            = "Not an actual bill — an estimate converted at API unit prices",
+        ["その他"] = "Other",
+        ["モデル不明"] = "Unknown model",
+        // Provider extras (ServiceExtrasText): per-model weekly limits, real
+        // money / credit spend, Codex reset credits, credit balance.
+        ["{0} 週 {1}%"] = "{0} weekly {1}%",
+        ["追加利用 {0} / {1}"] = "Extra spend {0} / {1}",
+        ["追加利用 {0}"] = "Extra spend {0}",
+        ["月次上限 {0} / {1} クレジット"] = "Monthly cap {0} / {1} credits",
+        ["追加利用 {0} クレジット"] = "Extra spend {0} credits",
+        ["リセット券 {0}枚（{1} まで）"] = "{0} reset credits (until {1})",
+        ["リセット券 {0}枚"] = "{0} reset credits",
+        ["クレジット 無制限"] = "Credits unlimited",
+        ["クレジット {0}"] = "Credits {0}",
 
         // ----- Tray menu & tooltips (TrayApplicationContext) -----
         ["今すぐ更新"] = "Refresh now",

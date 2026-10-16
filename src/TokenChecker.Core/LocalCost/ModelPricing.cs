@@ -50,6 +50,19 @@ public static class ModelPricing
         // OpenAI. GPT-5.6 rows use the standard short-context rates and list a
         // cache-write price; earlier models don't charge for cache writes (0).
         // Codex logs report no cache writes, so that column is informational.
+        // GPT-6 rows confirmed against https://developers.openai.com/api/docs/pricing
+        // (Standard tier, short-context table; platform.openai.com/docs/pricing
+        // redirects there) on 2026-10-16. "gpt-6-sol" and "gpt-6.1-sol" are
+        // distinct rows on that page (same input/output/cache-write, but
+        // different cached-input rate), so both are listed; the longer
+        // "gpt-6.1-sol" prefix outranks "gpt-6-sol" only when both could
+        // match, which they never do (neither string is a prefix of the
+        // other). No plain "gpt-6" or "gpt-6-terra"/"gpt-6.1-terra" row exists
+        // on that page, so no such fallback entry is added here.
+        new("gpt-6-astra", 10m, 50m, 12.5m, 1m),
+        new("gpt-6.1-sol", 2m, 10m, 2.5m, 0.1m),
+        new("gpt-6-sol", 2m, 10m, 2.5m, 0.2m),
+        new("gpt-6-luna", 0.1m, 0.5m, 0.125m, 0.01m),
         new("gpt-5.6-sol", 4m, 20m, 5m, 0.4m),
         new("gpt-5.6-terra", 2m, 12m, 2.5m, 0.2m),
         new("gpt-5.6-luna", 0.2m, 1.2m, 0.25m, 0.02m),

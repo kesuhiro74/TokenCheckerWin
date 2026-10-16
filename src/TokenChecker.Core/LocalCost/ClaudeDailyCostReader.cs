@@ -4,14 +4,14 @@ using System.Text.Json.Nodes;
 
 namespace TokenChecker.Core.LocalCost;
 
-// Aggregates today's token usage from the local Claude Code session logs
+// Aggregates token usage from the local Claude Code session logs
 // (~/.claude/projects/**/*.jsonl) and prices it with ModelPricing.
 //
-// Privacy invariant: only numeric token counts, model ids (used transiently
-// for pricing lookups), and message/request ids (used transiently for dedup)
-// are ever read into variables; of these, only the numeric totals are
-// returned. Conversation content, cwd values, and file paths are never
-// captured or returned.
+// Privacy invariant: only numeric token counts, model ids (used for pricing
+// lookups and the returned per-model breakdown), and message/request ids (used
+// transiently for dedup) are ever read into variables; of these, only the
+// numeric totals and model ids are returned. Conversation content, cwd values,
+// and file paths are never captured or returned.
 public static class ClaudeDailyCostReader
 {
     // Mirrors the config-dir resolution in ClaudeUsageProvider: CLAUDE_CONFIG_DIR
@@ -29,22 +29,44 @@ public static class ClaudeDailyCostReader
     // Sums assistant-message usage events whose timestamp falls in the UTC
     // half-open interval [startUtc, endUtc).
     public static DailyCostResult Compute(string projectsDirectory, DateTimeOffset startUtc, DateTimeOffset endUtc)
+        => ComputeMany(projectsDirectory, new[] { new CostInterval(startUtc, endUtc) })[0];
+
+    // Same aggregation as Compute, but for several UTC half-open intervals in a
+    // single pass over the logs (e.g. "today" and "this calendar month"), so
+    // the scan cost does not multiply with the number of ranges shown. The
+    // result is positionally aligned with `intervals`. Overlapping intervals
+    // are fine: an event is counted once in every interval that contains it,
+    // while dedup is global to the pass, so nested ranges stay consistent
+    // (today's totals are always a subset of the month's).
+    public static IReadOnlyList<DailyCostResult> ComputeMany(
+        string projectsDirectory,
+        IReadOnlyList<CostInterval> intervals)
     {
-        if (!Directory.Exists(projectsDirectory))
+        ArgumentNullException.ThrowIfNull(intervals);
+        if (intervals.Count == 0)
         {
-            return DailyCostResult.Empty;
+            return Array.Empty<DailyCostResult>();
         }
 
-        decimal costUsd = 0m;
-        long inputTokens = 0;
-        long outputTokens = 0;
-        long cacheWriteTokens = 0;
-        long cacheReadTokens = 0;
-        var eventCount = 0;
-        var unknownModelEvents = 0;
+        var accumulators = new DailyCostAccumulator[intervals.Count];
+        for (var i = 0; i < accumulators.Length; i++)
+        {
+            accumulators[i] = new DailyCostAccumulator();
+        }
 
-        // Dedup keys span all files: resumed sessions replay earlier assistant
-        // messages into a new .jsonl, so the same message can appear twice.
+        if (!Directory.Exists(projectsDirectory))
+        {
+            return intervals.Select(static _ => DailyCostResult.Empty).ToArray();
+        }
+
+        // The earliest interval start bounds the last-write-time prefilter: a
+        // file untouched since then cannot contain an in-range event for ANY
+        // of the intervals.
+        var earliestStartUtc = intervals.Min(interval => interval.StartUtc);
+
+        // Dedup keys span all files AND all intervals: resumed sessions replay
+        // earlier assistant messages into a new .jsonl, so the same message can
+        // appear twice.
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
 
         // Recursion is required: subagent transcripts live in subdirectories.
@@ -55,16 +77,16 @@ public static class ClaudeDailyCostReader
         }
         catch
         {
-            return DailyCostResult.Empty;
+            return intervals.Select(static _ => DailyCostResult.Empty).ToArray();
         }
 
         foreach (var file in files)
         {
             try
             {
-                // Files not touched since the interval started cannot contain
-                // in-range events (logs are append-only).
-                if (File.GetLastWriteTimeUtc(file) < startUtc.UtcDateTime)
+                // Files not touched since the earliest interval started cannot
+                // contain in-range events (logs are append-only).
+                if (File.GetLastWriteTimeUtc(file) < earliestStartUtc.UtcDateTime)
                 {
                     continue;
                 }
@@ -93,9 +115,11 @@ public static class ClaudeDailyCostReader
                             continue;
                         }
 
+                        // Rows outside every interval are skipped before dedup,
+                        // so they never claim a dedup key (this keeps the
+                        // single-interval behavior identical to before).
                         if (!TryGetTimestamp(root["timestamp"], out var timestamp)
-                            || timestamp < startUtc
-                            || timestamp >= endUtc)
+                            || !ContainsAny(intervals, timestamp))
                         {
                             continue;
                         }
@@ -126,7 +150,7 @@ public static class ClaudeDailyCostReader
                         var price = ModelPricing.Find(model);
                         if (price is null)
                         {
-                            unknownModelEvents++;
+                            AddUnknownModelEvent(intervals, accumulators, timestamp, model);
                             continue;
                         }
 
@@ -136,13 +160,15 @@ public static class ClaudeDailyCostReader
                         var cacheWrite = GetLong(usage["cache_creation_input_tokens"]);
                         var cacheRead = GetLong(usage["cache_read_input_tokens"]);
                         var output = GetLong(usage["output_tokens"]);
+                        var cost = ModelPricing.Cost(price, input, output, cacheWrite, cacheRead);
 
-                        eventCount++;
-                        inputTokens += input;
-                        outputTokens += output;
-                        cacheWriteTokens += cacheWrite;
-                        cacheReadTokens += cacheRead;
-                        costUsd += ModelPricing.Cost(price, input, output, cacheWrite, cacheRead);
+                        for (var i = 0; i < intervals.Count; i++)
+                        {
+                            if (intervals[i].Contains(timestamp))
+                            {
+                                accumulators[i].AddEvent(model!, cost, input, output, cacheWrite, cacheRead);
+                            }
+                        }
                     }
                     catch (JsonException)
                     {
@@ -162,9 +188,35 @@ public static class ClaudeDailyCostReader
             }
         }
 
-        return new DailyCostResult(
-            costUsd, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens,
-            eventCount, unknownModelEvents);
+        return accumulators.Select(static accumulator => accumulator.ToResult()).ToArray();
+    }
+
+    private static bool ContainsAny(IReadOnlyList<CostInterval> intervals, DateTimeOffset timestamp)
+    {
+        for (var i = 0; i < intervals.Count; i++)
+        {
+            if (intervals[i].Contains(timestamp))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void AddUnknownModelEvent(
+        IReadOnlyList<CostInterval> intervals,
+        DailyCostAccumulator[] accumulators,
+        DateTimeOffset timestamp,
+        string? modelId)
+    {
+        for (var i = 0; i < intervals.Count; i++)
+        {
+            if (intervals[i].Contains(timestamp))
+            {
+                accumulators[i].AddUnknownModelEvent(modelId);
+            }
+        }
     }
 
     private static bool TryGetTimestamp(JsonNode? node, out DateTimeOffset timestamp)

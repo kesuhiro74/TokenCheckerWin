@@ -212,4 +212,98 @@ public sealed class ClaudeDailyCostReaderTests : IDisposable
 
         Assert.Equal(1, result.EventCount);
     }
+
+    [Fact]
+    public void Compute_ReportsPerModelCostBreakdown()
+    {
+        WriteLog("proj/a.jsonl",
+            AssistantLine("2026-01-10T01:00:00Z", model: "claude-opus-4-8", messageId: "m1", requestId: "r1",
+                input: 1000, output: 1000),
+            AssistantLine("2026-01-10T02:00:00Z", model: "claude-opus-4-8", messageId: "m2", requestId: "r2",
+                input: 1000, output: 1000),
+            AssistantLine("2026-01-10T03:00:00Z", model: "claude-sonnet-5", messageId: "m3", requestId: "r3",
+                input: 1000, output: 1000),
+            // Unpriced model: no entry in the breakdown, counted separately.
+            AssistantLine("2026-01-10T04:00:00Z", model: "mystery-model-9", messageId: "m4", requestId: "r4"));
+
+        var result = ClaudeDailyCostReader.Compute(_root, StartUtc, EndUtc);
+
+        Assert.Equal(2, result.CostByModelUsd.Count);
+        // claude-opus-4-8: 2 x (1000*5 + 1000*25) / 1e6.
+        Assert.Equal(0.06m, result.CostByModelUsd["claude-opus-4-8"]);
+        // claude-sonnet-5: (1000*2 + 1000*10) / 1e6.
+        Assert.Equal(0.012m, result.CostByModelUsd["claude-sonnet-5"]);
+        Assert.Equal(1, result.UnknownModelEvents);
+        // The breakdown always sums to the total.
+        Assert.Equal(result.CostUsd, result.CostByModelUsd.Values.Sum());
+        Assert.Equal(1, result.UnknownModelEventsById["mystery-model-9"]);
+    }
+
+    [Fact]
+    public void ComputeMany_SingleScan_KeepsTodayASubsetOfTheMonth()
+    {
+        var monthStart = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var intervals = new[]
+        {
+            new CostInterval(StartUtc, EndUtc),       // "today"
+            new CostInterval(monthStart, EndUtc)      // "this month", contains today
+        };
+
+        WriteLog("proj/a.jsonl",
+            AssistantLine("2026-01-03T01:00:00Z", messageId: "m1", requestId: "r1"),   // month only
+            AssistantLine("2026-01-10T01:00:00Z", messageId: "m2", requestId: "r2"),   // today + month
+            AssistantLine("2025-12-31T23:00:00Z", messageId: "m3", requestId: "r3"));  // neither
+
+        var results = ClaudeDailyCostReader.ComputeMany(_root, intervals);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(1, results[0].EventCount);
+        Assert.Equal(2, results[1].EventCount);
+        Assert.True(results[0].CostUsd <= results[1].CostUsd);
+        Assert.Equal(10L, results[0].InputTokens);
+        Assert.Equal(20L, results[1].InputTokens);
+    }
+
+    [Fact]
+    public void ComputeMany_DedupIsGlobal_ButCountsOncePerInterval()
+    {
+        var monthStart = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var intervals = new[]
+        {
+            new CostInterval(StartUtc, EndUtc),
+            new CostInterval(monthStart, EndUtc)
+        };
+
+        // The same replayed event appears in two files: it must be counted
+        // once in EACH interval that contains it, not twice in either.
+        WriteLog("proj/a.jsonl", AssistantLine("2026-01-10T01:00:00Z", messageId: "m1", requestId: "r1"));
+        WriteLog("proj/b.jsonl", AssistantLine("2026-01-10T01:00:00Z", messageId: "m1", requestId: "r1"));
+
+        var results = ClaudeDailyCostReader.ComputeMany(_root, intervals);
+
+        Assert.Equal(1, results[0].EventCount);
+        Assert.Equal(1, results[1].EventCount);
+    }
+
+    [Fact]
+    public void ComputeMany_UsesEarliestStartForTheLastWriteTimePrefilter()
+    {
+        var monthStart = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        // Last written during the month but before "today": the month interval
+        // must still see it, so the prefilter has to use the earliest start.
+        var path = WriteLog("proj/a.jsonl", AssistantLine("2026-01-03T01:00:00Z"));
+        File.SetLastWriteTimeUtc(path, new DateTime(2026, 1, 3, 2, 0, 0, DateTimeKind.Utc));
+
+        var results = ClaudeDailyCostReader.ComputeMany(
+            _root,
+            new[] { new CostInterval(StartUtc, EndUtc), new CostInterval(monthStart, EndUtc) });
+
+        Assert.Equal(0, results[0].EventCount);
+        Assert.Equal(1, results[1].EventCount);
+    }
+
+    [Fact]
+    public void ComputeMany_NoIntervals_ReturnsEmptyList()
+        => Assert.Empty(ClaudeDailyCostReader.ComputeMany(_root, Array.Empty<CostInterval>()));
 }

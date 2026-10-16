@@ -8,7 +8,10 @@ namespace TokenChecker.App.Tests;
 // only, next to the weekly label). nowUtc is injected so the remaining-time
 // breakdown is deterministic; expected clock strings are rebuilt from the same
 // ToLocalTime() conversion so the assertions are timezone-independent. Verified
-// in the default Japanese language (LocalizationTests covers the English map).
+// in the default Japanese language (LocalizationTests covers the English map) —
+// hence the StringsLanguage collection: these assertions read the global
+// language flag, so they must not run beside a test that flips it.
+[Collection("StringsLanguage")]
 public class ResetTimeFormatterTests
 {
     private static readonly DateTimeOffset NowUtc = new(2026, 6, 12, 3, 0, 0, TimeSpan.Zero);

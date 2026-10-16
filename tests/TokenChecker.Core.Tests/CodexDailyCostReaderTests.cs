@@ -210,4 +210,72 @@ public sealed class CodexDailyCostReaderTests : IDisposable
         Assert.Equal(0, result.InputTokens);
         Assert.Equal(500, result.CacheReadTokens);
     }
+
+    [Fact]
+    public void Compute_ReportsPerModelCostBreakdown()
+    {
+        WriteRollout(2026, 1, 10, "rollout-a.jsonl",
+            TurnContextLine("2026-01-10T00:30:00Z", "gpt-5.6-terra"),
+            TokenCountLine("2026-01-10T01:00:00Z", input: 1000, cached: 0, output: 1000, total: 2000),
+            TurnContextLine("2026-01-10T02:00:00Z", "gpt-5.6-luna"),
+            TokenCountLine("2026-01-10T02:30:00Z", input: 1000, cached: 0, output: 1000, total: 2001),
+            TurnContextLine("2026-01-10T03:00:00Z", "mystery-model-9"),
+            TokenCountLine("2026-01-10T03:30:00Z", input: 1000, cached: 0, output: 1000, total: 2002));
+
+        var result = CodexDailyCostReader.Compute(_root, StartUtc, EndUtc);
+
+        Assert.Equal(2, result.CostByModelUsd.Count);
+        // gpt-5.6-terra: (1000*2 + 1000*12) / 1e6.
+        Assert.Equal(0.014m, result.CostByModelUsd["gpt-5.6-terra"]);
+        // gpt-5.6-luna: (1000*0.2 + 1000*1.2) / 1e6.
+        Assert.Equal(0.0014m, result.CostByModelUsd["gpt-5.6-luna"]);
+        Assert.Equal(1, result.UnknownModelEvents);
+        Assert.Equal(result.CostUsd, result.CostByModelUsd.Values.Sum());
+        Assert.Equal(1, result.UnknownModelEventsById["mystery-model-9"]);
+    }
+
+    [Fact]
+    public void ComputeMany_WalksEveryDayDirectoryFromTheMonthStart()
+    {
+        var monthStart = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var intervals = new[]
+        {
+            new CostInterval(StartUtc, EndUtc),       // "today"
+            new CostInterval(monthStart, EndUtc)      // "this month", contains today
+        };
+
+        // Three separate day directories: only the month interval reaches the
+        // first two, and the widest span has to drive the directory walk.
+        WriteRollout(2026, 1, 2, "rollout-a.jsonl", TokenCountLine("2026-01-02T01:00:00Z", total: 1));
+        WriteRollout(2026, 1, 6, "rollout-b.jsonl", TokenCountLine("2026-01-06T01:00:00Z", total: 2));
+        WriteRollout(2026, 1, 10, "rollout-c.jsonl", TokenCountLine("2026-01-10T01:00:00Z", total: 3));
+
+        var results = CodexDailyCostReader.ComputeMany(_root, intervals);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(1, results[0].EventCount);
+        Assert.Equal(3, results[1].EventCount);
+        Assert.True(results[0].CostUsd <= results[1].CostUsd);
+    }
+
+    [Fact]
+    public void ComputeMany_DedupIsGlobal_ButCountsOncePerInterval()
+    {
+        var monthStart = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        // A resumed session replays the same event into a second rollout.
+        WriteRollout(2026, 1, 10, "rollout-a.jsonl", TokenCountLine("2026-01-10T01:00:00Z"));
+        WriteRollout(2026, 1, 10, "rollout-b.jsonl", TokenCountLine("2026-01-10T01:00:00Z"));
+
+        var results = CodexDailyCostReader.ComputeMany(
+            _root,
+            new[] { new CostInterval(StartUtc, EndUtc), new CostInterval(monthStart, EndUtc) });
+
+        Assert.Equal(1, results[0].EventCount);
+        Assert.Equal(1, results[1].EventCount);
+    }
+
+    [Fact]
+    public void ComputeMany_NoIntervals_ReturnsEmptyList()
+        => Assert.Empty(CodexDailyCostReader.ComputeMany(_root, Array.Empty<CostInterval>()));
 }

@@ -59,7 +59,7 @@ Stop-Process -Name TokenChecker -Force -ErrorAction SilentlyContinue   # exe ロ
 dotnet test
 ```
 
-本スイートはアプリの不変条件を固定している（**80%/95% 閾値**＝`UsageTheme.AccentColor`、**プライバシー masking**＝`DiagnosticMasker`、**Copilot allowance（Free=200 ほか）**＝`AppSettings.CopilotCreditAllowance`、**100%予測/本日9:00増分**＝`CopilotUsageTracker`、**Copilot 現在期間ベースライン（プラン変更時の手動補正）**＝`CopilotBaseline`、**設定マイグレーション**＝`SettingsStore.ApplyLegacyMigrations`、**プロバイダ失敗の分離**＝`UsageAggregator`、**Normalize/Clone**）。これらの領域を変更したらテストを更新し緑を維持する。テスト容易化のための内部シーム（`CopilotUsageStore`/`CopilotUsageTracker` の `internal` ctor、`SettingsStore.ApplyLegacyMigrations` の `internal` 化、App の `InternalsVisibleTo`）以外で本番コードのテスト用改変はしない。
+本スイートはアプリの不変条件を固定している（**80%/95% 閾値**＝`UsageTheme.AccentColor`、**プライバシー masking**＝`DiagnosticMasker`、**Copilot allowance（Free=200 ほか）**＝`AppSettings.CopilotCreditAllowance`、**100%予測/本日9:00増分**＝`CopilotUsageTracker`、**Copilot 現在期間ベースライン（プラン変更時の手動補正）**＝`CopilotBaseline`、**設定マイグレーション**＝`SettingsStore.ApplyLegacyMigrations`、**プロバイダ失敗の分離**＝`UsageAggregator`、**金額表記**＝`DailyCostText`、**モデル別内訳の正規化・上位5件＋その他**＝`CostBreakdown`、**追加情報の行**＝`ServiceExtrasText`、**フッター合計の表示条件**＝`MonthlyTotal`、**Extras の永続化と Message 除去**＝`LastUsageStore`、**Normalize/Clone**）。これらの領域を変更したらテストを更新し緑を維持する。テスト容易化のための内部シーム（`CopilotUsageStore`/`CopilotUsageTracker`/`LastUsageStore` の `internal` ctor、`SettingsStore.ApplyLegacyMigrations` の `internal` 化、App の `InternalsVisibleTo`）以外で本番コードのテスト用改変はしない。
 
 **ローカルゲート（pre-push フック）**: `git push` の直前に `dotnet test` を自動実行し、失敗したら push を中止する。リポジトリの `.githooks/pre-push` がそれを行う。**クローンごとに一度だけ**有効化する:
 
@@ -85,17 +85,25 @@ git config core.hooksPath .githooks
 
 ### プロバイダの要点
 
-- **Claude** (`ClaudeUsageProvider`): 非公式 OAuth usage endpoint (`api.anthropic.com/api/oauth/usage`) を叩く。`~/.claude/.credentials.json`（`CLAUDE_CONFIG_DIR` で上書き可）から access token を**読むだけ**で出力しない。`five_hour`→300分窓、`seven_day`→10080分窓。HTTP 401/403→`Unauthorized`、429→`RateLimited`、5xx/タイムアウト/JSON エラー→`Error`。credentials はあるが token 取得不可→`Error` ではなく `NotLoggedIn`。
-- **Codex** (`CodexUsageProvider`): `codex app-server --listen stdio://` を起動し JSON-RPC（`initialize`→`account/read`→`account/rateLimits/read`）。読み取り後 app-server を停止。`account.type != "chatgpt"`（API キー認証など）は使用率取得不可で `Error`。
+- **Claude** (`ClaudeUsageProvider`): 非公式 OAuth usage endpoint (`api.anthropic.com/api/oauth/usage`) を叩く。`~/.claude/.credentials.json`（`CLAUDE_CONFIG_DIR` で上書き可）は**1リフレッシュ1回だけ読み**、access token（出力しない）と `subscriptionType` / `rateLimitTier`（プラン名用。`ClaudePlanLabel`）のみ取り出す。HTTP 401/403→`Unauthorized`、429→`RateLimited`、5xx/タイムアウト/JSON エラー→`Error`。credentials はあるが token 取得不可→`Error` ではなく `NotLoggedIn`。
+  - レスポンスのパースは `ClaudeUsageResponseParser`（純粋関数・テスト対象）に集約。`five_hour`→300分窓、`seven_day`→10080分窓を優先し、欠けていれば `limits[]` の `kind=session` / `weekly_all` で補う。`limits[]` の `weekly_scoped`（ラベルは `scope.model.display_name`→`scope.surface.display_name`）は `Extras.ScopedLimits` に入れ、**`Windows` には絶対に混ぜない**（App の `FindWeeklyWindow` が `WindowDurationMins == 10080` の先頭を週次として拾うため）。scoped が無い時のみ旧 `seven_day_opus`/`seven_day_sonnet` を使う。追加課金は `spend.enabled`（`amount_minor / 10^exponent`）→ `extra_usage.is_enabled`（セント単位）の順。難読化キー（`iguana_necktie` 等）は不安定なので**使わない**。
+  - 429 は `Retry-After`（秒数または HTTP 日付）を `ClaudeRetryAfter` で解釈し、その時刻まで HTTP を打たず `RateLimited` を返す。ヘッダ無しは既定5分・上限60分、**メモリのみ**で永続化しない。
+- **Codex** (`CodexUsageProvider`): `codex app-server --listen stdio://` を起動し JSON-RPC（`initialize`→`account/read`→`account/rateLimits/read`、params は `{excludeResetCreditDetails: false}`）。読み取り後 app-server を停止。`account.type != "chatgpt"`（API キー認証など）は使用率取得不可で `Error`。`account.planType` のみプラン名に使い（`CodexPlanLabel`）、**email など他の account フィールドは一切読まない**。クレジット残高・individualLimit・リセット券（`rateLimitResetCredits`）は `CodexRateLimitsExtrasParser` が `Extras` に詰める（id/title/description は保持しない）。`account/rateLimitResetCredit/consume` は券を消費するので**絶対に呼ばない**。
+- **使用状況の付加情報** (`ServiceExtras`): `ServiceUsage.Extras`（既定 null、省略可なので旧 `last_usage.json` もそのまま読める）。中身はプラン表示名・モデル別週次枠・追加課金・Codex のクレジット/リセット券で、**数値・日付・表示名のみ**（トークン・email・アカウントID・パスは持たない）。`LastUsageStore` は Extras も保存・復元する（取得失敗時のフォールバック表示でもプラン名などが出る）。保存するのは数値・日付・表示名だけで、診断 `Message` は従来どおり `null` にしてから書く。
 
 両プロバイダとも PATH に CLI が無ければ `NotInstalled`（PATH 探索は `CommandLineProbe`、Windows では `.cmd` 等の PATHEXT を考慮）。
 
-### 日次コスト表示（通常モードの「¥nnn (daily)」）
+### 金額表示（通常モードの「今日 ¥n / 今月 ¥n」とフッター合計）
 
-- **Core** `LocalCost/`: `ClaudeDailyCostReader`（`~/.claude/projects/**/*.jsonl`、`CLAUDE_CONFIG_DIR` 上書き可）と `CodexDailyCostReader`（`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME` 上書き可）が当日（ローカル0:00起点）のトークン数を集計し、`ModelPricing`（**単価の唯一の真実**。USD/MTok、decimal 演算のみ、最長前方一致）でコスト化。ログからは**数値・モデル名・重複排除用 ID のみ**抽出し、本文・cwd・パスは保持しない。追記中ファイル対策で `FileShare.ReadWrite | Delete` で開く（`File.ReadLines` 禁止）。
+- **Core** `LocalCost/`: `ClaudeDailyCostReader`（`~/.claude/projects/**/*.jsonl`、`CLAUDE_CONFIG_DIR` 上書き可）と `CodexDailyCostReader`（`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`、`CODEX_HOME` 上書き可）がトークン数を集計し、`ModelPricing`（**単価の唯一の真実**。USD/MTok、decimal 演算のみ、最長前方一致）でコスト化。ログからは**数値・モデル名・重複排除用 ID のみ**抽出し、本文・cwd・パスは保持しない。追記中ファイル対策で `FileShare.ReadWrite | Delete` で開く（`File.ReadLines` 禁止）。
+- **複数区間の1回走査**: `ComputeMany(dir, IReadOnlyList<CostInterval>)` が UTC 半開区間ごとの結果を**1回のファイル走査**で返す（当日＋当月をまとめて出す用途。戻り値は引数と同順）。単一区間の `Compute` はそのラッパー。重複排除は走査全体で1つの集合（同一イベントは含まれる各区間で1回ずつ計上されるので、当日⊆当月が常に成立）、LastWriteTime 足切りと Codex の日付ディレクトリ走査は**最も早い開始／最も遅い終了**を使う。
+- `DailyCostResult.CostByModelUsd` がモデル id → USD の内訳（キーはログ上の生のモデル id）。単価不明モデルは従来どおり `UnknownModelEvents` のみ加算され内訳にも合計にも入らないので、内訳の合計は常に `CostUsd` と一致する。
 - **為替**: `UsdJpyRateProvider` が `api.frankfurter.dev`（USD→JPY）を**1日1回**取得。失敗時は 150 円フォールバック（30分後に再試行）。キャッシュは**メモリのみ・永続化しない**。
-- **App**: `DailyCostService`（TTL 10分、手動更新で強制再計算、**例外を一切漏らさず** `(null, null)` に集約＝使用率表示を巻き込まない）→ `StatusForm.UpdateSnapshot` 第3引数 `DailyCostsView` → 通常モードカードの `_dailyCost` ラベル（計算不能時は非表示）。Compact/Minimum には出さない。
-- 確認: `dotnet run --project src/TokenChecker.Poc -- --daily-cost`（日付・数値のみの JSON を出力）。
+- **App**: `DailyCostService`（当日＋当月を `ComputeMany` で1回走査、TTL 10分、手動更新で強制再計算、**例外を一切漏らさず** `DailyCostsView.Empty` に集約＝使用率表示を巻き込まない）→ `StatusForm.UpdateSnapshot` 第3引数 `DailyCostsView`（サービスごとに `ServiceCostView{Today, Month, MonthByModel}`）。
+- **金額文字列の唯一の真実は `DailyCostText`**（`Amount` / `MinimumCost` / `FooterTotal` / `MonthBreakdownTooltip`）。日本語は ¥（N0）、英語は $（N2、InvariantCulture）。他所で通貨記号や書式を組み立てない。
+- モデル別内訳は `CostBreakdown`（純粋関数）: 生のモデル id から末尾の日付サフィックス（`-20250514`）を落として合算し、降順・上位5件＋「その他」。money 行の ToolTip に出す。
+- 表示先: 通常モードカードの**金額行**（`今日` / `今月`、ラベルは補助色・金額は Segoe UI Semibold 11pt）と**ウィンドウ下端のフッター合計**（表示中サービスの当月合計＝`MonthlyTotal.Sum`。どちらも不明なら非表示）。ミニマムモードは行末の `Cost` ラン1つに「¥1,234 / 月¥23,456」（当月不明なら従来の `¥1,234 (daily)`）。**Compact とトレイのツールチップには出さない。**
+- 確認: `dotnet run --project src/TokenChecker.Poc -- --daily-cost`（日付・数値・モデル名のみの JSON。当日と当月、モデル別内訳を出力）。
 
 ## 重要な規約・不変条件
 
@@ -103,7 +111,7 @@ git config core.hooksPath .githooks
 
 - トークン・OAuth 認証情報・メールアドレス・絶対パス全体を、UI・ツールチップ・ログ・保存ファイルのいずれにも**書き出さない**。
 - 診断文字列は「詳細を表示」内だけに出し、必ずマスクする（email→`<email>`、path→`<path>`、`token=`/`secret=`/`key=`/`bearer=` 等→`<redacted>`、長い英数字塊→`<redacted>`）。マスクは **`TokenChecker.Core.DiagnosticMasker.Mask(value, maxLength)` に一元化**（唯一の真実）。Core のプロバイダも App の `ProviderStatusPresenter.SafeDiagnostics` もこれに委譲する。マスク規則を変える時はこの1箇所だけを直す（コピーを増やさない）。`maxLength` だけ用途別（プロバイダ要約=160 / UI 詳細=400）。
-- アプリが書き込むのは `settings.json`（設定のみ）、`last_usage.json`（数値の使用率のみ。診断 `Message` は `null` にしてから保存）、`copilot_usage.json`（Copilot の月次/9:00 ベースライン追跡。数値と日付のみ。トークン・ログイン・パス・メールは持たない）の3ファイルだけ。資格情報ファイルやクレデンシャルストアへは**書かない**。日次コストの為替レート・集計結果も**永続化しない**（メモリのみ）。
+- アプリが書き込むのは `settings.json`（設定のみ）、`last_usage.json`（数値の使用率と `ServiceExtras`＝プラン表示名・モデル別週次枠・追加課金・クレジットの**数値／日付／表示名のみ**。診断 `Message` は `null` にしてから保存）、`copilot_usage.json`（Copilot の月次/9:00 ベースライン追跡。数値と日付のみ。トークン・ログイン・パス・メールは持たない）の3ファイルだけ。資格情報ファイルやクレデンシャルストアへは**書かない**。日次コストの為替レート・集計結果も**永続化しない**（メモリのみ）。
 - ローカルのセッションログ（`~/.claude/projects` / `~/.codex/sessions`）は**読むだけ**。抽出するのは数値・モデル名・重複排除用 ID のみで、会話本文・cwd・パスを変数に保持・出力しない（`LocalCost/` 各 Reader のコメント参照）。
 - 機能追加でこれらに反する可能性があるときは、実装前にユーザーへ確認する。
 
@@ -132,6 +140,9 @@ git config core.hooksPath .githooks
 - ブランド色: Claude=青 `(74,124,232)`、Codex=紫 `(139,92,214)`（トレイの淡色より濃いめ）。
 - 角丸ウィンドウは `ApplyRoundedRegion(radius)`、矩形に戻すのは `ClearRegion()`。GDI+ カスタム描画（`OnPaint` + `CreateRoundedRectPath`、`SmoothingMode.AntiAlias`）。
 - 既存の内部コントロール（`UsageBarControl` 角丸ピルバー、`UsageRingControl` ドーナツ）を再利用する。新しい描画を足す前に流用を検討。
+- **通常モードカード（`ServiceCard`）の縦位置は `LayoutRows()` の1か所だけが決める**。行順はタイトル（＋プラン名ピル＋右端ステータスバッジ）→ ステータスメッセージ（任意）→ 5時間ブロック → 週次ブロック → モデル別週次枠の行（任意）→ 区切り線 → 金額行 → 追加情報の行（任意）→ 詳細トグル → 詳細ボックス（展開時）。非表示の行は詰め、カード高さは可視行の合計として自分で決める（固定高さ定数は持たない）。高さが変わったら `HeightChanged` でウィンドウが追従する。新しい行を足すときは `LayoutRows()` に1行足すだけで済む形を保つ。
+- プラン名ピルと区切り線は子コントロールではなく `ServiceCard.OnPaint` で描く（`UserPaint` パネル上の透過子コントロールを増やさないため）。ピルはステータスバッジと重なる場合は描画しない。
+- 金額行の ToolTip は当月のモデル別内訳＋「API換算の推定額」注記、フッター合計の ToolTip は「実際の請求額ではない」注記。
 
 ### UI 変更の検証
 

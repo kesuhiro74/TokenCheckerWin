@@ -4,14 +4,14 @@ using System.Text.Json.Nodes;
 
 namespace TokenChecker.Core.LocalCost;
 
-// Aggregates today's token usage from the local Codex CLI session rollouts
+// Aggregates token usage from the local Codex CLI session rollouts
 // (~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl) and prices it with
 // ModelPricing.
 //
-// Privacy invariant: only numeric token counts and model ids (used transiently
-// for pricing lookups) are ever read into variables; of these, only the
-// numeric totals are returned. Conversation content, cwd values, and file
-// paths are never captured or returned.
+// Privacy invariant: only numeric token counts and model ids (used for pricing
+// lookups and the returned per-model breakdown) are ever read into variables;
+// of these, only the numeric totals and model ids are returned. Conversation
+// content, cwd values, and file paths are never captured or returned.
 public static class CodexDailyCostReader
 {
     // Codex uses this model when a rollout carries no turn_context line.
@@ -32,30 +32,51 @@ public static class CodexDailyCostReader
     // Sums token_count events whose timestamp falls in the UTC half-open
     // interval [startUtc, endUtc).
     public static DailyCostResult Compute(string sessionsDirectory, DateTimeOffset startUtc, DateTimeOffset endUtc)
+        => ComputeMany(sessionsDirectory, new[] { new CostInterval(startUtc, endUtc) })[0];
+
+    // Same aggregation as Compute, but for several UTC half-open intervals in a
+    // single pass over the rollouts (e.g. "today" and "this calendar month").
+    // The result is positionally aligned with `intervals`. Dedup is global to
+    // the pass while accumulation is per interval, so nested ranges stay
+    // consistent (today's totals are a subset of the month's).
+    public static IReadOnlyList<DailyCostResult> ComputeMany(
+        string sessionsDirectory,
+        IReadOnlyList<CostInterval> intervals)
     {
-        if (!Directory.Exists(sessionsDirectory))
+        ArgumentNullException.ThrowIfNull(intervals);
+        if (intervals.Count == 0)
         {
-            return DailyCostResult.Empty;
+            return Array.Empty<DailyCostResult>();
         }
 
-        decimal costUsd = 0m;
-        long inputTokens = 0;
-        long outputTokens = 0;
-        long cacheReadTokens = 0;
-        var eventCount = 0;
-        var unknownModelEvents = 0;
+        var accumulators = new DailyCostAccumulator[intervals.Count];
+        for (var i = 0; i < accumulators.Length; i++)
+        {
+            accumulators[i] = new DailyCostAccumulator();
+        }
 
-        // Dedup keys span all files: resuming a session replays earlier events
-        // into a new rollout file.
+        if (!Directory.Exists(sessionsDirectory))
+        {
+            return intervals.Select(static _ => DailyCostResult.Empty).ToArray();
+        }
+
+        // The widest span over all intervals drives both the day-directory walk
+        // and the last-write-time prefilter, so a month-long interval reaches
+        // every day directory from the 1st onwards.
+        var earliestStartUtc = intervals.Min(interval => interval.StartUtc);
+        var latestEndUtc = intervals.Max(interval => interval.EndUtc);
+
+        // Dedup keys span all files AND all intervals: resuming a session
+        // replays earlier events into a new rollout file.
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var file in EnumerateCandidateFiles(sessionsDirectory, startUtc, endUtc))
+        foreach (var file in EnumerateCandidateFiles(sessionsDirectory, earliestStartUtc, latestEndUtc))
         {
             try
             {
-                // Files not touched since the interval started cannot contain
-                // in-range events (rollouts are append-only).
-                if (File.GetLastWriteTimeUtc(file) < startUtc.UtcDateTime)
+                // Files not touched since the earliest interval started cannot
+                // contain in-range events (rollouts are append-only).
+                if (File.GetLastWriteTimeUtc(file) < earliestStartUtc.UtcDateTime)
                 {
                     continue;
                 }
@@ -122,8 +143,7 @@ public static class CodexDailyCostReader
 
                         var timestampText = GetString(root["timestamp"]);
                         if (!TryGetTimestamp(timestampText, out var timestamp)
-                            || timestamp < startUtc
-                            || timestamp >= endUtc)
+                            || !ContainsAny(intervals, timestamp))
                         {
                             continue;
                         }
@@ -143,7 +163,7 @@ public static class CodexDailyCostReader
                         var price = ModelPricing.Find(currentModel);
                         if (price is null)
                         {
-                            unknownModelEvents++;
+                            AddUnknownModelEvent(intervals, accumulators, timestamp, currentModel);
                             continue;
                         }
 
@@ -152,12 +172,16 @@ public static class CodexDailyCostReader
                         // separately. reasoning_output_tokens is already
                         // included in output_tokens, so it is NOT added.
                         var uncached = Math.Max(0, input - cached);
+                        var cost = ModelPricing.Cost(price, uncached, output, 0, cached);
 
-                        eventCount++;
-                        inputTokens += uncached;
-                        cacheReadTokens += cached;
-                        outputTokens += output;
-                        costUsd += ModelPricing.Cost(price, uncached, output, 0, cached);
+                        for (var i = 0; i < intervals.Count; i++)
+                        {
+                            if (intervals[i].Contains(timestamp))
+                            {
+                                accumulators[i].AddEvent(
+                                    currentModel, cost, uncached, output, cacheWriteTokens: 0, cached);
+                            }
+                        }
                     }
                     catch (JsonException)
                     {
@@ -176,9 +200,7 @@ public static class CodexDailyCostReader
             }
         }
 
-        return new DailyCostResult(
-            costUsd, inputTokens, outputTokens, CacheWriteTokens: 0, cacheReadTokens,
-            eventCount, unknownModelEvents);
+        return accumulators.Select(static accumulator => accumulator.ToResult()).ToArray();
     }
 
     // Rollouts are sharded as sessions/YYYY/MM/DD/rollout-*.jsonl. The day
@@ -219,6 +241,34 @@ public static class CodexDailyCostReader
             foreach (var file in files)
             {
                 yield return file;
+            }
+        }
+    }
+
+    private static bool ContainsAny(IReadOnlyList<CostInterval> intervals, DateTimeOffset timestamp)
+    {
+        for (var i = 0; i < intervals.Count; i++)
+        {
+            if (intervals[i].Contains(timestamp))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void AddUnknownModelEvent(
+        IReadOnlyList<CostInterval> intervals,
+        DailyCostAccumulator[] accumulators,
+        DateTimeOffset timestamp,
+        string? modelId)
+    {
+        for (var i = 0; i < intervals.Count; i++)
+        {
+            if (intervals[i].Contains(timestamp))
+            {
+                accumulators[i].AddUnknownModelEvent(modelId);
             }
         }
     }

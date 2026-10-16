@@ -23,7 +23,7 @@ internal enum MinimumRunKind
 internal readonly record struct MinimumRun(string Text, MinimumRunKind Kind, double? PercentValue = null);
 
 // Pure composition logic for the minimum-mode one-line status:
-//   <svcIcon> Claude | <clock> 5h 38% <reset> 4h39m 10:50 | <cal> 7d 39% <reset> 2d 6/17 18:00 | <money> ¥46 (daily)
+//   <svcIcon> Claude | <clock> 5h 38% <reset> 4h39m 10:50 | <cal> 7d 39% <reset> 2d 6/17 18:00 | <money> ¥46 / 月¥1,234
 // The reset run carries the remaining-time token plus the reset clock; all other
 // run texts never include inter-run whitespace — the painter inserts the gaps.
 // Kept free of any drawing/WinForms state so it is directly unit-testable.
@@ -34,8 +34,9 @@ internal static class MinimumLineComposer
         string serviceIconGlyph,
         RateLimitWindow? fiveHour,
         RateLimitWindow? weekly,
-        DailyCost? dailyCost)
-        => Compose(serviceName, serviceIconGlyph, fiveHour, weekly, dailyCost, DateTimeOffset.UtcNow);
+        DailyCost? dailyCost,
+        DailyCost? monthCost = null)
+        => Compose(serviceName, serviceIconGlyph, fiveHour, weekly, dailyCost, monthCost, DateTimeOffset.UtcNow);
 
     // Test seam: nowUtc drives the remaining-time token deterministically.
     internal static IReadOnlyList<MinimumRun> Compose(
@@ -44,6 +45,7 @@ internal static class MinimumLineComposer
         RateLimitWindow? fiveHour,
         RateLimitWindow? weekly,
         DailyCost? dailyCost,
+        DailyCost? monthCost,
         DateTimeOffset nowUtc)
     {
         var runs = new List<MinimumRun>
@@ -61,12 +63,14 @@ internal static class MinimumLineComposer
         AppendWindowSegment(runs, StatusLineGlyphs.Calendar, Strings.T("7d"), weekly, "M/d HH:mm", nowUtc);
 
         // Cost segment (icon + amount + its leading separator) is omitted as a
-        // whole when today's spend is unknown. The amount is ¥ or $ per language.
+        // whole when today's spend is unknown. The amount is ¥ or $ per
+        // language, and this month's total rides in the SAME run ("¥1,234 /
+        // 月¥23,456") so the separator-alignment columns are unaffected.
         if (dailyCost is not null)
         {
             runs.Add(new MinimumRun("|", MinimumRunKind.Separator));
             runs.Add(new MinimumRun(StatusLineGlyphs.Money, MinimumRunKind.SegmentIcon));
-            runs.Add(new MinimumRun(DailyCostText.Format(dailyCost), MinimumRunKind.Cost));
+            runs.Add(new MinimumRun(DailyCostText.MinimumCost(dailyCost, monthCost), MinimumRunKind.Cost));
         }
 
         return runs;
