@@ -43,4 +43,13 @@ internal static class CopilotBaseline
 
         return Math.Max(0L, rawUsed - baseline);
     }
+
+    // True while a non-zero baseline is being subtracted this month, i.e. the
+    // displayed used is a current-period figure rather than the raw calendar-month
+    // total. Anything else that still reflects the raw total (the per-model
+    // breakdown, which cannot be apportioned) is labelled accordingly.
+    public static bool IsActive(long? baselineUsed, string? baselineMonth, DateTimeOffset nowUtc)
+        => baselineUsed is long baseline
+            && baseline > 0
+            && string.Equals(baselineMonth, MonthKey(nowUtc), StringComparison.Ordinal);
 }

@@ -125,4 +125,309 @@ public class GitHubBillingUsageParserTests
         Assert.False(TryGetLogin(JsonNode.Parse("{}"), out _));
         Assert.False(TryGetLogin(JsonNode.Parse("""{"login":"  "}"""), out _));
     }
+
+    // ----- model / discount / net parsing ---------------------------------
+
+    [Fact]
+    public void TryParseUsageItems_CapturesModelDiscountAndNet()
+    {
+        var root = JsonNode.Parse("""
+        {"usageItems":[{
+            "product":"Copilot","sku":"ai_credit","model":"gpt-5.6","unitType":"AI Credits",
+            "grossQuantity":100,"grossAmount":1.0,
+            "discountQuantity":80,"discountAmount":0.8,
+            "netQuantity":20,"netAmount":0.2}]}
+        """);
+
+        Assert.True(TryParseUsageItems(root, out var items));
+        var item = Assert.Single(items);
+        Assert.Equal("gpt-5.6", item.Model);
+        Assert.Equal(80m, item.DiscountQuantity);
+        Assert.Equal(0.8m, item.DiscountAmount);
+        Assert.Equal(20m, item.NetQuantity);
+        Assert.Equal(0.2m, item.NetAmount);
+    }
+
+    [Fact]
+    public void TryParseUsageItems_MissingModel_IsNull()
+    {
+        // The fallback /settings/billing/usage endpoint has no "model" field.
+        var root = JsonNode.Parse("""{"usageItems":[{"product":"Copilot","unitType":"credits","grossQuantity":5}]}""");
+
+        Assert.True(TryParseUsageItems(root, out var items));
+        Assert.Null(items[0].Model);
+        Assert.Null(items[0].DiscountQuantity);
+        Assert.Null(items[0].DiscountAmount);
+    }
+
+    [Fact]
+    public void TryParseUsageItems_ExplicitNullModel_IsNull()
+    {
+        var root = JsonNode.Parse("""{"usageItems":[{"model":null,"unitType":"credits","grossQuantity":5}]}""");
+
+        Assert.True(TryParseUsageItems(root, out var items));
+        Assert.Null(items[0].Model);
+    }
+
+    // ----- BuildExtras ----------------------------------------------------
+
+    private static GitHubBillingUsageItem CreditRow(string? model, decimal credits, decimal? netAmount = null)
+        => new("GitHub Copilot", "ai_credit", "AI Credits", null, credits, null, null, netAmount, model);
+
+    [Fact]
+    public void BuildExtras_GroupsCreditsByModel()
+    {
+        var extras = BuildExtras(new[]
+        {
+            CreditRow("gpt-5.6", 100m),
+            CreditRow(" gpt-5.6 ", 50.5m),
+            CreditRow("claude-opus-5", 20m)
+        });
+
+        var models = extras?.ModelCredits;
+        Assert.NotNull(models);
+        Assert.Equal(2, models!.Count);
+        Assert.Equal("gpt-5.6", models[0].Label);
+        Assert.Equal(150.5m, models[0].Credits);
+        Assert.Equal("claude-opus-5", models[1].Label);
+        Assert.Equal(20m, models[1].Credits);
+    }
+
+    [Fact]
+    public void BuildExtras_NoRowHasModel_NoModelList()
+    {
+        var extras = BuildExtras(new[] { CreditRow(null, 10m), CreditRow("  ", 5m) });
+
+        // Nothing but unknown-model rows: a single "unknown" bucket would tell
+        // the user nothing, so no list at all (and the whole extras is empty).
+        Assert.Null(extras);
+    }
+
+    [Fact]
+    public void BuildExtras_NullModelRows_GroupedUnderNullLabel()
+    {
+        var extras = BuildExtras(new[]
+        {
+            CreditRow("gpt-5.6", 100m),
+            CreditRow(null, 10m),
+            CreditRow("", 5m)
+        });
+
+        var models = extras?.ModelCredits;
+        Assert.NotNull(models);
+        Assert.Equal(2, models!.Count);
+        Assert.Equal("gpt-5.6", models[0].Label);
+        Assert.Null(models[1].Label);
+        Assert.Equal(15m, models[1].Credits);
+    }
+
+    [Fact]
+    public void BuildExtras_NoNetAmount_NoSpend()
+    {
+        var extras = BuildExtras(new[] { CreditRow("gpt-5.6", 100m) });
+
+        Assert.NotNull(extras);
+        Assert.Null(extras!.ExtraSpend);
+    }
+
+    [Fact]
+    public void BuildExtras_NetAmountZero_SpendIsZeroUsd()
+    {
+        // 0 is a real answer ("the allowance covered everything"), not "absent".
+        var extras = BuildExtras(new[] { CreditRow("gpt-5.6", 100m, netAmount: 0m) });
+
+        Assert.Equal(0m, extras?.ExtraSpend?.Used);
+        Assert.Null(extras?.ExtraSpend?.Limit);
+        Assert.Equal("USD", extras?.ExtraSpend?.Unit);
+    }
+
+    [Fact]
+    public void BuildExtras_SumsNetAmountInDecimal()
+    {
+        var extras = BuildExtras(new[]
+        {
+            CreditRow("gpt-5.6", 100m, netAmount: 0.1m),
+            CreditRow("claude-opus-5", 50m, netAmount: 0.2m),
+            CreditRow("gemini", 25m)
+        });
+
+        Assert.Equal(0.3m, extras?.ExtraSpend?.Used);
+    }
+
+    [Fact]
+    public void BuildExtras_NothingToShow_ReturnsNull()
+    {
+        Assert.Null(BuildExtras(Array.Empty<GitHubBillingUsageItem>()));
+        Assert.Null(BuildExtras(null));
+    }
+
+    [Fact]
+    public void BuildExtras_SpendOnly_StillReturnsExtras()
+    {
+        var extras = BuildExtras(new[] { CreditRow(null, 10m, netAmount: 1.5m) });
+
+        Assert.NotNull(extras);
+        Assert.Null(extras!.ModelCredits);
+        Assert.Equal(1.5m, extras.ExtraSpend?.Used);
+    }
+
+    // ----- date parsing ---------------------------------------------------
+
+    [Fact]
+    public void TryParseUsageItems_CapturesDate()
+    {
+        // The real shape: one row per UTC day, timestamp with a Z suffix and no
+        // fractional seconds.
+        var root = JsonNode.Parse("""
+        {"usageItems":[{"date":"2026-10-07T00:31:53Z","product":"copilot",
+            "sku":"Copilot AI Credits","unitType":"AICredits","grossAmount":18.259207015}]}
+        """);
+
+        Assert.True(TryParseUsageItems(root, out var items));
+        Assert.Equal(new DateTimeOffset(2026, 10, 7, 0, 31, 53, TimeSpan.Zero), items[0].Date);
+    }
+
+    [Fact]
+    public void TryParseUsageItems_DateWithOffset_KeepsTheInstant()
+    {
+        var root = JsonNode.Parse("""{"usageItems":[{"date":"2026-10-07T08:00:00+09:00"}]}""");
+
+        Assert.True(TryParseUsageItems(root, out var items));
+        // 08:00 JST is still 2026-10-06 in UTC.
+        Assert.Equal(new DateTimeOffset(2026, 10, 6, 23, 0, 0, TimeSpan.Zero), items[0].Date!.Value.ToUniversalTime());
+    }
+
+    [Fact]
+    public void TryParseUsageItems_DateWithoutOffset_IsTreatedAsUtc()
+    {
+        var root = JsonNode.Parse("""{"usageItems":[{"date":"2026-10-07T00:31:53"}]}""");
+
+        Assert.True(TryParseUsageItems(root, out var items));
+        Assert.Equal(TimeSpan.Zero, items[0].Date!.Value.Offset);
+    }
+
+    [Theory]
+    [InlineData("""{"usageItems":[{"date":"not a date"}]}""")]
+    [InlineData("""{"usageItems":[{"date":null}]}""")]
+    [InlineData("""{"usageItems":[{"product":"copilot"}]}""")]
+    public void TryParseUsageItems_UnusableDate_IsNull(string json)
+    {
+        Assert.True(TryParseUsageItems(JsonNode.Parse(json), out var items));
+        Assert.Null(items[0].Date);
+    }
+
+    // ----- GroupDailyCredits ----------------------------------------------
+
+    private static GitHubBillingUsageItem DatedRow(string? date, decimal credits)
+        => new(
+            "copilot", "Copilot AI Credits", "AICredits",
+            null, credits, null, null, null, null, null, null,
+            date is null
+                ? null
+                : DateTimeOffset.Parse(date, System.Globalization.CultureInfo.InvariantCulture));
+
+    [Fact]
+    public void GroupDailyCredits_SumsPerUtcDay_Ascending()
+    {
+        var daily = GroupDailyCredits(new[]
+        {
+            DatedRow("2026-10-09T10:00:00Z", 5m),
+            DatedRow("2026-10-07T00:31:53Z", 1.5m),
+            DatedRow("2026-10-07T23:59:59Z", 2.25m)
+        });
+
+        Assert.NotNull(daily);
+        Assert.Equal(2, daily!.Count);
+        Assert.Equal(new DateOnly(2026, 10, 7), daily[0].UtcDate);
+        Assert.Equal(3.75m, daily[0].Credits);
+        Assert.Equal(new DateOnly(2026, 10, 9), daily[1].UtcDate);
+        Assert.Equal(5m, daily[1].Credits);
+    }
+
+    [Fact]
+    public void GroupDailyCredits_UtcDayBoundary_SplitsTheRows()
+    {
+        // 23:59:59Z and the 00:00:00Z one second later are DIFFERENT days.
+        var daily = GroupDailyCredits(new[]
+        {
+            DatedRow("2026-10-07T23:59:59Z", 10m),
+            DatedRow("2026-10-08T00:00:00Z", 20m)
+        });
+
+        Assert.Equal(2, daily!.Count);
+        Assert.Equal(new DateOnly(2026, 10, 7), daily[0].UtcDate);
+        Assert.Equal(10m, daily[0].Credits);
+        Assert.Equal(new DateOnly(2026, 10, 8), daily[1].UtcDate);
+        Assert.Equal(20m, daily[1].Credits);
+    }
+
+    [Fact]
+    public void GroupDailyCredits_NonUtcOffset_LandsOnTheUtcDay()
+    {
+        // 2026-10-08 08:00 +09:00 == 2026-10-07 23:00 UTC -> the 7th.
+        var daily = GroupDailyCredits(new[] { DatedRow("2026-10-08T08:00:00+09:00", 7m) });
+
+        Assert.Equal(new DateOnly(2026, 10, 7), Assert.Single(daily!).UtcDate);
+    }
+
+    [Fact]
+    public void GroupDailyCredits_UndatedRows_AreSkipped()
+    {
+        var daily = GroupDailyCredits(new[]
+        {
+            DatedRow(null, 99m),
+            DatedRow("2026-10-07T00:31:53Z", 1m)
+        });
+
+        var day = Assert.Single(daily!);
+        Assert.Equal(new DateOnly(2026, 10, 7), day.UtcDate);
+        Assert.Equal(1m, day.Credits);
+    }
+
+    [Fact]
+    public void GroupDailyCredits_NoDatedRow_ReturnsNull()
+    {
+        Assert.Null(GroupDailyCredits(new[] { DatedRow(null, 10m) }));
+        Assert.Null(GroupDailyCredits(Array.Empty<GitHubBillingUsageItem>()));
+        Assert.Null(GroupDailyCredits(null));
+    }
+
+    // ----- Merge ----------------------------------------------------------
+
+    private static readonly IReadOnlyList<DailyCredits> SampleDaily =
+        new[] { new DailyCredits(new DateOnly(2026, 10, 7), 1826m) };
+
+    [Fact]
+    public void Merge_DailyOnly_CreatesExtras()
+    {
+        var merged = Merge(null, SampleDaily);
+
+        Assert.NotNull(merged);
+        Assert.Same(SampleDaily, merged!.DailyCredits);
+        Assert.Null(merged.ModelCredits);
+        Assert.Null(merged.ExtraSpend);
+    }
+
+    [Fact]
+    public void Merge_KeepsTheExistingExtras()
+    {
+        var extras = BuildExtras(new[] { CreditRow("gpt-5.6", 100m, netAmount: 1.5m) })!;
+
+        var merged = Merge(extras, SampleDaily);
+
+        Assert.Equal("gpt-5.6", merged!.ModelCredits![0].Label);
+        Assert.Equal(1.5m, merged.ExtraSpend?.Used);
+        Assert.Same(SampleDaily, merged.DailyCredits);
+    }
+
+    [Fact]
+    public void Merge_NoDaily_LeavesTheExtrasUntouched()
+    {
+        var extras = BuildExtras(new[] { CreditRow("gpt-5.6", 100m) })!;
+
+        Assert.Same(extras, Merge(extras, null));
+        Assert.Same(extras, Merge(extras, Array.Empty<DailyCredits>()));
+        Assert.Null(Merge(null, null));
+        Assert.Null(Merge(null, Array.Empty<DailyCredits>()));
+    }
 }

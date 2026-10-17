@@ -33,7 +33,18 @@ public class LastUsageStoreTests
         CreditsBalance: 120m,
         CreditsUnlimited: false,
         ResetCreditsAvailable: 2,
-        ResetCreditsNextExpiry: CapturedAt.AddDays(13));
+        ResetCreditsNextExpiry: CapturedAt.AddDays(13),
+        ModelCredits: new[]
+        {
+            new ModelCredits("gpt-5.6", 1234.5m),
+            new ModelCredits(null, 10m)
+        },
+        DailyCredits: new[]
+        {
+            new DailyCredits(new DateOnly(2026, 10, 7), 1826.5m),
+            new DailyCredits(new DateOnly(2026, 10, 8), 0m)
+        },
+        CreditAllowance: 20000m);
 
     [Fact]
     public void Sanitize_DropsMessage_ButKeepsExtras()
@@ -70,6 +81,62 @@ public class LastUsageStoreTests
         Assert.Equal("Fable", scoped.Label);
         Assert.Equal(4.0, scoped.UsedPercent);
         Assert.Equal(CapturedAt.AddDays(5), scoped.ResetAtUtc);
+
+        // The Copilot per-model credit split survives too (display names and
+        // numbers only), including the null-labelled "unknown model" bucket.
+        var models = extras.ModelCredits!;
+        Assert.Equal(2, models.Count);
+        Assert.Equal("gpt-5.6", models[0].Label);
+        Assert.Equal(1234.5m, models[0].Credits);
+        Assert.Null(models[1].Label);
+        Assert.Equal(10m, models[1].Credits);
+
+        // So does the Copilot per-UTC-day consumption behind the daily chart.
+        // DateOnly is round-tripped by System.Text.Json itself (no converter of
+        // ours), so this pins that the stored "2026-10-07" form comes back.
+        var daily = extras.DailyCredits!;
+        Assert.Equal(2, daily.Count);
+        Assert.Equal(new DateOnly(2026, 10, 7), daily[0].UtcDate);
+        Assert.Equal(1826.5m, daily[0].Credits);
+        Assert.Equal(new DateOnly(2026, 10, 8), daily[1].UtcDate);
+        Assert.Equal(0m, daily[1].Credits);
+
+        // And the Copilot monthly credit allowance auto-detected from GitHub (a
+        // number only), so a failed refresh still shows the cap and remaining.
+        Assert.Equal(20000m, extras.CreditAllowance);
+    }
+
+    [Fact]
+    public void ToJson_WritesDailyCreditsAsPlainDates()
+        => Assert.Contains("\"2026-10-07\"", LastUsageStore.ToJson(Snapshot(SampleExtras())), StringComparison.Ordinal);
+
+    [Fact]
+    public void RoundTrip_LegacyExtrasWithoutModelOrDailyCredits_StillLoads()
+    {
+        // Exactly what a build before the Copilot per-model breakdown and the
+        // daily chart wrote.
+        const string legacy = """
+        {
+          "CapturedAtUtc": "2026-10-16T09:00:00+00:00",
+          "Services": [
+            {
+              "ServiceName": "GitHub Copilot",
+              "Status": 1,
+              "Message": null,
+              "Windows": [],
+              "Extras": { "PlanLabel": "Copilot Pro+", "CreditsUnlimited": false }
+            }
+          ]
+        }
+        """;
+
+        var restored = LastUsageStore.FromJson(legacy);
+
+        var extras = Assert.Single(restored!.Services).Extras;
+        Assert.Equal("Copilot Pro+", extras?.PlanLabel);
+        Assert.Null(extras?.ModelCredits);
+        Assert.Null(extras?.DailyCredits);
+        Assert.Null(extras?.CreditAllowance);
     }
 
     [Fact]

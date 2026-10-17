@@ -17,7 +17,32 @@ namespace TokenChecker.Core.Providers.GitHubCopilot;
 //    Copilot like Claude/Codex; only monthly consumption. So Used is set, but
 //    Limit/Remaining/UsedPercent stay null (the monthly allowance is NOT in the
 //    API — the App overlays a plan-based allowance at display time) and
-//    ResetAtUtc is a COMPUTED calendar-month boundary, not from the API.
+//    ResetAtUtc is the official Copilot monthly boundary (1st of the month,
+//    00:00:00 UTC), COMPUTED here rather than returned by the API.
+//  - Beyond the monthly window, the Available result also carries display-only
+//    ServiceExtras: this month's per-model credit split (usageItems[].model),
+//    the billed overage (sum of netAmount, in USD — the part the plan
+//    allowance did NOT cover), and this month's per-UTC-day consumption
+//    (usageItems[].date grouped by UTC day) for the card's daily bar chart.
+//    All are optional: the fallback /settings/billing/usage endpoint omits
+//    `model`, a response without netAmount yields no spend, and a response
+//    without dates yields no daily rows, so the card hides whichever is
+//    missing. usageItems[].repositoryName is NEVER captured (see the parser).
+//  - The per-day rows only exist on /settings/billing/usage. When the main
+//    read already used that fallback they are reused as-is; otherwise ONE
+//    extra GET to it is made per refresh, inside the same timeout budget and
+//    strictly best-effort — its failure leaves the daily rows null and does
+//    not touch the monthly result (ReadDailyCreditsAsync).
+//  - The plan name and the bundled monthly AI-credit allowance are
+//    auto-detected from the UNOFFICIAL /copilot_internal/user endpoint (ONE
+//    extra GET per refresh, issued concurrently with the per-day read inside
+//    the same timeout budget and equally best-effort — see
+//    ReadInternalPlanAsync). Only `copilot_plan` and
+//    `quota_snapshots.premium_interactions` are read out of that response and
+//    only a plan DISPLAY label plus a number reach Extras
+//    (CopilotInternalUserParser). A transient failure reuses the plan this
+//    provider instance last detected (memory only, _lastPlan); with nothing
+//    detected yet the App falls back to the plan picked in settings.
 //  - 403/404/503 can mean missing permission OR an account not on the enhanced
 //    billing platform OR an unsupported/transient state.
 //
@@ -29,6 +54,14 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
 {
     private const string ApiBaseUrl = "https://api.github.com";
     private const string UserEndpoint = ApiBaseUrl + "/user";
+    // UNOFFICIAL and UNDOCUMENTED: the endpoint the Copilot editor clients use
+    // for the signed-in account's plan and quota snapshots. Read best-effort
+    // ONLY, for the plan name + monthly AI-credit allowance (see
+    // CopilotInternalUserParser for the field allowlist); it may change shape or
+    // vanish without notice, and then the App keeps using the plan from
+    // settings. Requested with the SAME standard headers as every other call
+    // here — no editor/client spoofing.
+    private const string InternalUserEndpoint = ApiBaseUrl + "/copilot_internal/user";
     private const string ApiVersion = "2026-03-10";
     // No version suffix: GitHub only requires a User-Agent to be present, and a
     // hard-coded version drifts from the real release on every bump.
@@ -42,6 +75,13 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
     {
         Timeout = Timeout.InfiniteTimeSpan
     };
+
+    // The last plan the unofficial endpoint reported, carried over a transient
+    // failure of that endpoint so the allowance (tray %, card, projection) does
+    // not flicker back to the settings plan for one refresh. Memory only — a
+    // plan label and a number, never persisted by this class. An immutable
+    // record, so the reference swap is atomic.
+    private CopilotAccountPlan? _lastPlan;
 
     public string ServiceName => "GitHub Copilot";
 
@@ -84,13 +124,13 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
             var encoded = Uri.EscapeDataString(login);
             var aiCreditUrl = $"{ApiBaseUrl}/users/{encoded}/settings/billing/ai_credit/usage"
                 + $"?year={now.Year}&month={now.Month}";
+            var usageUrl = $"{ApiBaseUrl}/users/{encoded}/settings/billing/usage"
+                + $"?year={now.Year}&month={now.Month}";
 
             var endpoint = "ai_credit";
             var billingProbe = await ProbeAsync(aiCreditUrl, token, timeout.Token).ConfigureAwait(false);
             if (!billingProbe.Success && billingProbe.Code == 404)
             {
-                var usageUrl = $"{ApiBaseUrl}/users/{encoded}/settings/billing/usage"
-                    + $"?year={now.Year}&month={now.Month}";
                 endpoint = "usage";
                 billingProbe = await ProbeAsync(usageUrl, token, timeout.Token).ConfigureAwait(false);
             }
@@ -151,7 +191,58 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
                 itemsCopilot: copilotItems.Length,
                 usedExact: usedExact);
 
-            return new ServiceUsage(ServiceName, ProviderStatus.Available, message, new[] { window });
+            // Display-only extras: this month's per-model credit split and the
+            // billed overage (netAmount). Both degrade to null when the response
+            // does not carry the fields — the card then hides those rows. The
+            // model names deliberately stay OUT of the diagnostic Message (which
+            // has a 160-char mask budget); they travel in Extras only.
+            var extras = GitHubBillingUsageParser.BuildExtras(copilotItems);
+
+            // Two optional, strictly best-effort reads, started TOGETHER so the
+            // refresh pays one round-trip of latency rather than two:
+            //
+            //  1) Per-UTC-day consumption for the card's daily bar chart. Only
+            //     the generic /settings/billing/usage response carries a per-row
+            //     `date`, so when the main read already came from that fallback
+            //     endpoint the rows are REUSED (no extra HTTP call); otherwise
+            //     ONE extra GET is made inside the same timeout budget.
+            //  2) The account's plan name + monthly AI-credit allowance from the
+            //     unofficial /copilot_internal/user endpoint, which lets the App
+            //     stop relying on the manually picked plan.
+            //
+            // Both degrade to null on ANY problem (status, timeout, parse), which
+            // leaves the monthly result exactly as it would have been without
+            // them; only a cancellation from the CALLER's token propagates (see
+            // ReadDailyCreditsAsync / ReadInternalPlanAsync).
+            var dailyTask = endpoint == "usage"
+                ? Task.FromResult(GitHubBillingUsageParser.GroupDailyCredits(copilotItems))
+                : ReadDailyCreditsAsync(usageUrl, token, timeout.Token, cancellationToken);
+            var planTask = ReadInternalPlanAsync(token, timeout.Token, cancellationToken);
+
+            await Task.WhenAll(dailyTask, planTask).ConfigureAwait(false);
+            var daily = dailyTask.Result;
+            var plan = planTask.Result;
+            if (plan is not null)
+            {
+                _lastPlan = plan;
+            }
+            else
+            {
+                plan = _lastPlan;
+            }
+
+            // The diagnostic Message deliberately gains NO "daily=" token: the
+            // existing key=value string already exceeds the 160-char mask budget
+            // on a real response (unit=credits is the part being sliced off), so
+            // anything appended here could never be seen anyway.
+            return new ServiceUsage(
+                ServiceName,
+                ProviderStatus.Available,
+                message,
+                new[] { window },
+                CopilotInternalUserParser.Merge(
+                    GitHubBillingUsageParser.Merge(extras, daily),
+                    plan));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -168,6 +259,84 @@ public sealed class GitHubCopilotUsageProvider : IUsageProvider
         catch
         {
             return Failure(ProviderStatus.Error, BuildMessage(tokenPresent: true, billing: "usageReadFailed"));
+        }
+    }
+
+    // ONE extra GET to the generic /settings/billing/usage endpoint purely for
+    // the per-day rows (the dedicated ai_credit/usage response carries no
+    // per-row `date`). Best-effort by design: every failure mode — non-success
+    // status, unexpected shape, invalid JSON, the shared timeout expiring, a
+    // transport error — returns null so the already-computed monthly usage is
+    // reported exactly as it would have been without this call.
+    //
+    // The ONE exception is a cancellation that came from the CALLER's token:
+    // that still propagates, so shutting the app down cancels the refresh as
+    // before.
+    private static async Task<IReadOnlyList<DailyCredits>?> ReadDailyCreditsAsync(
+        string url,
+        string token,
+        CancellationToken linkedToken,
+        CancellationToken callerToken)
+    {
+        try
+        {
+            var probe = await ProbeAsync(url, token, linkedToken).ConfigureAwait(false);
+            if (!probe.Success)
+            {
+                return null;
+            }
+
+            if (!GitHubBillingUsageParser.TryParseUsageItems(SafeParse(probe.Body), out var items))
+            {
+                return null;
+            }
+
+            return GitHubBillingUsageParser.GroupDailyCredits(
+                items.Where(GitHubBillingUsageParser.IsCopilotAiCreditUsage));
+        }
+        catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // ONE extra GET to the unofficial /copilot_internal/user endpoint, purely to
+    // auto-detect the plan name and the bundled monthly AI-credit allowance so
+    // the user does not have to pick a plan by hand. Same best-effort contract
+    // as ReadDailyCreditsAsync: every failure mode — non-success status,
+    // unexpected shape, invalid JSON, the shared timeout expiring, a transport
+    // error — returns null and the monthly usage is reported unchanged, with
+    // only a CALLER-token cancellation propagating.
+    //
+    // Only the allowlisted fields are parsed and nothing from the body (which
+    // does carry a login, ids and org lists) is kept, logged or placed in the
+    // diagnostic Message.
+    private static async Task<CopilotAccountPlan?> ReadInternalPlanAsync(
+        string token,
+        CancellationToken linkedToken,
+        CancellationToken callerToken)
+    {
+        try
+        {
+            var probe = await ProbeAsync(InternalUserEndpoint, token, linkedToken).ConfigureAwait(false);
+            if (!probe.Success)
+            {
+                return null;
+            }
+
+            return CopilotInternalUserParser.TryParse(SafeParse(probe.Body), out var plan) ? plan : null;
+        }
+        catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
         }
     }
 

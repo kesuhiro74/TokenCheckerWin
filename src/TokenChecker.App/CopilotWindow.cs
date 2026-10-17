@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using TokenChecker.Core;
 
@@ -94,6 +95,21 @@ internal sealed class CopilotWindow : Form
         return remaining / Math.Max(1, remainingWeekdays);
     }
 
+    // Compact reset text for the credit-row right slot. The Copilot AI-credit
+    // allowance resets on the 1st of the month at 00:00:00 UTC — the official,
+    // documented boundary, NOT tied to the subscription date — so this is the
+    // exact reset, no longer an estimate ("目安").
+    //
+    // Takes the reset ALREADY converted to local time: the conversion belongs to
+    // the caller (which holds the UTC instant), which keeps this formatter pure
+    // and machine-timezone independent, so a unit test asserting "11/1 9:00"
+    // passes on a UTC CI runner as well as on a JST workstation. Invariant
+    // digits for the same reason. internal so it can be unit-tested.
+    internal static string FormatResetShort(DateTime? resetLocal)
+        => resetLocal is { } reset
+            ? Strings.Tf("リセット {0}", reset.ToString("M/d H:mm", CultureInfo.InvariantCulture))
+            : Strings.T("リセット 月初");
+
     // The spark-icon color for a severity band (full-strength green / amber / red).
     internal static Color SeverityIconColor(DeltaSeverity severity)
         => severity switch
@@ -186,8 +202,45 @@ internal sealed class CopilotWindow : Form
         }
     }
 
-    public void Update(string planTitle, ServiceUsage? current, ServiceUsage? fallback, int? allowance, CopilotInsights? insights)
-        => _card.Update(planTitle, current, fallback, allowance, insights);
+    public void Update(
+        string planTitle,
+        ServiceUsage? current,
+        ServiceUsage? fallback,
+        int? allowance,
+        CopilotInsights? insights,
+        bool baselineActive = false)
+        => _card.Update(planTitle, current, fallback, allowance, insights, baselineActive);
+
+    // Caption of the per-model block. The breakdown is always the raw
+    // calendar-month total (a single-number baseline cannot be split by model),
+    // so while a mid-month plan-change baseline is active it is labelled as the
+    // pre-adjustment total; the shares stay meaningful either way.
+    internal static string BreakdownCaption(bool baselineActive)
+        => baselineActive ? Strings.T("今月のモデル別（補正前の累計）") : Strings.T("今月のモデル別");
+
+    // Caption of the daily chart. Unlike the per-model block this needs no
+    // baseline variant: each bar is that day's own consumption, not a running
+    // total, so a mid-month plan-change baseline does not make it wrong.
+    internal static string DailyChartCaption() => Strings.T("今月の日別");
+
+    // The prorated daily budget expressed in CREDITS — the same budget the
+    // "本日" spark icon escalates against (DailyBudgetPercent), scaled by the
+    // monthly allowance so the chart can draw it next to the daily bars. null
+    // when there is no allowance or no budget to prorate.
+    internal static decimal? DailyBudgetCredits(double? dailyBudgetPercent, int? allowance)
+    {
+        if (dailyBudgetPercent is not double percent
+            || double.IsNaN(percent)
+            || double.IsInfinity(percent)
+            || percent <= 0d
+            || allowance is not int cap
+            || cap <= 0)
+        {
+            return null;
+        }
+
+        return (decimal)percent * cap / 100m;
+    }
 
     public void SetLoading() => _card.SetLoading();
 
@@ -417,20 +470,43 @@ internal sealed class CopilotWindow : Form
         private const int IconSize = 16;
         private const int TitleLeft = ContentLeft + IconSize + 8;
 
+        // Vertical layout BELOW the projection row (_predictionSub ends at 168).
+        // These mirror the positions that used to be hard-coded: the detail
+        // toggle sat at 176 and the detail box at 194, which is what makes
+        // CardBaseHeight 214. The optional extras block (per-model breakdown +
+        // extra-spend line) is inserted at ExtrasTop, and everything below it
+        // shifts down by the block's height plus ExtrasBottomGap — see
+        // ApplyLayout, which is the ONE place that decides these positions and
+        // the card height.
+        private const int ExtrasTop = 172;
+        private const int ExtrasBottomGap = 4;
+        private const int ExtrasSeparatorY = 169;
+        private const int SpendRowHeight = 16;
+        private const int DetailToggleTop = 176;
+        private const int DetailBoxTop = 194;
+
         private readonly Label _title;
         private readonly Label _planSub;
         private readonly Label _badge;
         private readonly Label _statusMessage;
         // Small header row directly above the 67% hero: a fixed "クレジット" caption on
-        // the left and the (right-aligned) monthly reset estimate on the right.
+        // the left and the (right-aligned) exact monthly reset on the right.
         private readonly Label _creditLabel;
         private readonly Label _resetTop;
         private readonly MainUsageControl _mainLine;
         private readonly UsageBarControl _bar;
         // Hint line used ONLY for non-Available / no-plan states (e.g. "set a token",
-        // "pick a plan"); the normal reset estimate now lives in _resetTop.
+        // "pick a plan"); the normal reset line now lives in _resetTop.
         private readonly Label _resetSub;
         private readonly Label _predictionSub;
+        // "This month by day": one owner-drawn bar chart (caption + plot area).
+        // Sits above the per-model block, directly under the projection row.
+        private readonly CopilotDailyChartControl _dailyChart;
+        // "This month by model": one owner-drawn block (caption + up to 6 rows).
+        private readonly CopilotBreakdownControl _breakdown;
+        // The billed-overage line ("追加利用 $1.23"), shown when the provider
+        // reported a net (post-allowance) amount.
+        private readonly Label _extraSpend;
         // Promoted to a second hero line (icon + bold ~14pt, color-escalated). No
         // longer a quiet muted Label — see TodayDeltaControl.
         private readonly TodayDeltaControl _todayLine;
@@ -440,6 +516,14 @@ internal sealed class CopilotWindow : Form
         private bool _detailExpanded;
         private bool _detailed;
         private bool _hasPercent;
+        // Layout state for the optional extras block. These are LOCAL bools /
+        // counts on purpose: Control.Visible getters read false while the popup
+        // is hidden (updates run on a timer with the window hidden), so reading
+        // them back would make the layout collapse on the next refresh.
+        private int _breakdownLines;
+        private bool _showDailyChart;
+        private bool _showExtraSpend;
+        private bool _showExtrasSeparator;
         // The main line is rendered as a big value + a smaller suffix.
         private string _compactValue = "—";
         private string _detailValue = "—";
@@ -540,7 +624,7 @@ internal sealed class CopilotWindow : Form
                 Visible = false
             };
 
-            // Same row, right-aligned: a short monthly reset estimate. Occupies only
+            // Same row, right-aligned: the short, exact monthly reset. Occupies only
             // the right portion so it cannot overlap the caption on its left.
             _resetTop = new Label
             {
@@ -614,6 +698,40 @@ internal sealed class CopilotWindow : Form
                 Visible = false
             };
 
+            // This month's per-day bar chart. Created up front for the same
+            // reason as _breakdown below (AttachHandlers walks the tree once).
+            _dailyChart = new CopilotDailyChartControl
+            {
+                Location = new Point(ContentLeft, ExtrasTop),
+                Size = new Size(ContentWidth, CopilotDailyChartControl.TotalHeight),
+                Visible = false
+            };
+
+            // This month's per-model credit split. Created up front (never
+            // lazily) so CopilotWindow.AttachHandlers — which walks the tree once
+            // in the window ctor — wires its drag/hover handlers like every other
+            // child. Height and visibility are owned by ApplyLayout.
+            _breakdown = new CopilotBreakdownControl
+            {
+                Location = new Point(ContentLeft, ExtrasTop),
+                Size = new Size(ContentWidth, CopilotBreakdownControl.HeightFor(1)),
+                Visible = false
+            };
+
+            // Billed overage, e.g. "追加利用 $1.23" (ServiceExtrasText.SpendText).
+            _extraSpend = new Label
+            {
+                AutoSize = false,
+                Size = new Size(ContentWidth, SpendRowHeight),
+                Location = new Point(ContentLeft, ExtrasTop),
+                ForeColor = UsageTheme.MutedText,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Font = UsageTheme.CreateCopilotFont(8.5F),
+                Visible = false
+            };
+
             _detailToggle = new LinkLabel
             {
                 Text = Strings.T("詳細を表示"),
@@ -656,6 +774,9 @@ internal sealed class CopilotWindow : Form
             Controls.Add(_resetSub);
             Controls.Add(_todayLine);
             Controls.Add(_predictionSub);
+            Controls.Add(_dailyChart);
+            Controls.Add(_breakdown);
+            Controls.Add(_extraSpend);
             Controls.Add(_detailToggle);
             Controls.Add(_detailBox);
         }
@@ -693,11 +814,23 @@ internal sealed class CopilotWindow : Form
             _resetSub.Visible = false;
             _predictionSub.Visible = false;
             _todayLine.Visible = false;
+            // Drop the optional extras so the card shrinks back to its base
+            // height while loading (state first, then the single layout pass).
+            _breakdownLines = 0;
+            _showDailyChart = false;
+            _showExtraSpend = false;
             ApplyMainLineText();
             UpdateDiagnostics(string.Empty);
+            ApplyLayout();
         }
 
-        public void Update(string planTitle, ServiceUsage? current, ServiceUsage? fallback, int? allowance, CopilotInsights? insights)
+        public void Update(
+            string planTitle,
+            ServiceUsage? current,
+            ServiceUsage? fallback,
+            int? allowance,
+            CopilotInsights? insights,
+            bool baselineActive = false)
         {
             _planSub.Text = planTitle;
 
@@ -754,9 +887,9 @@ internal sealed class CopilotWindow : Form
                 _bar.SetValue(null);
             }
 
-            // The credit-row reset estimate (right side) — monthly reset is an
-            // estimate (the API gives none), so it stays a "目安".
-            _resetTop.Text = FormatResetShort(window);
+            // The credit-row reset (right side). Converted to local time here so
+            // the formatter itself stays pure (see CopilotWindow.FormatResetShort).
+            _resetTop.Text = FormatResetShort(window?.ResetAtUtc?.ToLocalTime().DateTime);
 
             ApplyMainLineText();
             ApplyInsights(insights, dailyBudgetPercent);
@@ -802,10 +935,112 @@ internal sealed class CopilotWindow : Form
                 }
             }
 
+            ApplyExtras(
+                available ? fallback?.Extras ?? current?.Extras : null,
+                baselineActive,
+                DailyBudgetCredits(dailyBudgetPercent, allowance));
+
             var debug = ProviderStatusPresenter.BuildDebugSummary("GitHub Copilot", current, fallback);
             var masked = ProviderStatusPresenter.SafeDiagnostics(current?.Message);
             var combined = string.IsNullOrEmpty(masked) ? debug : $"{debug}{Environment.NewLine}{masked}";
             UpdateDiagnostics(combined);
+
+            // One layout pass at the end, after every piece of state is set.
+            ApplyLayout();
+        }
+
+        // The per-model breakdown and the billed-overage line. The extras are
+        // taken from the SAME ServiceUsage the displayed numbers come from: the
+        // card reads `used` out of `fallback`, which IS the current service when
+        // it is Available and the last successful one otherwise. The
+        // baseline-adjusted copies TrayApplicationContext builds are `record
+        // with` clones, so Extras survives that adjustment untouched.
+        //
+        // Everything degrades: no model on any row -> no list -> no block; no
+        // net amount anywhere -> no ExtraSpend -> no line; no per-day rows (the
+        // extra billing read failed, or the response carried no dates) -> no
+        // chart. A spend of 0 is a real answer ("no overage") and IS shown.
+        private void ApplyExtras(ServiceExtras? extras, bool baselineActive, decimal? dailyBudgetCredits)
+        {
+            // The daily chart spans the CURRENT UTC month (GitHub's billing
+            // month), so the anchor is today's UTC date, not the local one.
+            _showDailyChart = extras?.DailyCredits is { Count: > 0 };
+            if (_showDailyChart)
+            {
+                _dailyChart.SetContent(
+                    DailyChartCaption(),
+                    CopilotDailySeries.Build(extras!.DailyCredits, DateOnly.FromDateTime(DateTime.UtcNow)),
+                    dailyBudgetCredits,
+                    _accent);
+            }
+
+            var lines = CopilotModelBreakdown.Build(extras?.ModelCredits);
+            _breakdownLines = lines.Count;
+            if (lines.Count > 0)
+            {
+                _breakdown.SetContent(BreakdownCaption(baselineActive), lines);
+            }
+
+            _showExtraSpend = extras?.ExtraSpend is not null;
+            if (extras?.ExtraSpend is { } spend)
+            {
+                _extraSpend.Text = ServiceExtrasText.SpendText(spend);
+            }
+        }
+
+        // The ONE place that decides the vertical positions below the projection
+        // row and the resulting card height. Driven purely by local state
+        // (_showDailyChart / _breakdownLines / _showExtraSpend /
+        // _detailExpanded) — never by a Control.Visible getter, which reads
+        // false while the popup is hidden.
+        //
+        // Extras stack order: daily chart -> per-model block -> billed overage,
+        // with the hairline separator painted above the first of them.
+        private void ApplyLayout()
+        {
+            var chartHeight = CopilotDailyChartControl.HeightFor(_showDailyChart);
+            var breakdownHeight = CopilotBreakdownControl.HeightFor(_breakdownLines);
+            var y = ExtrasTop;
+            if (chartHeight > 0)
+            {
+                _dailyChart.Bounds = new Rectangle(ContentLeft, y, ContentWidth, chartHeight);
+                y += chartHeight;
+            }
+
+            if (breakdownHeight > 0)
+            {
+                _breakdown.Bounds = new Rectangle(ContentLeft, y, ContentWidth, breakdownHeight);
+                y += breakdownHeight;
+            }
+
+            if (_showExtraSpend)
+            {
+                _extraSpend.Bounds = new Rectangle(ContentLeft, y, ContentWidth, SpendRowHeight);
+                y += SpendRowHeight;
+            }
+
+            _dailyChart.Visible = chartHeight > 0;
+            _breakdown.Visible = breakdownHeight > 0;
+            _extraSpend.Visible = _showExtraSpend;
+
+            // Everything below the extras block moves down by its height plus a
+            // small gap; with no extras the card keeps exactly its old geometry.
+            var extrasHeight = y - ExtrasTop;
+            var shift = extrasHeight > 0 ? extrasHeight + ExtrasBottomGap : 0;
+            _showExtrasSeparator = extrasHeight > 0;
+
+            _detailToggle.Top = DetailToggleTop + shift;
+            _detailBox.Top = DetailBoxTop + shift;
+
+            // Repaint for the separator (its presence/absence is painted here).
+            Invalidate();
+
+            var newHeight = CardBaseHeight + shift + (_detailExpanded ? CardDetailExtra : 0);
+            if (Height != newHeight)
+            {
+                Height = newHeight;
+                HeightChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         // Sub-info: a 100%-reach projection (only meaningful with an allowance) and
@@ -902,19 +1137,6 @@ internal sealed class CopilotWindow : Form
             _title.Width = Math.Max(40, x - TitleLeft - 8);
         }
 
-        // Compact reset estimate for the credit-row right slot (the "クレジット" caption
-        // already gives the monthly context, so this stays short). Still an estimate.
-        private static string FormatResetShort(RateLimitWindow? window)
-        {
-            if (window?.ResetAtUtc is null)
-            {
-                return Strings.T("リセット目安 月初");
-            }
-
-            var reset = window.ResetAtUtc.Value.ToLocalTime();
-            return Strings.Tf("リセット目安 {0}/{1}", reset.Month, reset.Day);
-        }
-
         // Copilot-specific copy: the generic "再ログインしてください" hints assume a
         // CLI login, which does not fit the GITHUB_TOKEN (env PAT) model.
         private static string CopilotStatusMessage(ProviderStatus status, ServiceUsage? current, ServiceUsage? fallback)
@@ -970,12 +1192,9 @@ internal sealed class CopilotWindow : Form
             _detailExpanded = expanded;
             _detailBox.Visible = expanded;
             _detailToggle.Text = expanded ? Strings.T("詳細を隠す") : Strings.T("詳細を表示");
-            var newHeight = expanded ? CardBaseHeight + CardDetailExtra : CardBaseHeight;
-            if (Height != newHeight)
-            {
-                Height = newHeight;
-                HeightChanged?.Invoke(this, EventArgs.Empty);
-            }
+            // The height (and the toggle/box positions) are owned by ApplyLayout,
+            // which also accounts for the optional extras block above them.
+            ApplyLayout();
         }
 
         // Decorative glass tint is fixed (slate); the configurable accent rides the
@@ -996,6 +1215,10 @@ internal sealed class CopilotWindow : Form
                 _bar.Invalidate();
             }
 
+            // The daily bars follow the accent too (they do NOT escalate at
+            // 80/95 — that is the usage bar's job).
+            _dailyChart.AccentColor = accent;
+
             // The divider pill and (when shown) the pinned outline are painted from
             // _accent in OnPaint, so repaint the card to pick up the new color.
             Invalidate();
@@ -1012,6 +1235,16 @@ internal sealed class CopilotWindow : Form
             // rounded edge.
             UsageTheme.PaintGlassCard(e.Graphics, Width, Height, _brand, 0f, _accent);
             CopilotGlyph.Draw(e.Graphics, new RectangleF(ContentLeft, 13f, IconSize, IconSize), UsageTheme.CopilotBrand);
+
+            // Hairline above the extras block (per-model breakdown / billed
+            // overage), same idea as the ServiceCard divider: painted here, not a
+            // child control, so the glass stays free of extra transparent panels.
+            if (_showExtrasSeparator)
+            {
+                using var pen = new Pen(UsageTheme.CardBorder);
+                e.Graphics.DrawLine(
+                    pen, ContentLeft, ExtrasSeparatorY, ContentLeft + ContentWidth, ExtrasSeparatorY);
+            }
         }
     }
 }

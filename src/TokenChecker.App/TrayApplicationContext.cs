@@ -1138,19 +1138,48 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private double? CopilotPercent(UsageSnapshot snapshot)
     {
-        if (_settings.CopilotCreditAllowance() is not int cap || cap <= 0)
+        var service = snapshot.Services.FirstOrDefault(s =>
+            string.Equals(s.ServiceName, AppSettings.CopilotServiceName, StringComparison.OrdinalIgnoreCase)
+            && s.Status == ProviderStatus.Available);
+        if (EffectiveCopilotAllowance(service, LastSuccessfulCopilot()) is not int cap || cap <= 0)
         {
             return null;
         }
 
-        var service = snapshot.Services.FirstOrDefault(s =>
-            string.Equals(s.ServiceName, AppSettings.CopilotServiceName, StringComparison.OrdinalIgnoreCase)
-            && s.Status == ProviderStatus.Available);
         var window = service?.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200);
         return window?.Used is long used
             ? Math.Min(100d, EffectiveCopilotUsed(used) / (double)cap * 100d)
             : null;
     }
+
+    // ----- Copilot plan / allowance resolution ------------------------------
+    //
+    // The ONE pair of entry points for "which monthly allowance and which plan
+    // title are in force". The allowance auto-detected from GitHub (Extras,
+    // filled by the provider's best-effort /copilot_internal/user read) wins;
+    // when it is missing the plan picked in settings is used, exactly as
+    // before. Every consumer — the card, the tray %-bar and its warning spark,
+    // the tray tooltip, CopilotUsageTracker's projection / today's delta and
+    // the prorated daily budget — resolves through these, so the two sources
+    // can never be mixed. The settings dialog is excepted: it edits the
+    // fallback itself.
+    private int? EffectiveCopilotAllowance(ServiceUsage? current, ServiceUsage? fallback)
+        => CopilotPlanResolver.Allowance(
+            CopilotPlanResolver.PickExtras(current, fallback),
+            _settings.CopilotCreditAllowance());
+
+    private string EffectiveCopilotPlanTitle(ServiceUsage? current, ServiceUsage? fallback)
+        => CopilotPlanResolver.Title(
+            CopilotPlanResolver.PickExtras(current, fallback),
+            _settings.CopilotPlanTitle());
+
+    // The last successful Copilot sample, so the tray paths that only get a
+    // single (possibly non-Available) snapshot still see the detected plan /
+    // allowance instead of silently dropping back to the settings plan.
+    private ServiceUsage? LastSuccessfulCopilot()
+        => _lastSuccessfulServices.TryGetValue(AppSettings.CopilotServiceName, out var service)
+            ? service
+            : null;
 
     // Applies the manual current-period baseline (set after a mid-month plan
     // change) to a raw monthly used. No baseline / a baseline for a past month ->
@@ -1198,7 +1227,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 string.Equals(s.ServiceName, AppSettings.CopilotServiceName, StringComparison.OrdinalIgnoreCase)
                 && s.Status == ProviderStatus.Available);
 
-        var allowance = _settings.CopilotCreditAllowance();
+        // Auto-detected plan/allowance (when GitHub answered) or the settings
+        // plan. Resolved ONCE here and handed to the card and the tracker.
+        var allowance = EffectiveCopilotAllowance(copilot, fallbackCopilot);
+        var planTitle = EffectiveCopilotPlanTitle(copilot, fallbackCopilot);
 
         // Apply the manual current-period baseline once here so the card AND the
         // tracker (today's delta / projection) both work off the current-period
@@ -1232,7 +1264,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 : null;
         }
 
-        _copilotWindow.Update(_settings.CopilotPlanTitle(), copilotAdjusted, fallbackAdjusted, allowance, insights);
+        var baselineActive = CopilotBaseline.IsActive(
+            _settings.CopilotPeriodBaselineUsed,
+            _settings.CopilotPeriodBaselineMonth,
+            DateTimeOffset.UtcNow);
+
+        _copilotWindow.Update(planTitle, copilotAdjusted, fallbackAdjusted, allowance, insights, baselineActive);
     }
 
     // ----- Tooltips ---------------------------------------------------------
@@ -1279,7 +1316,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var window = service.Windows.FirstOrDefault(w => w.WindowDurationMins == 43200);
         var used = window?.Used;
-        var allowance = _settings.CopilotCreditAllowance();
+        var allowance = EffectiveCopilotAllowance(service, LastSuccessfulCopilot());
         if (used is long u && allowance is int cap && cap > 0)
         {
             var effective = EffectiveCopilotUsed(u);

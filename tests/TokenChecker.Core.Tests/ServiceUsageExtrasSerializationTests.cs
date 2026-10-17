@@ -88,6 +88,7 @@ public sealed class ServiceUsageExtrasSerializationTests
         Assert.True(extras.CreditsUnlimited);
         Assert.Equal(2, extras.ResetCreditsAvailable);
         Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1760500000), extras.ResetCreditsNextExpiry);
+        Assert.Null(extras.CreditAllowance);
     }
 
     [Fact]
@@ -115,8 +116,39 @@ public sealed class ServiceUsageExtrasSerializationTests
     {
         Assert.True(new ServiceExtras().IsEmpty);
         Assert.True(new ServiceExtras(ScopedLimits: Array.Empty<ScopedLimit>()).IsEmpty);
+        Assert.True(new ServiceExtras(ModelCredits: Array.Empty<ModelCredits>()).IsEmpty);
+        Assert.True(new ServiceExtras(DailyCredits: Array.Empty<DailyCredits>()).IsEmpty);
         Assert.False(new ServiceExtras(PlanLabel: "Pro").IsEmpty);
         Assert.False(new ServiceExtras(ResetCreditsAvailable: 0).IsEmpty);
+        Assert.False(new ServiceExtras(ModelCredits: new[] { new ModelCredits("gpt-5.6", 10m) }).IsEmpty);
+        Assert.False(
+            new ServiceExtras(DailyCredits: new[] { new DailyCredits(new DateOnly(2026, 10, 7), 1826m) }).IsEmpty);
+        // The Copilot allowance auto-detected from GitHub is on its own enough
+        // to be worth persisting (it is what the card's cap/remaining needs).
+        Assert.False(new ServiceExtras(CreditAllowance: 20000m).IsEmpty);
+    }
+
+    [Fact]
+    public void DailyCreditsRoundTrip_KeepsTheDateOnlyAndTheDecimal()
+    {
+        // DateOnly is serialized by System.Text.Json as "yyyy-MM-dd" with no
+        // converter of our own — this pins that it survives last_usage.json.
+        var original = new ServiceExtras(
+            DailyCredits: new[]
+            {
+                new DailyCredits(new DateOnly(2026, 10, 7), 1826.5m),
+                new DailyCredits(new DateOnly(2026, 10, 8), 0m)
+            });
+
+        var json = JsonSerializer.Serialize(original, StoreOptions);
+        Assert.Contains("2026-10-07", json, StringComparison.Ordinal);
+
+        var restored = JsonSerializer.Deserialize<ServiceExtras>(json, StoreOptions)!;
+        Assert.Equal(2, restored.DailyCredits!.Count);
+        Assert.Equal(new DateOnly(2026, 10, 7), restored.DailyCredits[0].UtcDate);
+        Assert.Equal(1826.5m, restored.DailyCredits[0].Credits);
+        Assert.Equal(new DateOnly(2026, 10, 8), restored.DailyCredits[1].UtcDate);
+        Assert.Equal(0m, restored.DailyCredits[1].Credits);
     }
 
     [Fact]

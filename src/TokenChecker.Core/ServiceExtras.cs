@@ -17,6 +17,25 @@ public sealed record ScopedLimit(
     double? UsedPercent,
     DateTimeOffset? ResetAtUtc);
 
+// One model's share of a monthly credit consumption (GitHub Copilot's
+// usageItems[].model). Label is the model DISPLAY name exactly as the API
+// reported it, or null when the row carried no model (the fallback billing
+// endpoint omits the field); Credits is the number of credits attributed to it.
+//
+// Numbers and a model name only — no ids, repositories, emails or paths.
+public sealed record ModelCredits(
+    string? Label,
+    decimal Credits);
+
+// One UTC calendar day's credit consumption (GitHub Copilot's
+// usageItems[].date grouped by UTC day). GitHub reports one usage row per UTC
+// day that had usage, so a day without usage simply has no entry here.
+//
+// A date and a number only — no repository, model, id or path.
+public sealed record DailyCredits(
+    DateOnly UtcDate,
+    decimal Credits);
+
 // Actual overage/extra spending for a service. Unit is a currency code
 // ("USD", ...) for Claude's spend / extra_usage, or "credits" for Codex's
 // individual spend limit. Numbers only.
@@ -44,7 +63,20 @@ public sealed record ServiceExtras(
     // Codex only: unused rate-limit reset credits ("reset tickets") and the
     // earliest expiry among the available ones.
     int? ResetCreditsAvailable = null,
-    DateTimeOffset? ResetCreditsNextExpiry = null)
+    DateTimeOffset? ResetCreditsNextExpiry = null,
+    // GitHub Copilot only: this month's credit consumption split by model.
+    // Appended last so every existing construction site and every previously
+    // written last_usage.json keeps working.
+    IReadOnlyList<ModelCredits>? ModelCredits = null,
+    // GitHub Copilot only: this month's credit consumption per UTC calendar
+    // day, for the card's daily bar chart. Appended last for the same
+    // backward-compatibility reason as ModelCredits.
+    IReadOnlyList<DailyCredits>? DailyCredits = null,
+    // GitHub Copilot only: the monthly AI-credit allowance auto-detected from
+    // GitHub (the unofficial /copilot_internal/user entitlement). A NUMBER
+    // only; when absent the App falls back to the plan picked in settings.
+    // Appended last for the same backward-compatibility reason as above.
+    decimal? CreditAllowance = null)
 {
     // True when there is nothing worth showing, so a provider can avoid
     // attaching an all-empty Extras. Derived, so it is kept out of the
@@ -57,5 +89,8 @@ public sealed record ServiceExtras(
             && CreditsBalance is null
             && !CreditsUnlimited
             && ResetCreditsAvailable is null
-            && ResetCreditsNextExpiry is null;
+            && ResetCreditsNextExpiry is null
+            && (ModelCredits is null || ModelCredits.Count == 0)
+            && (DailyCredits is null || DailyCredits.Count == 0)
+            && CreditAllowance is null;
 }

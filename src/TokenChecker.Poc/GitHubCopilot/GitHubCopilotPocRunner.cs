@@ -11,16 +11,31 @@ namespace TokenChecker.Poc.GitHubCopilot;
 // POC runner for the GitHub Copilot AI Credits provider. Invoked only when the
 // POC is started with --github-copilot, so the default POC output is unchanged.
 //
-// Two modes:
+// Three modes:
 //   --github-copilot          structured: run the provider through the same
 //                             UsageAggregator + JSON options the default POC uses.
+//   --github-copilot --internal-probe
+//                             ONE GET to the UNOFFICIAL, undocumented
+//                             https://api.github.com/copilot_internal/user, to
+//                             find out whether a plain fine-grained PAT is
+//                             accepted there at all (community notes say it
+//                             normally needs a Copilot-app OAuth token). Sent
+//                             with the SAME standard headers the provider uses
+//                             — no editor/client spoofing (no Editor-Version
+//                             etc.). The provider now reads this endpoint too
+//                             (best-effort, for the plan name + AI-credit
+//                             allowance); this probe stays the schema-discovery
+//                             view of it and prints strictly more fields than
+//                             the provider consumes.
 //   --github-copilot --raw    raw probe: hit the candidate billing endpoints and
 //                             print ONLY the status, a couple of safe headers, and
-//                             the whitelisted, masked product/sku/unitType plus the
-//                             numeric quantity/grossQuantity/grossAmount/
-//                             netQuantity/netAmount and the copilot classification
-//                             of each usageItem, so the real (post-2026-06-01 AI
-//                             Credits) schema is visible without leaking PII.
+//                             the whitelisted, masked product/sku/model/unitType
+//                             plus the numeric quantity/grossQuantity/grossAmount/
+//                             discountQuantity/netQuantity/netAmount and the copilot
+//                             classification of each usageItem, plus the per-model
+//                             credit split and billed overage the card will show,
+//                             so the real (post-2026-06-01 AI Credits) schema is
+//                             visible without leaking PII.
 //
 // Privacy: the token is never printed; the resolved login is never printed (URLs
 // are shown with {login} substituted); response BODIES are never printed (they can
@@ -32,6 +47,8 @@ namespace TokenChecker.Poc.GitHubCopilot;
 internal static class GitHubCopilotPocRunner
 {
     private const string ApiBaseUrl = "https://api.github.com";
+    // UNOFFICIAL / undocumented, reachable only through --internal-probe.
+    private const string InternalUserEndpoint = ApiBaseUrl + "/copilot_internal/user";
     private const string ApiVersion = "2026-03-10";
     // No version suffix: GitHub only requires a User-Agent to be present (kept in
     // sync with GitHubCopilotUsageProvider so a release bump can't make them drift).
@@ -45,8 +62,148 @@ internal static class GitHubCopilotPocRunner
 
     public static async Task<int> RunAsync(string[] args)
     {
+        if (args.Any(a => string.Equals(a, "--internal-probe", StringComparison.OrdinalIgnoreCase)))
+        {
+            return await RunInternalProbeAsync().ConfigureAwait(false);
+        }
+
         var raw = args.Any(a => string.Equals(a, "--raw", StringComparison.OrdinalIgnoreCase));
         return raw ? await RunRawAsync().ConfigureAwait(false) : await RunStructuredAsync().ConfigureAwait(false);
+    }
+
+    // Single GET to the unofficial /copilot_internal/user endpoint.
+    //
+    // Output is a STRICT allowlist, printed by PrintInternalUser: the HTTP
+    // status, x-ratelimit-remaining, the TOP-LEVEL KEY NAMES (names only), the
+    // copilot_plan / quota_reset_date[_utc] values, and for each child of
+    // quota_snapshots its key name plus seven numeric/bool fields. Nothing else
+    // is printed — no login, email, ids, tracking ids, org lists, endpoints or
+    // tokens — and on a non-200 only the status is printed, never a body.
+    private static async Task<int> RunInternalProbeAsync()
+    {
+        var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            Console.WriteLine("GITHUB_TOKEN is not set; cannot perform the internal probe. (no token is read or printed)");
+            return 0;
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        var probe = await ProbeAsync(InternalUserEndpoint, token, cts.Token).ConfigureAwait(false);
+
+        Console.WriteLine("=== GET /copilot_internal/user (unofficial, probe only) ===");
+        if (probe.Note is not null)
+        {
+            Console.WriteLine($"  request failed: {probe.Note}");
+            return 0;
+        }
+
+        Console.WriteLine($"  status: {probe.Code}");
+        Console.WriteLine($"  x-ratelimit-remaining: {probe.RateLimitRemaining ?? "(none)"}");
+
+        if (probe.Code != 200)
+        {
+            // Deliberately no body, not even a length: a failure body can carry
+            // identifying text.
+            Console.WriteLine("  (non-200: response body intentionally not printed)");
+            return 0;
+        }
+
+        PrintInternalUser(SafeParse(probe.Body));
+        return 0;
+    }
+
+    private static void PrintInternalUser(JsonNode? root)
+    {
+        if (root is not JsonObject obj)
+        {
+            Console.WriteLine("  body: (absent or not a JSON object)");
+            return;
+        }
+
+        // Schema discovery: NAMES only, so an unexpected field's value cannot
+        // leak just because it exists.
+        var keys = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var pair in obj)
+        {
+            keys.Add(pair.Key);
+        }
+
+        Console.WriteLine($"  topLevelKeys: [{string.Join(", ", keys)}]");
+
+        // The only three string values on the allowlist; masked as well, so even
+        // an unexpected PII-shaped value cannot get through.
+        Console.WriteLine($"  copilot_plan: {StringOnly(obj["copilot_plan"])}");
+        Console.WriteLine($"  quota_reset_date: {StringOnly(obj["quota_reset_date"])}");
+        Console.WriteLine($"  quota_reset_date_utc: {StringOnly(obj["quota_reset_date_utc"])}");
+
+        if (obj["quota_snapshots"] is not JsonObject snapshots)
+        {
+            Console.WriteLine("  quota_snapshots: (absent or not an object)");
+            return;
+        }
+
+        Console.WriteLine("  quota_snapshots:");
+        foreach (var pair in snapshots)
+        {
+            // The child's KEY (e.g. premium_interactions / chat / completions)
+            // plus its numeric/bool fields only.
+            Console.WriteLine($"    {pair.Key}:");
+            foreach (var field in QuotaSnapshotFields)
+            {
+                Console.WriteLine($"      {field}={NumberOrBool(pair.Value?[field])}");
+            }
+        }
+    }
+
+    // The exact set of quota_snapshots child fields allowed in the output.
+    private static readonly string[] QuotaSnapshotFields =
+    {
+        "entitlement",
+        "remaining",
+        "quota_remaining",
+        "percent_remaining",
+        "unlimited",
+        "overage_count",
+        "overage_permitted"
+    };
+
+    // Prints a value ONLY when it is a JSON string (masked). An object/array
+    // under one of these names is reported by kind, never by value, so a
+    // nested payload cannot be dumped just because it took an allowlisted name.
+    private static string StringOnly(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return "(absent)";
+        }
+
+        return node.GetValueKind() switch
+        {
+            JsonValueKind.String => MaskField(node.GetValue<string>()),
+            JsonValueKind.Null => "(null)",
+            _ => "(non-string)"
+        };
+    }
+
+    // Prints a value ONLY when it is a JSON number or boolean; anything else is
+    // reported by kind, never by value, so a string/object/array field that
+    // happens to share one of these names cannot leak.
+    private static string NumberOrBool(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return "(absent)";
+        }
+
+        return node.GetValueKind() switch
+        {
+            JsonValueKind.Number => node.ToString(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => "(null)",
+            _ => "(non-numeric)"
+        };
     }
 
     private static async Task<int> RunStructuredAsync()
@@ -185,6 +342,7 @@ internal static class GitHubCopilotPocRunner
         Console.WriteLine($"  usageItems: {array.Count}; keys: [{string.Join(", ", keys)}]");
 
         decimal copilotTotal = 0m;
+        var copilotItems = new List<GitHubBillingUsageParser.GitHubBillingUsageItem>();
         foreach (var node in array)
         {
             if (node is not JsonObject)
@@ -195,27 +353,55 @@ internal static class GitHubCopilotPocRunner
             var item = new GitHubBillingUsageParser.GitHubBillingUsageItem(
                 Str(node["product"]), Str(node["sku"]), Str(node["unitType"]),
                 Dec(node["quantity"]), Dec(node["grossQuantity"]), Dec(node["grossAmount"]),
-                Dec(node["netQuantity"]), Dec(node["netAmount"]));
+                Dec(node["netQuantity"]), Dec(node["netAmount"]),
+                Str(node["model"]), Dec(node["discountQuantity"]), Dec(node["discountAmount"]));
 
             var isCopilot = GitHubBillingUsageParser.IsCopilotAiCreditUsage(item);
             var credits = GitHubBillingUsageParser.CreditsForRow(item);
             if (isCopilot)
             {
                 copilotTotal += credits;
+                copilotItems.Add(item);
             }
 
             Console.WriteLine(
                 $"    date={Str(node["date"]) ?? "(null)"}; "
                 + $"product={MaskField(item.Product)}; "
                 + $"sku={MaskField(item.Sku)}; "
+                // model is a vendor model DISPLAY name, masked like the other
+                // whitelisted strings so an unexpected PII-shaped value cannot leak.
+                + $"model={MaskField(item.Model)}; "
                 + $"unitType={MaskField(item.UnitType)}; "
                 + $"grossQuantity={Format(item.GrossQuantity)}; "
                 + $"grossAmount={Format(item.GrossAmount)}; "
+                + $"discountQuantity={Format(item.DiscountQuantity)}; "
+                + $"netAmount={Format(item.NetAmount)}; "
                 + $"copilot={isCopilot}; "
                 + $"credits={Format(credits)}");
         }
 
         Console.WriteLine($"  copilot AI-credit total (all rows this calendar month): {Format(copilotTotal)}");
+
+        // What the card will actually show: the per-model credit split and the
+        // billed overage, straight out of the shared BuildExtras helper, so the
+        // real response can be checked against the UI without running the app.
+        var extras = GitHubBillingUsageParser.BuildExtras(copilotItems);
+        if (extras?.ModelCredits is { Count: > 0 } models)
+        {
+            Console.WriteLine("  per-model credits (BuildExtras):");
+            foreach (var model in models)
+            {
+                Console.WriteLine($"    model={MaskField(model.Label)}; credits={Format(model.Credits)}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("  per-model credits (BuildExtras): (no row carried a model)");
+        }
+
+        Console.WriteLine(extras?.ExtraSpend is { } spend
+            ? $"  extra spend (BuildExtras): {Format(spend.Used)} {spend.Unit}"
+            : "  extra spend (BuildExtras): (no row carried netAmount)");
     }
 
     private static string? Str(JsonNode? node)

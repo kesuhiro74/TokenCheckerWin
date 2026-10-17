@@ -9,9 +9,10 @@ namespace TokenChecker.App;
 // with Message nulled for privacy), and this Copilot-specific tracking (target
 // month, the 09:00 day-window baseline, last sample time) does not map onto that
 // model without polluting it. Only numbers and dates are stored — never tokens,
-// logins, paths, or emails. The allowance is NOT duplicated here: settings.json is
-// its single source of truth and percentages are always computed from the current
-// CopilotCreditAllowance().
+// logins, paths, or emails. The allowance is NOT duplicated here: percentages are
+// always computed from the allowance in force at display time, which
+// TrayApplicationContext.EffectiveCopilotAllowance resolves (the one
+// auto-detected from GitHub, else the plan in settings.json).
 internal sealed class CopilotUsageRecord
 {
     // yyyy-MM (UTC) the values below belong to.

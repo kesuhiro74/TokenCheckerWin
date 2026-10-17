@@ -49,7 +49,7 @@ internal sealed class SettingsForm : Form
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(404, 818);
+        Size = new Size(404, 846);
         Font = new Font("Segoe UI", 9F);
 
         // ----- 共通設定 -----------------------------------------------------
@@ -223,7 +223,7 @@ internal sealed class SettingsForm : Form
         {
             Text = Strings.T("GitHub Copilot 設定"),
             Location = new Point(12, 500),
-            Size = new Size(368, 224)
+            Size = new Size(368, 252)
         };
 
         _copilotWindowEnabled.Text = Strings.T("GitHub Copilot ウィンドウを表示");
@@ -243,24 +243,40 @@ internal sealed class SettingsForm : Form
         _copilotPlan.Items.Add(new CopilotPlanOption(CopilotPlan.Custom));
         _copilotPlan.SelectedIndexChanged += (_, _) => UpdateEnabledStates();
 
-        var customLabel = new Label { Text = Strings.T("Custom 上限"), AutoSize = true, Location = new Point(14, 88) };
-        _copilotCustomCredits.Location = new Point(110, 86);
+        // The plan below is only the FALLBACK: the provider auto-detects the plan
+        // and its monthly credit allowance from GitHub whenever that read
+        // succeeds. Fixed width (not AutoSize) so the longer English wording
+        // wraps inside the group box instead of overflowing it.
+        var planAutoNote = new Label
+        {
+            Text = Strings.T("取得できたときは GitHub から自動判定します（できないときはこの設定）"),
+            AutoSize = false,
+            ForeColor = SystemColors.GrayText,
+            Location = new Point(14, 80),
+            // 340px wide fits both the Japanese and the English wording in two
+            // 9pt lines (measured: 333x30 / 334x30); 32px high leaves a pixel of
+            // slack under them.
+            Size = new Size(340, 32)
+        };
+
+        var customLabel = new Label { Text = Strings.T("Custom 上限"), AutoSize = true, Location = new Point(14, 116) };
+        _copilotCustomCredits.Location = new Point(110, 114);
         _copilotCustomCredits.Size = new Size(120, 24);
         _copilotCustomCredits.Minimum = 0;
         _copilotCustomCredits.Maximum = 1_000_000;
         _copilotCustomCredits.Increment = 100;
         _copilotCustomCredits.ThousandsSeparator = true;
 
-        var copilotMethodLabel = new Label { Text = Strings.T("表示方法"), AutoSize = true, Location = new Point(14, 120) };
+        var copilotMethodLabel = new Label { Text = Strings.T("表示方法"), AutoSize = true, Location = new Point(14, 148) };
         _copilotDisplayMode.DropDownStyle = ComboBoxStyle.DropDownList;
-        _copilotDisplayMode.Location = new Point(110, 116);
+        _copilotDisplayMode.Location = new Point(110, 144);
         _copilotDisplayMode.Size = new Size(180, 24);
         _copilotDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.Always));
         _copilotDisplayMode.Items.Add(new WindowDisplayModeOption(WindowDisplayMode.HoverPreview));
 
-        var accentLabel = new Label { Text = Strings.T("配色"), AutoSize = true, Location = new Point(14, 152) };
+        var accentLabel = new Label { Text = Strings.T("配色"), AutoSize = true, Location = new Point(14, 180) };
         _copilotAccent.DropDownStyle = ComboBoxStyle.DropDownList;
-        _copilotAccent.Location = new Point(110, 148);
+        _copilotAccent.Location = new Point(110, 176);
         _copilotAccent.Size = new Size(180, 24);
         _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Blue));
         _copilotAccent.Items.Add(new CopilotAccentOption(CopilotAccent.Green));
@@ -271,25 +287,26 @@ internal sealed class SettingsForm : Form
         // First-time setup wizard + connection test. Always enabled (the user can
         // set up the token before enabling the window).
         _copilotSetupBtn.Text = Strings.T("初回設定");
-        _copilotSetupBtn.Location = new Point(14, 184);
+        _copilotSetupBtn.Location = new Point(14, 212);
         _copilotSetupBtn.Size = new Size(110, 28);
         _copilotSetupBtn.Click += (_, _) => OpenCopilotSetup();
 
         _copilotTestBtn.Text = Strings.T("接続テスト");
-        _copilotTestBtn.Location = new Point(132, 184);
+        _copilotTestBtn.Location = new Point(132, 212);
         _copilotTestBtn.Size = new Size(110, 28);
         _copilotTestBtn.Click += async (_, _) => await RunCopilotTestAsync().ConfigureAwait(true);
 
         // Calibrate the current-period baseline after a mid-month plan change so
         // the card matches GitHub's (reset-on-change) dashboard. Always enabled.
         _copilotBaselineBtn.Text = Strings.T("利用量を補正");
-        _copilotBaselineBtn.Location = new Point(250, 184);
+        _copilotBaselineBtn.Location = new Point(250, 212);
         _copilotBaselineBtn.Size = new Size(106, 28);
         _copilotBaselineBtn.Click += (_, _) => OpenCopilotBaseline();
 
         gbCopilot.Controls.Add(_copilotWindowEnabled);
         gbCopilot.Controls.Add(planLabel);
         gbCopilot.Controls.Add(_copilotPlan);
+        gbCopilot.Controls.Add(planAutoNote);
         gbCopilot.Controls.Add(customLabel);
         gbCopilot.Controls.Add(_copilotCustomCredits);
         gbCopilot.Controls.Add(copilotMethodLabel);
@@ -305,14 +322,14 @@ internal sealed class SettingsForm : Form
         {
             Text = "OK",
             DialogResult = DialogResult.OK,
-            Location = new Point(224, 734),
+            Location = new Point(224, 762),
             Size = new Size(76, 28)
         };
         var cancelButton = new Button
         {
             Text = Strings.T("キャンセル"),
             DialogResult = DialogResult.Cancel,
-            Location = new Point(306, 734),
+            Location = new Point(306, 762),
             Size = new Size(76, 28)
         };
 
@@ -322,7 +339,7 @@ internal sealed class SettingsForm : Form
             Text = $"TokenCheckerWin v{AppVersion()}",
             AutoSize = true,
             ForeColor = SystemColors.GrayText,
-            Location = new Point(16, 740)
+            Location = new Point(16, 768)
         };
 
         Controls.Add(gbCommon);

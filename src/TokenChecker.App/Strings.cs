@@ -155,8 +155,21 @@ internal static class Strings
         ["予測にはデータ不足"] = "Not enough data to project",
         ["クレジット"] = "Credits",
         ["プランを選ぶと上限・残量を表示"] = "Pick a plan to show the cap & remaining",
-        ["リセット目安 {0}/{1}"] = "Reset ~{0}/{1}",
-        ["リセット目安 月初"] = "Reset ~month start",
+        // Settings: the plan selector is only the fallback — the plan and its
+        // monthly credit allowance are auto-detected from GitHub when possible.
+        ["取得できたときは GitHub から自動判定します（できないときはこの設定）"] =
+            "Auto-detected from GitHub when available (this setting is the fallback)",
+        // Exact monthly reset (1st of the month, 00:00 UTC) shown in local time.
+        ["リセット {0}"] = "Reset {0}",
+        ["リセット 月初"] = "Reset at month start",
+        ["今月のモデル別"] = "This month by model",
+        ["今月のモデル別（補正前の累計）"] = "This month by model (before adjustment)",
+        ["{0}（{1}%）"] = "{0} ({1}%)",
+        // Daily bar chart (CopilotDailyChartControl / CopilotDailySeries). The
+        // hover text is deliberately identical in both languages: the unit is
+        // already "credits" everywhere on this card.
+        ["今月の日別"] = "This month by day",
+        ["{0}  {1} credits"] = "{0}  {1} credits",
         ["本日"] = "Today",
         ["+{0}（+{1}%）"] = "+{0} (+{1}%)",
         ["+{0} credits"] = "+{0} credits",

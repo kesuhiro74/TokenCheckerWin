@@ -40,4 +40,19 @@ public class CopilotBaselineTests
     [Fact]
     public void EffectiveUsed_ClampsToZero_WhenRawBelowBaseline()
         => Assert.Equal(0L, CopilotBaseline.EffectiveUsed(100, 5126, "2026-06", June));
+
+    [Fact]
+    public void IsActive_True_ForNonZeroBaselineThisMonth()
+        => Assert.True(CopilotBaseline.IsActive(5126, "2026-06", June));
+
+    [Fact]
+    public void IsActive_False_WhenMonthRolledOver()
+        => Assert.False(CopilotBaseline.IsActive(5126, "2026-06", July));
+
+    [Fact]
+    public void IsActive_False_WhenNoBaselineOrZero()
+    {
+        Assert.False(CopilotBaseline.IsActive(null, null, June));
+        Assert.False(CopilotBaseline.IsActive(0, "2026-06", June));
+    }
 }
