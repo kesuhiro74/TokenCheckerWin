@@ -326,6 +326,7 @@ internal sealed class StatusForm : Form
 
     private void RecalculateLayout()
     {
+        var previousSize = ClientSize;
         SuspendLayout();
         try
         {
@@ -345,6 +346,16 @@ internal sealed class StatusForm : Form
         finally
         {
             ResumeLayout(true);
+        }
+
+        // When the window grows (e.g. a card gains rows once data arrives), child
+        // controls in the newly exposed area were observed to stay unpainted
+        // (black under DWM) until something else invalidated them. Repaint the
+        // whole tree on any size change; refreshes are minutes apart, so this
+        // costs nothing noticeable.
+        if (ClientSize != previousSize)
+        {
+            Invalidate(invalidateChildren: true);
         }
     }
 
@@ -570,8 +581,20 @@ internal sealed class StatusForm : Form
         private readonly int _shortInlineX;
         private readonly int _weeklyInlineX;
 
+        // Row visibility is tracked explicitly (never read back from
+        // Control.Visible): the getter reflects ancestor visibility too, so it
+        // reads false whenever the card — or the popup itself — is hidden, which
+        // is exactly when the refresh timer runs Update/LayoutRows. Reading it
+        // there made every optional row collapse to (0, 0) on top of the title
+        // and left the card too short. Same precedent as MinimumStripPanel.
         private bool _detailExpanded;
-        private bool _moneyVisible;
+        private bool _detailAvailable;
+        private bool _statusMessageShown;
+        private bool _scopedShown;
+        private bool _extrasShown;
+        private bool _todayShown;
+        private bool _monthShown;
+        private bool _moneyShown;
         private bool _layingOut;
         private int _dividerY;
         private string _planLabel = string.Empty;
@@ -872,7 +895,7 @@ internal sealed class StatusForm : Form
         {
             _badge.Text = Strings.T("更新中");
             _badge.ForeColor = Warning;
-            _statusMessage.Visible = false;
+            SetStatusMessageShown(false);
             _statusMessage.Text = string.Empty;
             _shortPercent.Text = "—";
             _shortPercent.ForeColor = MutedText;
@@ -904,14 +927,14 @@ internal sealed class StatusForm : Form
             var hasFallbackWindows = fallback is { Windows.Count: > 0 };
             if (status == ProviderStatus.Available)
             {
-                _statusMessage.Visible = false;
+                SetStatusMessageShown(false);
                 _statusMessage.Text = string.Empty;
             }
             else
             {
                 _statusMessage.Text = ProviderStatusPresenter.FriendlyMessage(_displayName, status, hasFallbackWindows);
                 _statusMessage.ForeColor = StatusColor(status);
-                _statusMessage.Visible = true;
+                SetStatusMessageShown(true);
             }
 
             _shortPercent.Text = FormatPercent(shortWindow);
@@ -947,7 +970,8 @@ internal sealed class StatusForm : Form
 
             var scoped = ServiceExtrasText.ScopedLimits(extras);
             _scopedRow.Text = scoped;
-            _scopedRow.Visible = scoped.Length > 0;
+            _scopedShown = scoped.Length > 0;
+            _scopedRow.Visible = _scopedShown;
             // Only escalate: below the warning threshold this is a secondary
             // row, not a green number (the 80/95 thresholds live in UsageTheme).
             var maxScoped = ServiceExtrasText.MaxScopedPercent(extras);
@@ -957,7 +981,17 @@ internal sealed class StatusForm : Form
 
             var info = ServiceExtrasText.Info(extras);
             _extrasRow.Text = info;
-            _extrasRow.Visible = info.Length > 0;
+            _extrasShown = info.Length > 0;
+            _extrasRow.Visible = _extrasShown;
+        }
+
+        // Keeps the tracked state and the control's own Visible flag in step, so
+        // LayoutRows can decide purely from state while hidden rows still do not
+        // paint.
+        private void SetStatusMessageShown(bool shown)
+        {
+            _statusMessageShown = shown;
+            _statusMessage.Visible = shown;
         }
 
         private void ApplyCosts(ServiceCostView? costs)
@@ -977,9 +1011,11 @@ internal sealed class StatusForm : Form
                 _monthValue.Text = DailyCostText.Amount(month);
             }
 
-            _todayLabel.Visible = _todayValue.Visible = today is not null;
-            _monthLabel.Visible = _monthValue.Visible = month is not null;
-            _moneyVisible = today is not null || month is not null;
+            _todayShown = today is not null;
+            _monthShown = month is not null;
+            _todayLabel.Visible = _todayValue.Visible = _todayShown;
+            _monthLabel.Visible = _monthValue.Visible = _monthShown;
+            _moneyShown = _todayShown || _monthShown;
 
             var tip = DailyCostText.MonthBreakdownTooltip(costs?.MonthByModel);
             foreach (var money in _moneyControls)
@@ -1008,7 +1044,7 @@ internal sealed class StatusForm : Form
                 var y = TitleTop + TitleRowHeight;
 
                 _statusMessage.Width = contentWidth;
-                if (_statusMessage.Visible)
+                if (_statusMessageShown)
                 {
                     _statusMessage.Location = new Point(PadX, y);
                     y += SmallRowHeight + RowGap;
@@ -1034,14 +1070,14 @@ internal sealed class StatusForm : Form
                 y += 39;
 
                 _scopedRow.Width = contentWidth;
-                if (_scopedRow.Visible)
+                if (_scopedShown)
                 {
                     _scopedRow.Location = new Point(PadX, y);
                     y += SmallRowHeight + RowGap;
                 }
 
                 // Hairline divider setting the money row apart (painted in OnPaint).
-                if (_moneyVisible)
+                if (_moneyShown)
                 {
                     _dividerY = y + 3;
                     y += 10;
@@ -1054,19 +1090,19 @@ internal sealed class StatusForm : Form
                 }
 
                 _extrasRow.Width = contentWidth;
-                if (_extrasRow.Visible)
+                if (_extrasShown)
                 {
                     _extrasRow.Location = new Point(PadX, y);
                     y += SmallRowHeight + RowGap;
                 }
 
-                if (_detailToggle.Visible)
+                if (_detailAvailable)
                 {
                     _detailToggle.Location = new Point(PadX, y);
                     y += DetailToggleHeight + 3;
                 }
 
-                if (_detailBox.Visible)
+                if (_detailExpanded)
                 {
                     _detailBox.Size = new Size(contentWidth, DetailBoxHeight);
                     _detailBox.Location = new Point(PadX, y);
@@ -1097,13 +1133,13 @@ internal sealed class StatusForm : Form
         private void LayoutMoneyRow(int top)
         {
             var x = PadX;
-            x = PlaceMoneyPair(_todayLabel, _todayValue, x, top);
-            PlaceMoneyPair(_monthLabel, _monthValue, x, top);
+            x = PlaceMoneyPair(_todayLabel, _todayValue, _todayShown, x, top);
+            PlaceMoneyPair(_monthLabel, _monthValue, _monthShown, x, top);
         }
 
-        private static int PlaceMoneyPair(Label label, Label value, int x, int top)
+        private static int PlaceMoneyPair(Label label, Label value, bool shown, int x, int top)
         {
-            if (!value.Visible)
+            if (!shown)
             {
                 return x;
             }
@@ -1123,6 +1159,7 @@ internal sealed class StatusForm : Form
         private void UpdateDiagnostics(string diagnostics)
         {
             var available = !string.IsNullOrWhiteSpace(diagnostics);
+            _detailAvailable = available;
             _detailToggle.Visible = available;
 
             if (!available)
